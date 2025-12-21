@@ -60,6 +60,36 @@ app.use('/api/analytics', apiRateLimiter, analyticsRoutes);
 app.use('/api/exams', apiRateLimiter, examRoutes);
 app.use('/api/badges', apiRateLimiter, badgeRoutes);
 
+// Root route - API information
+app.get('/', (req, res) => {
+  res.json({
+    name: 'PMP Exam Prep API',
+    version: '1.0.0',
+    status: 'running',
+    endpoints: {
+      health: '/health',
+      auth: {
+        register: 'POST /api/auth/register',
+        login: 'POST /api/auth/login',
+        resetPassword: 'POST /api/auth/reset-password',
+        requestPasswordReset: 'POST /api/auth/reset-password/request',
+        socialLogin: 'POST /api/auth/social-login'
+      },
+      users: '/api/users',
+      subscriptions: '/api/subscriptions',
+      questions: '/api/questions',
+      knowledgeAreas: '/api/knowledge-areas',
+      certifications: '/api/certifications',
+      progress: '/api/progress',
+      analytics: '/api/analytics',
+      exams: '/api/exams',
+      badges: '/api/badges',
+      admin: '/api/admin',
+      importExport: '/api/import-export'
+    }
+  });
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'pmp-app-server' });
