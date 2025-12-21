@@ -99,8 +99,7 @@ export default function ActionButton({
         icon={icon}
         buttonColor="transparent"
         textColor={colors.primary}
-        borderColor={colors.primary}
-        style={[styles.button, fullWidth && styles.fullWidth]}
+        style={[styles.button, fullWidth && styles.fullWidth, { borderColor: colors.primary }]}
         labelStyle={{ fontSize, paddingVertical: spacing.xs }}
       >
         {label}

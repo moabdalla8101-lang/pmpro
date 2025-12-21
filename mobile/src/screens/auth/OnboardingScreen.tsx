@@ -3,7 +3,6 @@ import { View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity } from 're
 import { Text, SegmentedButtons, Checkbox, Card } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import { useDispatch, useSelector } from 'react-redux';
-import { updateUserPreferences } from '../../store/slices/authSlice';
 import { RootState, AppDispatch } from '../../store';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { ActionButton } from '../../components';

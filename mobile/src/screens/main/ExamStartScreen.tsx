@@ -169,13 +169,7 @@ export default function ExamStartScreen() {
         <Card style={styles.card}>
           <Card.Content>
             <Text variant="titleLarge" style={styles.questionText}>
-              {/* #region agent log */}
-              {(() => {
-                const questionText = currentQuestion.questionText || currentQuestion.question_text || '';
-                fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ExamStartScreen.tsx:171',message:'Question text field check',data:{hasQuestionText:!!currentQuestion.questionText,hasQuestion_text:!!currentQuestion.question_text,questionKeys:Object.keys(currentQuestion),usingField:'questionText',textLength:questionText.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
-                return questionText;
-              })()}
-              {/* #endregion */}
+              {currentQuestion.questionText || currentQuestion.question_text || ''}
             </Text>
 
             <RadioButton.Group

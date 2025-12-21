@@ -4,15 +4,20 @@ import { questionService } from '../../services/api/questionService';
 interface Question {
   id: string;
   questionText: string;
+  question_text?: string; // Fallback for snake_case
   explanation?: string;
   difficulty: string;
   answers: Answer[];
+  knowledgeAreaName?: string; // Added for consistency
+  knowledge_area_name?: string; // Fallback for snake_case
 }
 
 interface Answer {
   id: string;
   answerText: string;
+  answer_text?: string; // Fallback for snake_case
   isCorrect: boolean;
+  is_correct?: boolean; // Fallback for snake_case
   order: number;
 }
 

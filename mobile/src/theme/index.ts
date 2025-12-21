@@ -95,6 +95,4 @@ export const darkTheme = {
   roundness: 12,
 };
 
-export { colors };
-
 
