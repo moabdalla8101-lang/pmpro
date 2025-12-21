@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
-import { parse } from 'csv-parse/sync';
-import { stringify } from 'csv-stringify/sync';
+import { parse } from 'csv-parse';
+import { stringify } from 'csv-stringify';
 import fs from 'fs';
 import { pool } from '../db/connection';
 import { v4 as uuidv4 } from 'uuid';
@@ -12,7 +12,7 @@ export async function importQuestions(req: Request, res: Response, next: NextFun
     }
 
     const fileContent = fs.readFileSync(req.file.path, 'utf-8');
-    const records = parse(fileContent, {
+    const records = await parse(fileContent, {
       columns: true,
       skip_empty_lines: true
     });
@@ -105,7 +105,12 @@ export async function exportQuestions(req: Request, res: Response, next: NextFun
       answers: JSON.stringify(row.answers)
     }));
 
-    const csv = stringify(records, { header: true });
+    const csv = await new Promise<string>((resolve, reject) => {
+      stringify(records, { header: true }, (err, output) => {
+        if (err) reject(err);
+        else resolve(output);
+      });
+    });
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename=questions.csv');
