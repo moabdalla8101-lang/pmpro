@@ -59,7 +59,7 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
           req.user!.userId,
           answer.questionId,
           answer.answerId,
-          answerResult.rows[0]?.is_correct || false
+          (answerResult.rows[0] && answerResult.rows[0].is_correct) || false
         ]
       );
     }
