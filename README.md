@@ -40,7 +40,7 @@ See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.
 - ✅ Bulk question import/export (CSV)
 
 ### Backend
-- ✅ Microservices architecture
+- ✅ Monolithic architecture (simplified from microservices)
 - ✅ RESTful API
 - ✅ JWT authentication
 - ✅ PostgreSQL database
@@ -52,11 +52,10 @@ See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.
 pmpro/
 ├── mobile/              # React Native mobile app
 ├── web-admin/          # React TypeScript admin dashboard
-├── backend/            # Node.js microservices
-│   ├── user-service/   # Authentication & user management
-│   ├── content-service/# Questions & content management
-│   ├── analytics-service/ # Analytics & reporting
-│   └── shared/         # Shared utilities
+├── backend/            # Node.js backend
+│   ├── server/         # Monolithic server (all services unified)
+│   ├── shared/         # Shared utilities
+│   └── database/       # Database migrations and seeds
 ├── infrastructure/     # Docker, Kubernetes, CI/CD
 └── scripts/           # Setup and utility scripts
 ```
@@ -105,10 +104,9 @@ pmpro/
 
 4. **Start services**
    ```bash
-   # Backend services
-   cd backend/user-service && npm run dev
-   cd ../content-service && npm run dev
-   cd ../analytics-service && npm run dev
+   # Backend server (monolith - all services in one)
+   cd backend/server && npm run dev
+   # Or use the script: ./scripts/start-server.sh
    
    # Web admin
    cd web-admin && npm run dev
@@ -121,9 +119,7 @@ pmpro/
 
 ```bash
 # Backend tests
-cd backend/user-service && npm test
-cd ../content-service && npm test
-cd ../analytics-service && npm test
+cd backend/server && npm test
 ```
 
 ## 📦 API Endpoints
@@ -146,7 +142,7 @@ cd ../analytics-service && npm test
 - `POST /api/exams/start` - Start mock exam
 - `POST /api/exams/:id/submit` - Submit exam
 
-See service-specific READMEs for complete API documentation.
+See [MONOLITH_MIGRATION.md](MONOLITH_MIGRATION.md) for migration details and [backend/server/README.md](backend/server/README.md) for complete API documentation.
 
 ## 🚢 Deployment
 
