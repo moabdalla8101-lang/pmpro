@@ -31,16 +31,43 @@ export async function getQuestions(req: Request, res: Response, next: NextFuncti
 
     const result = await pool.query(query, params);
 
-    // Get answers for each question
+    // Get answers for each question and transform to camelCase
     const questions = await Promise.all(
       result.rows.map(async (question) => {
         const answersResult = await pool.query(
           'SELECT * FROM answers WHERE question_id = $1 ORDER BY "order"',
           [question.id]
         );
+        // Get knowledge area name
+        let knowledgeAreaName = null;
+        if (question.knowledge_area_id) {
+          const kaResult = await pool.query(
+            'SELECT name FROM knowledge_areas WHERE id = $1',
+            [question.knowledge_area_id]
+          );
+          if (kaResult.rows.length > 0) {
+            knowledgeAreaName = kaResult.rows[0].name;
+          }
+        }
         return {
-          ...question,
-          answers: answersResult.rows
+          id: question.id,
+          certificationId: question.certification_id,
+          knowledgeAreaId: question.knowledge_area_id,
+          knowledgeAreaName: knowledgeAreaName,
+          questionText: question.question_text,
+          explanation: question.explanation,
+          difficulty: question.difficulty,
+          isActive: question.is_active,
+          createdAt: question.created_at,
+          updatedAt: question.updated_at,
+          answers: answersResult.rows.map((answer: any) => ({
+            id: answer.id,
+            questionId: answer.question_id,
+            answerText: answer.answer_text,
+            isCorrect: answer.is_correct,
+            order: answer.order,
+            createdAt: answer.created_at
+          }))
         };
       })
     );
@@ -72,8 +99,23 @@ export async function getQuestion(req: Request, res: Response, next: NextFunctio
     );
 
     res.json({
-      ...question,
-      answers: answersResult.rows
+      id: question.id,
+      certificationId: question.certification_id,
+      knowledgeAreaId: question.knowledge_area_id,
+      questionText: question.question_text,
+      explanation: question.explanation,
+      difficulty: question.difficulty,
+      isActive: question.is_active,
+      createdAt: question.created_at,
+      updatedAt: question.updated_at,
+      answers: answersResult.rows.map((answer: any) => ({
+        id: answer.id,
+        questionId: answer.question_id,
+        answerText: answer.answer_text,
+        isCorrect: answer.is_correct,
+        order: answer.order,
+        createdAt: answer.created_at
+      }))
     });
   } catch (error) {
     next(error);
@@ -123,9 +165,25 @@ export async function createQuestion(req: Request, res: Response, next: NextFunc
       [questionId]
     );
 
+    const question = questionResult.rows[0];
     res.status(201).json({
-      ...questionResult.rows[0],
-      answers: answersResult.rows
+      id: question.id,
+      certificationId: question.certification_id,
+      knowledgeAreaId: question.knowledge_area_id,
+      questionText: question.question_text,
+      explanation: question.explanation,
+      difficulty: question.difficulty,
+      isActive: question.is_active,
+      createdAt: question.created_at,
+      updatedAt: question.updated_at,
+      answers: answersResult.rows.map((answer: any) => ({
+        id: answer.id,
+        questionId: answer.question_id,
+        answerText: answer.answer_text,
+        isCorrect: answer.is_correct,
+        order: answer.order,
+        createdAt: answer.created_at
+      }))
     });
   } catch (error) {
     next(error);
@@ -182,7 +240,18 @@ export async function updateQuestion(req: Request, res: Response, next: NextFunc
       return next(new NotFoundError('Question not found'));
     }
 
-    res.json(result.rows[0]);
+    const question = result.rows[0];
+    res.json({
+      id: question.id,
+      certificationId: question.certification_id,
+      knowledgeAreaId: question.knowledge_area_id,
+      questionText: question.question_text,
+      explanation: question.explanation,
+      difficulty: question.difficulty,
+      isActive: question.is_active,
+      createdAt: question.created_at,
+      updatedAt: question.updated_at
+    });
   } catch (error) {
     next(error);
   }
@@ -221,8 +290,23 @@ export async function getQuestionsByKnowledgeArea(req: Request, res: Response, n
           [question.id]
         );
         return {
-          ...question,
-          answers: answersResult.rows
+          id: question.id,
+          certificationId: question.certification_id,
+          knowledgeAreaId: question.knowledge_area_id,
+          questionText: question.question_text,
+          explanation: question.explanation,
+          difficulty: question.difficulty,
+          isActive: question.is_active,
+          createdAt: question.created_at,
+          updatedAt: question.updated_at,
+          answers: answersResult.rows.map((answer: any) => ({
+            id: answer.id,
+            questionId: answer.question_id,
+            answerText: answer.answer_text,
+            isCorrect: answer.is_correct,
+            order: answer.order,
+            createdAt: answer.created_at
+          }))
         };
       })
     );

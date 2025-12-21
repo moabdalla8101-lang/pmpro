@@ -74,11 +74,11 @@ export default function QuestionsPage() {
     if (question) {
       setEditingQuestion(question);
       setFormData({
-        questionText: question.question_text || '',
+        questionText: question.questionText || question.question_text || '',
         explanation: question.explanation || '',
         difficulty: question.difficulty || 'medium',
-        certificationId: question.certification_id || '',
-        knowledgeAreaId: question.knowledge_area_id || '',
+        certificationId: question.certificationId || question.certification_id || '',
+        knowledgeAreaId: question.knowledgeAreaId || question.knowledge_area_id || '',
         answers: question.answers || [{ answerText: '', isCorrect: false }],
       });
     } else {
@@ -164,27 +164,35 @@ export default function QuestionsPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {data?.questions?.map((question: any) => (
-                <TableRow key={question.id}>
-                  <TableCell>{question.question_text}</TableCell>
-                  <TableCell>{question.difficulty}</TableCell>
-                  <TableCell>{question.knowledge_area_name || '-'}</TableCell>
-                  <TableCell>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleOpen(question)}
-                    >
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleDelete(question.id)}
-                    >
-                      <DeleteIcon />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {data?.questions && data.questions.length > 0 ? (
+                data.questions.map((question: any) => (
+                  <TableRow key={question.id}>
+                    <TableCell>{question.questionText || question.question_text || '-'}</TableCell>
+                    <TableCell>{question.difficulty || '-'}</TableCell>
+                    <TableCell>{question.knowledgeAreaName || question.knowledge_area_name || '-'}</TableCell>
+                    <TableCell>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleOpen(question)}
+                      >
+                        <EditIcon />
+                      </IconButton>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleDelete(question.id)}
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={4} align="center">
+                      <Typography color="text.secondary">No questions found</Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
             </TableBody>
           </Table>
         </TableContainer>

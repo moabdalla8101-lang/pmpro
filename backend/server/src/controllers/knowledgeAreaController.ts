@@ -8,7 +8,17 @@ export async function getKnowledgeAreas(req: Request, res: Response, next: NextF
     const result = await pool.query(
       'SELECT * FROM knowledge_areas ORDER BY "order"'
     );
-    res.json({ knowledgeAreas: result.rows });
+    res.json({ 
+      knowledgeAreas: result.rows.map((ka: any) => ({
+        id: ka.id,
+        certificationId: ka.certification_id,
+        name: ka.name,
+        description: ka.description,
+        order: ka.order,
+        createdAt: ka.created_at,
+        updatedAt: ka.updated_at
+      }))
+    });
   } catch (error) {
     next(error);
   }
@@ -27,7 +37,16 @@ export async function getKnowledgeArea(req: Request, res: Response, next: NextFu
       return next(new NotFoundError('Knowledge area not found'));
     }
 
-    res.json(result.rows[0]);
+    const ka = result.rows[0];
+    res.json({
+      id: ka.id,
+      certificationId: ka.certification_id,
+      name: ka.name,
+      description: ka.description,
+      order: ka.order,
+      createdAt: ka.created_at,
+      updatedAt: ka.updated_at
+    });
   } catch (error) {
     next(error);
   }
@@ -49,7 +68,16 @@ export async function createKnowledgeArea(req: Request, res: Response, next: Nex
       [id]
     );
 
-    res.status(201).json(result.rows[0]);
+    const ka = result.rows[0];
+    res.status(201).json({
+      id: ka.id,
+      certificationId: ka.certification_id,
+      name: ka.name,
+      description: ka.description,
+      order: ka.order,
+      createdAt: ka.created_at,
+      updatedAt: ka.updated_at
+    });
   } catch (error) {
     next(error);
   }
@@ -100,7 +128,16 @@ export async function updateKnowledgeArea(req: Request, res: Response, next: Nex
       return next(new NotFoundError('Knowledge area not found'));
     }
 
-    res.json(result.rows[0]);
+    const ka = result.rows[0];
+    res.json({
+      id: ka.id,
+      certificationId: ka.certification_id,
+      name: ka.name,
+      description: ka.description,
+      order: ka.order,
+      createdAt: ka.created_at,
+      updatedAt: ka.updated_at
+    });
   } catch (error) {
     next(error);
   }
@@ -127,7 +164,17 @@ export async function getKnowledgeAreasByCertification(req: Request, res: Respon
       [certificationId]
     );
 
-    res.json({ knowledgeAreas: result.rows });
+    res.json({ 
+      knowledgeAreas: result.rows.map((ka: any) => ({
+        id: ka.id,
+        certificationId: ka.certification_id,
+        name: ka.name,
+        description: ka.description,
+        order: ka.order,
+        createdAt: ka.created_at,
+        updatedAt: ka.updated_at
+      }))
+    });
   } catch (error) {
     next(error);
   }

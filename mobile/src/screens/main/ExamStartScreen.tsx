@@ -23,6 +23,11 @@ export default function ExamStartScreen() {
   const [isExamStarted, setIsExamStarted] = useState(false);
 
   const currentQuestion = questions[currentQuestionIndex];
+  // #region agent log
+  React.useEffect(() => {
+    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ExamStartScreen.tsx:26',message:'Current question check',data:{hasCurrentQuestion:!!currentQuestion,questionsLength:questions.length,currentIndex:currentQuestionIndex,questionKeys:currentQuestion?Object.keys(currentQuestion):[]},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H3,H4'})}).catch(()=>{});
+  }, [currentQuestion, questions.length, currentQuestionIndex]);
+  // #endregion
   const progress = (currentQuestionIndex + 1) / TOTAL_QUESTIONS;
 
   useEffect(() => {
@@ -164,19 +169,30 @@ export default function ExamStartScreen() {
         <Card style={styles.card}>
           <Card.Content>
             <Text variant="titleLarge" style={styles.questionText}>
-              {currentQuestion.question_text}
+              {/* #region agent log */}
+              {(() => {
+                const questionText = currentQuestion.questionText || currentQuestion.question_text || '';
+                fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ExamStartScreen.tsx:171',message:'Question text field check',data:{hasQuestionText:!!currentQuestion.questionText,hasQuestion_text:!!currentQuestion.question_text,questionKeys:Object.keys(currentQuestion),usingField:'questionText',textLength:questionText.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
+                return questionText;
+              })()}
+              {/* #endregion */}
             </Text>
 
             <RadioButton.Group
               onValueChange={handleAnswerSelect}
               value={selectedAnswers[currentQuestion.id] || ''}
             >
-              {currentQuestion.answers?.map((answer: any) => (
-                <View key={answer.id} style={styles.answerOption}>
-                  <RadioButton value={answer.id} />
-                  <Text style={styles.answerText}>{answer.answer_text}</Text>
-                </View>
-              ))}
+              {currentQuestion.answers?.map((answer: any) => {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ExamStartScreen.tsx:175',message:'Answer field check',data:{hasAnswerText:!!answer.answerText,hasAnswer_text:!!answer.answer_text,answerKeys:Object.keys(answer)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H4'})}).catch(()=>{});
+                // #endregion
+                return (
+                  <View key={answer.id} style={styles.answerOption}>
+                    <RadioButton value={answer.id} />
+                    <Text style={styles.answerText}>{answer.answerText || answer.answer_text}</Text>
+                  </View>
+                );
+              })}
             </RadioButton.Group>
           </Card.Content>
         </Card>

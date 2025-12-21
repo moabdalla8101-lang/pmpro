@@ -76,6 +76,51 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
       [score, correctCount, id]
     );
 
+    // Update user progress
+    const exam = examResult.rows[0];
+    const certificationId = exam.certification_id;
+    
+    // Get current progress totals
+    const progressResult = await pool.query(
+      `SELECT 
+         COUNT(*) as total_answered,
+         SUM(CASE WHEN is_correct THEN 1 ELSE 0 END) as correct_count
+       FROM user_answers
+       WHERE user_id = $1`,
+      [req.user!.userId]
+    );
+
+    const firstRow = progressResult.rows[0] || {};
+    const totalAnswered = parseInt(firstRow.total_answered || '0', 10);
+    const totalCorrect = parseInt(firstRow.correct_count || '0', 10);
+    const overallAccuracy = totalAnswered > 0 ? (totalCorrect / totalAnswered) : 0;
+
+    // Update or create user progress
+    const existingProgress = await pool.query(
+      'SELECT id FROM user_progress WHERE user_id = $1 AND certification_id = $2',
+      [req.user!.userId, certificationId]
+    );
+
+    if (existingProgress.rows.length > 0) {
+      await pool.query(
+        `UPDATE user_progress 
+         SET total_questions_answered = $1,
+             correct_answers = $2,
+             accuracy = $3,
+             last_activity_at = NOW(),
+             updated_at = NOW()
+         WHERE user_id = $4 AND certification_id = $5`,
+        [totalAnswered, totalCorrect, overallAccuracy, req.user!.userId, certificationId]
+      );
+    } else {
+      const progressId = uuidv4();
+      await pool.query(
+        `INSERT INTO user_progress (id, user_id, certification_id, total_questions_answered, correct_answers, accuracy, last_activity_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
+        [progressId, req.user!.userId, certificationId, totalAnswered, totalCorrect, overallAccuracy]
+      );
+    }
+
     res.json({ examId: id, score, correctAnswers: correctCount, totalQuestions: answers.length });
   } catch (error) {
     next(error);

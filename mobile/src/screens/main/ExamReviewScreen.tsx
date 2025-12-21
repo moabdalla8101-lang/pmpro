@@ -44,9 +44,16 @@ export default function ExamReviewScreen() {
   }
 
   const { exam, answers } = examData;
-  const score = exam?.score || 0;
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ExamReviewScreen.tsx:46',message:'Exam data received',data:{hasExam:!!exam,hasAnswers:!!answers,examScore:exam?.score,examScoreType:typeof exam?.score,examKeys:exam?Object.keys(exam):[]},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'score-error'})}).catch(()=>{});
+  // #endregion
+  // Ensure score is always a number
+  const score = typeof exam?.score === 'number' ? exam.score : (typeof exam?.score === 'string' ? parseFloat(exam.score) : 0);
   const correctCount = exam?.correct_answers || 0;
   const totalQuestions = exam?.total_questions || 0;
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ExamReviewScreen.tsx:50',message:'Score processed',data:{score,scoreType:typeof score,isNaN:isNaN(score),correctCount,totalQuestions},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'score-error'})}).catch(()=>{});
+  // #endregion
 
   return (
     <ScrollView style={styles.container}>
@@ -57,7 +64,7 @@ export default function ExamReviewScreen() {
           </Text>
           <View style={styles.scoreContainer}>
             <Text variant="displaySmall" style={styles.score}>
-              {score.toFixed(1)}%
+              {(!isNaN(score) && typeof score === 'number' ? score.toFixed(1) : '0.0')}%
             </Text>
             <Text variant="bodyMedium" style={styles.scoreDetails}>
               {correctCount} out of {totalQuestions} correct
@@ -92,14 +99,14 @@ export default function ExamReviewScreen() {
                 <Chip
                   style={[
                     styles.chip,
-                    item.is_correct ? styles.correctChip : styles.incorrectChip,
+                    (item.isCorrect || item.is_correct) ? styles.correctChip : styles.incorrectChip,
                   ]}
                 >
-                  {item.is_correct ? 'Correct' : 'Incorrect'}
+                  {(item.isCorrect || item.is_correct) ? 'Correct' : 'Incorrect'}
                 </Chip>
               </View>
               <Text variant="bodyLarge" style={styles.questionText}>
-                {item.question_text}
+                {item.questionText || item.question_text || 'No question text'}
               </Text>
               <View style={styles.answerSection}>
                 <Text variant="bodySmall" style={styles.answerLabel}>
@@ -109,10 +116,10 @@ export default function ExamReviewScreen() {
                   variant="bodyMedium"
                   style={[
                     styles.answerText,
-                    !item.is_correct && styles.incorrectAnswer,
+                    !item.isCorrect && !item.is_correct && styles.incorrectAnswer,
                   ]}
                 >
-                  {item.answer_text}
+                  {item.answerText || item.answer_text || 'No answer'}
                 </Text>
               </View>
               {item.explanation && (

@@ -32,8 +32,22 @@ const initialState: QuestionState = {
 
 export const fetchQuestions = createAsyncThunk(
   'questions/fetch',
-  async (filters: { certificationId?: string; knowledgeAreaId?: string; difficulty?: string }) => {
-    return await questionService.getQuestions(filters);
+  async (filters: { certificationId?: string; knowledgeAreaId?: string; difficulty?: string; limit?: string | number; offset?: string | number }) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionSlice.ts:33',message:'fetchQuestions thunk called',data:{filters},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H3'})}).catch(()=>{});
+    // #endregion
+    try {
+      const result = await questionService.getQuestions(filters);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionSlice.ts:37',message:'fetchQuestions result received',data:{hasResult:!!result,hasQuestions:!!result?.questions,questionsCount:result?.questions?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H3'})}).catch(()=>{});
+      // #endregion
+      return result;
+    } catch (error: any) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionSlice.ts:42',message:'fetchQuestions error in thunk',data:{error:error?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H2'})}).catch(()=>{});
+      // #endregion
+      throw error;
+    }
   }
 );
 
@@ -63,10 +77,19 @@ const questionSlice = createSlice({
         state.error = null;
       })
       .addCase(fetchQuestions.fulfilled, (state, action) => {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionSlice.ts:66',message:'Questions fetch fulfilled',data:{questionsCount:action.payload?.questions?.length||0,firstQuestionKeys:action.payload?.questions?.[0]?Object.keys(action.payload.questions[0]):[],hasPayload:!!action.payload},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H3,H4'})}).catch(()=>{});
+        // #endregion
         state.isLoading = false;
         state.questions = action.payload.questions;
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionSlice.ts:68',message:'Questions state updated',data:{stateQuestionsCount:state.questions.length,firstQuestionId:state.questions[0]?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3,H5'})}).catch(()=>{});
+        // #endregion
       })
       .addCase(fetchQuestions.rejected, (state, action) => {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionSlice.ts:75',message:'Questions fetch rejected',data:{error:action.error.message,errorCode:action.error.code},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H2'})}).catch(()=>{});
+        // #endregion
         state.isLoading = false;
         state.error = action.error.message || 'Failed to fetch questions';
       })

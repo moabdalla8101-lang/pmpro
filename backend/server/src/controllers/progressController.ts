@@ -18,7 +18,20 @@ export async function getUserProgress(req: AuthRequest, res: Response, next: Nex
 
     const result = await pool.query(query, params);
 
-    res.json({ progress: result.rows });
+    // Transform to camelCase and ensure numeric types
+    const progress = result.rows.map((row: any) => ({
+      id: row.id,
+      userId: row.user_id,
+      certificationId: row.certification_id,
+      totalQuestionsAnswered: parseInt(row.total_questions_answered || '0', 10),
+      correctAnswers: parseInt(row.correct_answers || '0', 10),
+      accuracy: typeof row.accuracy === 'number' ? row.accuracy : parseFloat(row.accuracy || '0'),
+      lastActivityAt: row.last_activity_at,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    }));
+
+    res.json({ progress });
   } catch (error) {
     next(error);
   }
