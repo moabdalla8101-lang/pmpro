@@ -1,59 +1,81 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
-import { Card, Text, Button, RadioButton } from 'react-native-paper';
+import { Card, Text, Button, RadioButton, ActivityIndicator } from 'react-native-paper';
 import { useRoute } from '@react-navigation/native';
-import { useDispatch } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { fetchQuestion } from '../../store/slices/questionSlice';
-import { recordAnswer } from '../../store/slices/progressSlice';
-import { AppDispatch } from '../../store';
+import { progressService } from '../../services/api/progressService';
+import { RootState, AppDispatch } from '../../store';
 
 export default function QuestionDetailScreen() {
   const route = useRoute();
   const { questionId } = route.params as { questionId: string };
   const dispatch = useDispatch<AppDispatch>();
+  const { currentQuestion, isLoading } = useSelector((state: RootState) => state.questions);
+  
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [showExplanation, setShowExplanation] = useState(false);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  // TODO: Get question from store or fetch
-  const question = {
-    id: questionId,
-    questionText: 'Sample question text',
-    explanation: 'Sample explanation',
-    answers: [
-      { id: '1', answerText: 'Answer 1', isCorrect: true },
-      { id: '2', answerText: 'Answer 2', isCorrect: false },
-    ],
-  };
+  useEffect(() => {
+    if (questionId && !currentQuestion) {
+      dispatch(fetchQuestion(questionId));
+    }
+  }, [questionId, dispatch]);
+
+  useEffect(() => {
+    if (currentQuestion && currentQuestion.id === questionId) {
+      setSelectedAnswer(null);
+      setShowExplanation(false);
+      setIsCorrect(null);
+    }
+  }, [currentQuestion, questionId]);
 
   const handleSubmit = async () => {
-    if (!selectedAnswer) return;
+    if (!selectedAnswer || !currentQuestion) return;
 
-    const answer = question.answers.find((a) => a.id === selectedAnswer);
-    const correct = answer?.isCorrect || false;
-    setIsCorrect(correct);
-    setShowExplanation(true);
-
-    // Record answer
-    // await dispatch(recordAnswer({ questionId, answerId: selectedAnswer }));
+    setSubmitting(true);
+    try {
+      const result = await progressService.recordAnswer(questionId, selectedAnswer);
+      setIsCorrect(result.isCorrect);
+      setShowExplanation(true);
+    } catch (error: any) {
+      console.error('Failed to record answer:', error);
+      // Still show explanation based on selected answer
+      const answer = currentQuestion.answers?.find((a: any) => a.id === selectedAnswer);
+      setIsCorrect(answer?.isCorrect || false);
+      setShowExplanation(true);
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  if (isLoading || !currentQuestion) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#6200ee" />
+        <Text style={styles.loadingText}>Loading question...</Text>
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.container}>
       <Card style={styles.card}>
         <Card.Content>
           <Text variant="titleLarge" style={styles.questionText}>
-            {question.questionText}
+            {currentQuestion.question_text}
           </Text>
 
           <RadioButton.Group
             onValueChange={setSelectedAnswer}
             value={selectedAnswer || ''}
           >
-            {question.answers.map((answer) => (
+            {currentQuestion.answers?.map((answer: any) => (
               <View key={answer.id} style={styles.answerOption}>
                 <RadioButton value={answer.id} />
-                <Text style={styles.answerText}>{answer.answerText}</Text>
+                <Text style={styles.answerText}>{answer.answer_text}</Text>
               </View>
             ))}
           </RadioButton.Group>
@@ -61,10 +83,11 @@ export default function QuestionDetailScreen() {
           <Button
             mode="contained"
             onPress={handleSubmit}
-            disabled={!selectedAnswer || showExplanation}
+            disabled={!selectedAnswer || showExplanation || submitting}
+            loading={submitting}
             style={styles.submitButton}
           >
-            Submit Answer
+            {submitting ? 'Submitting...' : 'Submit Answer'}
           </Button>
 
           {showExplanation && (
@@ -76,11 +99,13 @@ export default function QuestionDetailScreen() {
                   isCorrect ? styles.correct : styles.incorrect,
                 ]}
               >
-                {isCorrect ? 'Correct!' : 'Incorrect'}
+                {isCorrect ? '✓ Correct!' : '✗ Incorrect'}
               </Text>
-              <Text variant="bodyMedium" style={styles.explanationText}>
-                {question.explanation}
-              </Text>
+              {currentQuestion.explanation && (
+                <Text variant="bodyMedium" style={styles.explanationText}>
+                  {currentQuestion.explanation}
+                </Text>
+              )}
             </View>
           )}
         </Card.Content>
@@ -94,6 +119,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    color: '#666',
+  },
   card: {
     margin: 15,
   },
@@ -105,6 +139,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 10,
+    padding: 10,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 8,
   },
   answerText: {
     flex: 1,
@@ -131,7 +168,6 @@ const styles = StyleSheet.create({
   },
   explanationText: {
     color: '#666',
+    lineHeight: 20,
   },
 });
-
-
