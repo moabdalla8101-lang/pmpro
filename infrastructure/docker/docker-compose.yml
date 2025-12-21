@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: pmp-postgres
+    environment:
+      POSTGRES_DB: pmp_app
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../backend/database/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  user-service:
+    build:
+      context: ../../backend/user-service
+      dockerfile: Dockerfile
+    container_name: pmp-user-service
+    environment:
+      PORT: 3001
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: pmp_app
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      JWT_SECRET: your-secret-key-change-in-production
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../../backend/user-service:/app
+      - /app/node_modules
+
+  content-service:
+    build:
+      context: ../../backend/content-service
+      dockerfile: Dockerfile
+    container_name: pmp-content-service
+    environment:
+      PORT: 3002
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: pmp_app
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+    ports:
+      - "3002:3002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../../backend/content-service:/app
+      - /app/node_modules
+
+  analytics-service:
+    build:
+      context: ../../backend/analytics-service
+      dockerfile: Dockerfile
+    container_name: pmp-analytics-service
+    environment:
+      PORT: 3003
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: pmp_app
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+    ports:
+      - "3003:3003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../../backend/analytics-service:/app
+      - /app/node_modules
+
+volumes:
+  postgres_data:
+

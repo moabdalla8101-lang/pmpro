@@ -1,0 +1,31 @@
+{
+  "name": "pmp-exam-prep-app",
+  "version": "1.0.0",
+  "description": "PMP Exam Prep Mobile App - Monorepo",
+  "private": true,
+  "workspaces": [
+    "backend/*",
+    "mobile",
+    "web-admin",
+    "shared"
+  ],
+  "scripts": {
+    "install:all": "npm install && npm run install:backend && npm run install:mobile && npm run install:web-admin",
+    "install:backend": "cd backend/user-service && npm install && cd ../content-service && npm install && cd ../analytics-service && npm install",
+    "install:mobile": "cd mobile && npm install",
+    "install:web-admin": "cd web-admin && npm install",
+    "dev:backend": "docker-compose up",
+    "dev:mobile": "cd mobile && npm start",
+    "dev:web-admin": "cd web-admin && npm run dev"
+  },
+  "keywords": [
+    "pmp",
+    "exam-prep",
+    "mobile-app",
+    "react-native"
+  ],
+  "author": "",
+  "license": "UNLICENSED"
+}
+
+

@@ -1,0 +1,85 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pmp-app-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+spec:
+  rules:
+  - host: api.pmpapp.com
+    http:
+      paths:
+      - path: /api/auth
+        pathType: Prefix
+        backend:
+          service:
+            name: user-service
+            port:
+              number: 3001
+      - path: /api/users
+        pathType: Prefix
+        backend:
+          service:
+            name: user-service
+            port:
+              number: 3001
+      - path: /api/subscriptions
+        pathType: Prefix
+        backend:
+          service:
+            name: user-service
+            port:
+              number: 3001
+      - path: /api/questions
+        pathType: Prefix
+        backend:
+          service:
+            name: content-service
+            port:
+              number: 3002
+      - path: /api/knowledge-areas
+        pathType: Prefix
+        backend:
+          service:
+            name: content-service
+            port:
+              number: 3002
+      - path: /api/certifications
+        pathType: Prefix
+        backend:
+          service:
+            name: content-service
+            port:
+              number: 3002
+      - path: /api/progress
+        pathType: Prefix
+        backend:
+          service:
+            name: analytics-service
+            port:
+              number: 3003
+      - path: /api/analytics
+        pathType: Prefix
+        backend:
+          service:
+            name: analytics-service
+            port:
+              number: 3003
+      - path: /api/exams
+        pathType: Prefix
+        backend:
+          service:
+            name: analytics-service
+            port:
+              number: 3003
+  - host: admin.pmpapp.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: web-admin
+            port:
+              number: 80
+

@@ -1,0 +1,37 @@
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy shared package
+COPY backend/shared ./backend/shared
+
+# Copy analytics service
+COPY backend/analytics-service/package*.json ./backend/analytics-service/
+COPY backend/analytics-service/tsconfig.json ./backend/analytics-service/
+COPY backend/analytics-service/src ./backend/analytics-service/src
+
+# Build shared package
+WORKDIR /app/backend/shared
+RUN npm install && npm run build
+
+# Build analytics service
+WORKDIR /app/backend/analytics-service
+RUN npm install && npm run build
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy built files
+COPY --from=builder /app/backend/shared/dist ./shared/dist
+COPY --from=builder /app/backend/shared/package.json ./shared/
+COPY --from=builder /app/backend/analytics-service/dist ./dist
+COPY --from=builder /app/backend/analytics-service/package.json ./
+
+# Install production dependencies
+RUN npm install --production
+
+EXPOSE 3003
+
+CMD ["node", "dist/index.js"]
+

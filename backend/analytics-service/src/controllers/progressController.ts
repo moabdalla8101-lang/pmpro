@@ -1,0 +1,123 @@
+import { Response, NextFunction } from 'express';
+import { NotFoundError } from '@pmp-app/shared';
+import { AuthRequest } from '../middleware/auth';
+import { pool } from '../db/connection';
+import { v4 as uuidv4 } from 'uuid';
+
+export async function getUserProgress(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const { certificationId } = req.query;
+
+    let query = 'SELECT * FROM user_progress WHERE user_id = $1';
+    const params: any[] = [req.user!.userId];
+
+    if (certificationId) {
+      query += ' AND certification_id = $2';
+      params.push(certificationId);
+    }
+
+    const result = await pool.query(query, params);
+
+    res.json({ progress: result.rows });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updateUserProgress(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const { certificationId, totalQuestionsAnswered, correctAnswers } = req.body;
+
+    const accuracy = correctAnswers / totalQuestionsAnswered;
+
+    const existing = await pool.query(
+      'SELECT id FROM user_progress WHERE user_id = $1 AND certification_id = $2',
+      [req.user!.userId, certificationId]
+    );
+
+    if (existing.rows.length > 0) {
+      await pool.query(
+        `UPDATE user_progress 
+         SET total_questions_answered = $1,
+             correct_answers = $2,
+             accuracy = $3,
+             last_activity_at = NOW(),
+             updated_at = NOW()
+         WHERE user_id = $4 AND certification_id = $5`,
+        [totalQuestionsAnswered, correctAnswers, accuracy, req.user!.userId, certificationId]
+      );
+    } else {
+      const id = uuidv4();
+      await pool.query(
+        `INSERT INTO user_progress (id, user_id, certification_id, total_questions_answered, correct_answers, accuracy, last_activity_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
+        [id, req.user!.userId, certificationId, totalQuestionsAnswered, correctAnswers, accuracy]
+      );
+    }
+
+    res.json({ message: 'Progress updated successfully' });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function recordAnswer(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const { questionId, answerId } = req.body;
+
+    // Get answer to check if correct
+    const answerResult = await pool.query(
+      'SELECT is_correct FROM answers WHERE id = $1',
+      [answerId]
+    );
+
+    if (answerResult.rows.length === 0) {
+      return next(new NotFoundError('Answer not found'));
+    }
+
+    const isCorrect = answerResult.rows[0].is_correct;
+    const userAnswerId = uuidv4();
+
+    await pool.query(
+      `INSERT INTO user_answers (id, user_id, question_id, answer_id, is_correct, answered_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())`,
+      [userAnswerId, req.user!.userId, questionId, answerId, isCorrect]
+    );
+
+    res.json({ isCorrect, userAnswerId });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getPerformanceByKnowledgeArea(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const { certificationId } = req.query;
+
+    const result = await pool.query(
+      `SELECT 
+         ka.id as knowledge_area_id,
+         ka.name as knowledge_area_name,
+         COUNT(ua.id) as total_answered,
+         SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END) as correct_answers,
+         CASE 
+           WHEN COUNT(ua.id) > 0 
+           THEN (SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END)::float / COUNT(ua.id)::float * 100)
+           ELSE 0 
+         END as accuracy
+       FROM knowledge_areas ka
+       LEFT JOIN questions q ON ka.id = q.knowledge_area_id
+       LEFT JOIN user_answers ua ON q.id = ua.question_id AND ua.user_id = $1
+       WHERE ka.certification_id = $2
+       GROUP BY ka.id, ka.name
+       ORDER BY ka."order"`,
+      [req.user!.userId, certificationId]
+    );
+
+    res.json({ performance: result.rows });
+  } catch (error) {
+    next(error);
+  }
+}
+
+

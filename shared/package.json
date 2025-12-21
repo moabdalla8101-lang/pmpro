@@ -1,0 +1,13 @@
+{
+  "name": "@pmp-app/shared-types",
+  "version": "1.0.0",
+  "description": "Shared types and utilities",
+  "main": "index.js",
+  "scripts": {
+    "build": "echo 'No build needed'"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED"
+}
+

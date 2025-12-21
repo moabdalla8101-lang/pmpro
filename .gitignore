@@ -1,0 +1,66 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing
+coverage/
+*.lcov
+.nyc_output
+
+# Production
+build/
+dist/
+*.log
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Mobile
+mobile/.expo/
+mobile/.expo-shared/
+mobile/ios/Pods/
+mobile/android/app/build/
+mobile/android/.gradle/
+mobile/android/local.properties
+
+# Backend
+backend/**/node_modules/
+backend/**/dist/
+backend/**/.env
+
+# Web Admin
+web-admin/node_modules/
+web-admin/dist/
+web-admin/.env
+
+# Infrastructure
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Docker
+docker-compose.override.yml
+
+# Database
+*.sqlite
+*.db
+
+# Uploads
+uploads/
+*.csv

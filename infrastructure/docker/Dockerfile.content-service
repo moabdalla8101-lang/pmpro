@@ -1,0 +1,37 @@
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy shared package
+COPY backend/shared ./backend/shared
+
+# Copy content service
+COPY backend/content-service/package*.json ./backend/content-service/
+COPY backend/content-service/tsconfig.json ./backend/content-service/
+COPY backend/content-service/src ./backend/content-service/src
+
+# Build shared package
+WORKDIR /app/backend/shared
+RUN npm install && npm run build
+
+# Build content service
+WORKDIR /app/backend/content-service
+RUN npm install && npm run build
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy built files
+COPY --from=builder /app/backend/shared/dist ./shared/dist
+COPY --from=builder /app/backend/shared/package.json ./shared/
+COPY --from=builder /app/backend/content-service/dist ./dist
+COPY --from=builder /app/backend/content-service/package.json ./
+
+# Install production dependencies
+RUN npm install --production
+
+EXPOSE 3002
+
+CMD ["node", "dist/index.js"]
+
