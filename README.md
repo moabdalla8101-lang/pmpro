@@ -2,42 +2,190 @@
 
 A comprehensive mobile application for PMP (Project Management Professional) exam preparation, including a web-based back office for content management.
 
-## Project Structure
+[![License](https://img.shields.io/badge/license-Proprietary-red.svg)](LICENSE)
 
-This is a monorepo containing:
+## 🚀 Quick Start
 
-- **mobile/** - React Native mobile app for iOS and Android
-- **web-admin/** - React TypeScript web back office for administrators
-- **backend/** - Node.js/Express microservices backend
-  - **user-service/** - User authentication and management service
-  - **content-service/** - Question and content management service
-  - **analytics-service/** - Analytics and reporting service
-  - **shared/** - Shared backend utilities and types
-  - **database/** - Database migrations and seeds
-- **shared/** - Shared types and utilities across all projects
-- **infrastructure/** - Docker, Kubernetes, and CI/CD configurations
+```bash
+# Using Docker (Recommended)
+cd infrastructure/docker
+docker-compose up
 
-## Technology Stack
+# Or use the setup script
+./scripts/setup.sh
+./scripts/db-setup.sh
+```
 
-- **Mobile App**: React Native (Expo)
-- **Web Admin**: React + TypeScript
-- **Backend**: Node.js + Express.js + TypeScript
+See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.
+
+## 📋 Features
+
+### Mobile App
+- ✅ User authentication (email, social login)
+- ✅ Practice questions with adaptive difficulty
+- ✅ Custom quizzes
+- ✅ Timed mock exams (180 questions, 230 minutes)
+- ✅ Progress tracking and analytics
+- ✅ Bookmarks and missed questions review
+- ✅ Gamification (streaks, badges)
+- ✅ Daily quiz challenges
+
+### Web Admin
+- ✅ Admin dashboard with key metrics
+- ✅ Question management (CRUD)
+- ✅ Knowledge area management
+- ✅ Certification management
+- ✅ User management
+- ✅ Analytics and reporting
+- ✅ Bulk question import/export (CSV)
+
+### Backend
+- ✅ Microservices architecture
+- ✅ RESTful API
+- ✅ JWT authentication
+- ✅ PostgreSQL database
+- ✅ Scalable design for multiple certifications
+
+## 🏗️ Architecture
+
+```
+pmpro/
+├── mobile/              # React Native mobile app
+├── web-admin/          # React TypeScript admin dashboard
+├── backend/            # Node.js microservices
+│   ├── user-service/   # Authentication & user management
+│   ├── content-service/# Questions & content management
+│   ├── analytics-service/ # Analytics & reporting
+│   └── shared/         # Shared utilities
+├── infrastructure/     # Docker, Kubernetes, CI/CD
+└── scripts/           # Setup and utility scripts
+```
+
+## 🛠️ Technology Stack
+
+- **Mobile**: React Native (Expo), Redux Toolkit
+- **Web Admin**: React, TypeScript, Material-UI, Vite
+- **Backend**: Node.js, Express.js, TypeScript
 - **Database**: PostgreSQL
 - **Infrastructure**: Docker, Kubernetes, AWS
 
-## Getting Started
+## 📚 Documentation
 
-See individual service READMEs for setup instructions:
-- [Backend README](backend/README.md)
-- [Mobile App README](mobile/README.md)
-- [Web Admin README](web-admin/README.md)
+- [Quick Start Guide](QUICKSTART.md) - Get started in 5 minutes
+- [Setup Guide](SETUP.md) - Detailed setup instructions
+- [Deployment Guide](DEPLOYMENT.md) - Production deployment
+- [Troubleshooting](TROUBLESHOOTING.md) - Common issues and solutions
+- [Contributing](CONTRIBUTING.md) - How to contribute
 
-## Development
+## 🔧 Development
 
-Each service can be developed independently. Use Docker Compose for local development with all services.
+### Prerequisites
+- Node.js 18+
+- PostgreSQL 15+
+- Docker (optional)
+- Expo CLI (for mobile)
 
-## License
+### Setup
 
-Proprietary
+1. **Clone repository**
+   ```bash
+   git clone https://github.com/moabdalla8101-lang/pmpro.git
+   cd pmpro
+   ```
 
+2. **Run setup script**
+   ```bash
+   ./scripts/setup.sh
+   ```
 
+3. **Set up database**
+   ```bash
+   ./scripts/db-setup.sh
+   ```
+
+4. **Start services**
+   ```bash
+   # Backend services
+   cd backend/user-service && npm run dev
+   cd ../content-service && npm run dev
+   cd ../analytics-service && npm run dev
+   
+   # Web admin
+   cd web-admin && npm run dev
+   
+   # Mobile app
+   cd mobile && npm start
+   ```
+
+## 🧪 Testing
+
+```bash
+# Backend tests
+cd backend/user-service && npm test
+cd ../content-service && npm test
+cd ../analytics-service && npm test
+```
+
+## 📦 API Endpoints
+
+### Authentication
+- `POST /api/auth/register` - Register new user
+- `POST /api/auth/login` - Login
+- `POST /api/auth/reset-password/request` - Request password reset
+
+### Questions
+- `GET /api/questions` - Get questions
+- `GET /api/questions/:id` - Get single question
+- `POST /api/questions` - Create question (admin)
+
+### Progress
+- `GET /api/progress` - Get user progress
+- `POST /api/progress/answer` - Record answer
+
+### Exams
+- `POST /api/exams/start` - Start mock exam
+- `POST /api/exams/:id/submit` - Submit exam
+
+See service-specific READMEs for complete API documentation.
+
+## 🚢 Deployment
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for production deployment instructions.
+
+### Docker
+```bash
+docker-compose -f infrastructure/docker/docker-compose.yml up
+```
+
+### Kubernetes
+```bash
+kubectl apply -f infrastructure/k8s/
+```
+
+## 📝 License
+
+Proprietary - All rights reserved
+
+## 🤝 Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
+
+## 📞 Support
+
+For issues and questions:
+- Check [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+- Open a GitHub issue
+- Review service-specific README files
+
+## 🎯 Roadmap
+
+- [ ] Complete OAuth integration (Google, Apple)
+- [ ] Push notifications
+- [ ] Offline mode
+- [ ] Study materials (notes, flashcards)
+- [ ] Community forum
+- [ ] AI-powered study coach
+
+## 🙏 Acknowledgments
+
+Built with modern web technologies and best practices for scalability and maintainability.
