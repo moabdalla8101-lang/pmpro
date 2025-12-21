@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import dotenv from 'dotenv';
 import { errorHandler } from './middleware/errorHandler';
 import { logger } from './middleware/logger';
+import { apiRateLimiter } from './middleware/rateLimiter';
 import questionRoutes from './routes/questions';
 import knowledgeAreaRoutes from './routes/knowledgeAreas';
 import certificationRoutes from './routes/certifications';
@@ -24,11 +25,11 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(logger);
 
-// Routes
-app.use('/api/questions', questionRoutes);
-app.use('/api/knowledge-areas', knowledgeAreaRoutes);
-app.use('/api/certifications', certificationRoutes);
-app.use('/api/import-export', importExportRoutes);
+// Routes with rate limiting
+app.use('/api/questions', apiRateLimiter, questionRoutes);
+app.use('/api/knowledge-areas', apiRateLimiter, knowledgeAreaRoutes);
+app.use('/api/certifications', apiRateLimiter, certificationRoutes);
+app.use('/api/import-export', apiRateLimiter, importExportRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

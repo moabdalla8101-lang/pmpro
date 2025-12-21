@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import dotenv from 'dotenv';
 import { errorHandler } from './middleware/errorHandler';
 import { logger } from './middleware/logger';
+import { apiRateLimiter } from './middleware/rateLimiter';
 import progressRoutes from './routes/progress';
 import analyticsRoutes from './routes/analytics';
 import examRoutes from './routes/exams';
@@ -24,11 +25,11 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(logger);
 
-// Routes
-app.use('/api/progress', progressRoutes);
-app.use('/api/analytics', analyticsRoutes);
-app.use('/api/exams', examRoutes);
-app.use('/api/badges', badgeRoutes);
+// Routes with rate limiting
+app.use('/api/progress', apiRateLimiter, progressRoutes);
+app.use('/api/analytics', apiRateLimiter, analyticsRoutes);
+app.use('/api/exams', apiRateLimiter, examRoutes);
+app.use('/api/badges', apiRateLimiter, badgeRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

@@ -8,6 +8,7 @@ import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
 import subscriptionRoutes from './routes/subscriptions';
 import adminRoutes from './routes/admin';
+import { authRateLimiter, apiRateLimiter } from './middleware/rateLimiter';
 
 dotenv.config();
 
@@ -24,11 +25,11 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(logger);
 
-// Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/subscriptions', subscriptionRoutes);
-app.use('/api/admin', adminRoutes);
+// Routes with rate limiting
+app.use('/api/auth', authRateLimiter, authRoutes);
+app.use('/api/users', apiRateLimiter, userRoutes);
+app.use('/api/subscriptions', apiRateLimiter, subscriptionRoutes);
+app.use('/api/admin', apiRateLimiter, adminRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
