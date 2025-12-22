@@ -17,11 +17,31 @@ export default function ProgressScreen() {
 
   const [timeRange, setTimeRange] = React.useState('all');
 
-  // Ensure accuracy is always a number
+  // Ensure accuracy is always a number (0-100 percentage)
   const accuracyValue = overallProgress?.accuracy;
-  const accuracy = typeof accuracyValue === 'number' ? accuracyValue : (typeof accuracyValue === 'string' ? parseFloat(accuracyValue) : 0);
+  let accuracy = 0;
+  if (accuracyValue !== null && accuracyValue !== undefined) {
+    if (typeof accuracyValue === 'number') {
+      accuracy = !isNaN(accuracyValue) ? accuracyValue : 0;
+    } else if (typeof accuracyValue === 'string') {
+      accuracy = parseFloat(accuracyValue) || 0;
+    }
+    // If accuracy is less than 1, it's a decimal (0.0-1.0), convert to percentage
+    if (accuracy > 0 && accuracy <= 1) {
+      accuracy = accuracy * 100;
+    }
+  }
   const totalAnswered = overallProgress?.totalQuestionsAnswered || overallProgress?.total_questions_answered || 0;
   const correctAnswers = overallProgress?.correctAnswers || overallProgress?.correct_answers || 0;
+  
+  // Debug log
+  console.log('Progress Screen - Progress Data:', {
+    accuracyValue,
+    accuracy,
+    totalAnswered,
+    correctAnswers,
+    overallProgress,
+  });
 
   // Mock data for charts (TODO: Get from backend)
   const accuracyOverTime = {
