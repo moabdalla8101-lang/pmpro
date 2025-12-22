@@ -27,8 +27,12 @@ export default function ExamScreen() {
     dispatch(fetchUserExams());
   }, [dispatch]);
 
-  // Filter only completed exams
-  const previousExams = exams.filter((exam) => exam.completedAt && exam.score !== undefined);
+  // Filter only completed exams - must have both completedAt and a valid score
+  const previousExams = exams.filter((exam) => {
+    const hasCompletedAt = exam.completedAt && exam.completedAt !== null;
+    const hasScore = exam.score !== null && exam.score !== undefined;
+    return hasCompletedAt && hasScore;
+  });
 
   return (
     <SafeAreaView style={styles.container}>
