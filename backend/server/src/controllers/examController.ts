@@ -174,9 +174,12 @@ export async function getUserExams(req: AuthRequest, res: Response, next: NextFu
       certificationId: exam.certification_id,
       startedAt: exam.started_at,
       completedAt: exam.completed_at,
-      totalQuestions: exam.total_questions,
-      correctAnswers: exam.correct_answers,
-      score: exam.score,
+      totalQuestions: exam.total_questions || 0,
+      correctAnswers: exam.correct_answers || 0,
+      // Ensure score is a number, default to 0 if null
+      score: exam.score !== null && exam.score !== undefined 
+        ? (typeof exam.score === 'number' ? exam.score : parseFloat(exam.score) || 0)
+        : null,
     }));
 
     res.json({ exams });

@@ -63,16 +63,29 @@ const examSlice = createSlice({
       .addCase(fetchUserExams.fulfilled, (state, action) => {
         state.isLoading = false;
         // Transform snake_case to camelCase (with fallback for camelCase)
-        state.exams = (action.payload.exams || []).map((exam: any) => ({
-          id: exam.id,
-          userId: exam.userId || exam.user_id,
-          certificationId: exam.certificationId || exam.certification_id,
-          startedAt: exam.startedAt || exam.started_at,
-          completedAt: exam.completedAt || exam.completed_at,
-          totalQuestions: exam.totalQuestions || exam.total_questions,
-          correctAnswers: exam.correctAnswers || exam.correct_answers,
-          score: exam.score,
-        }));
+        state.exams = (action.payload.exams || []).map((exam: any) => {
+          // Handle score - convert to number, default to null if not available
+          let score = null;
+          if (exam.score !== null && exam.score !== undefined) {
+            if (typeof exam.score === 'number') {
+              score = !isNaN(exam.score) ? exam.score : null;
+            } else if (typeof exam.score === 'string') {
+              const parsed = parseFloat(exam.score);
+              score = !isNaN(parsed) ? parsed : null;
+            }
+          }
+          
+          return {
+            id: exam.id,
+            userId: exam.userId || exam.user_id,
+            certificationId: exam.certificationId || exam.certification_id,
+            startedAt: exam.startedAt || exam.started_at,
+            completedAt: exam.completedAt || exam.completed_at,
+            totalQuestions: exam.totalQuestions || exam.total_questions || 0,
+            correctAnswers: exam.correctAnswers || exam.correct_answers || 0,
+            score: score,
+          };
+        });
       })
       .addCase(fetchUserExams.rejected, (state, action) => {
         state.isLoading = false;

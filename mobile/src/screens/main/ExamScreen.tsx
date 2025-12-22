@@ -127,20 +127,59 @@ export default function ExamScreen() {
         ) : (
           <View style={styles.examsList}>
             {previousExams.map((exam) => {
-              // Calculate duration
-              const startDate = new Date(exam.startedAt);
-              const endDate = exam.completedAt ? new Date(exam.completedAt) : new Date();
-              const durationMs = endDate.getTime() - startDate.getTime();
-              const durationMinutes = Math.floor(durationMs / 60000);
-              const durationHours = Math.floor(durationMinutes / 60);
-              const durationText = durationHours > 0 
-                ? `${durationHours}h ${durationMinutes % 60}m`
-                : `${durationMinutes}m`;
+              // Debug: Log exam data
+              console.log('Exam data:', {
+                id: exam.id,
+                score: exam.score,
+                scoreType: typeof exam.score,
+                startedAt: exam.startedAt,
+                completedAt: exam.completedAt,
+                totalQuestions: exam.totalQuestions,
+                correctAnswers: exam.correctAnswers,
+              });
 
-              // Format score
-              const score = typeof exam.score === 'number' && !isNaN(exam.score) 
-                ? exam.score 
-                : 0;
+              // Calculate duration - only if exam is completed
+              let durationText = 'N/A';
+              if (exam.completedAt && exam.startedAt) {
+                try {
+                  const startDate = new Date(exam.startedAt);
+                  const endDate = new Date(exam.completedAt);
+                  
+                  // Check if dates are valid
+                  if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+                    const durationMs = endDate.getTime() - startDate.getTime();
+                    if (durationMs > 0) {
+                      const durationMinutes = Math.floor(durationMs / 60000);
+                      const durationHours = Math.floor(durationMinutes / 60);
+                      durationText = durationHours > 0 
+                        ? `${durationHours}h ${durationMinutes % 60}m`
+                        : `${durationMinutes}m`;
+                    } else {
+                      console.warn('Duration is 0 or negative:', durationMs);
+                    }
+                  } else {
+                    console.warn('Invalid dates:', { startDate, endDate });
+                  }
+                } catch (error) {
+                  console.error('Error calculating duration:', error, exam);
+                }
+              } else {
+                console.warn('Missing dates:', { completedAt: exam.completedAt, startedAt: exam.startedAt });
+              }
+
+              // Format score - handle null, undefined, or string values
+              let score: number | null = null;
+              if (exam.score !== null && exam.score !== undefined) {
+                if (typeof exam.score === 'number') {
+                  score = !isNaN(exam.score) ? exam.score : null;
+                } else if (typeof exam.score === 'string') {
+                  const parsed = parseFloat(exam.score);
+                  score = !isNaN(parsed) ? parsed : null;
+                }
+              }
+              
+              // Display score or "N/A" if not available
+              const scoreDisplay = score !== null ? `${score.toFixed(1)}%` : 'N/A';
 
               return (
                 <Card key={exam.id} style={styles.examResultCard}>
@@ -160,7 +199,7 @@ export default function ExamScreen() {
                       </View>
                       <View style={styles.examResultScore}>
                         <Text variant="headlineSmall" style={styles.examResultScoreText}>
-                          {score.toFixed(1)}%
+                          {scoreDisplay}
                         </Text>
                         <Text variant="bodySmall" style={styles.examResultScoreLabel}>
                           Score
