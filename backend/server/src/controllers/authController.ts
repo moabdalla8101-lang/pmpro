@@ -67,52 +67,26 @@ export async function register(req: Request, res: Response, next: NextFunction) 
 
 export async function login(req: Request, res: Response, next: NextFunction) {
   try {
-    // #region agent log
-    const fs = require('fs');
-    const logPath = '/Users/mohamed/Documents/pmpro/.cursor/debug.log';
-    fs.appendFileSync(logPath, JSON.stringify({location:'authController.ts:68',message:'Login endpoint called',data:{email:req.body?.email,hasPassword:!!req.body?.password,passwordLength:req.body?.password?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2,H3'})+'\n');
-    // #endregion
     const { email, password } = req.body;
 
-    // #region agent log
-    fs.appendFileSync(logPath, JSON.stringify({location:'authController.ts:72',message:'Querying database for user',data:{email},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})+'\n');
-    // #endregion
     // Find user
     const result = await pool.query(
       'SELECT id, email, password_hash, first_name, last_name, role, subscription_tier FROM users WHERE email = $1',
       [email]
     );
 
-    // #region agent log
-    fs.appendFileSync(logPath, JSON.stringify({location:'authController.ts:78',message:'Database query result',data:{userFound:result.rows.length>0,userId:result.rows[0]?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})+'\n');
-    // #endregion
     if (result.rows.length === 0) {
-      // #region agent log
-      fs.appendFileSync(logPath, JSON.stringify({location:'authController.ts:80',message:'User not found',data:{email},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})+'\n');
-      // #endregion
       return next(new UnauthorizedError('Invalid email or password'));
     }
 
     const user = result.rows[0];
 
-    // #region agent log
-    fs.appendFileSync(logPath, JSON.stringify({location:'authController.ts:85',message:'Comparing password',data:{userId:user.id,hasPasswordHash:!!user.password_hash},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})+'\n');
-    // #endregion
     // Verify password
     const isValid = await comparePassword(password, user.password_hash);
-    // #region agent log
-    fs.appendFileSync(logPath, JSON.stringify({location:'authController.ts:87',message:'Password comparison result',data:{isValid},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})+'\n');
-    // #endregion
     if (!isValid) {
-      // #region agent log
-      fs.appendFileSync(logPath, JSON.stringify({location:'authController.ts:88',message:'Password invalid',data:{userId:user.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})+'\n');
-      // #endregion
       return next(new UnauthorizedError('Invalid email or password'));
     }
 
-    // #region agent log
-    fs.appendFileSync(logPath, JSON.stringify({location:'authController.ts:92',message:'Generating token',data:{userId:user.id,email:user.email,role:user.role},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})+'\n');
-    // #endregion
     // Generate token
     const token = generateToken({
       userId: user.id,
@@ -120,9 +94,6 @@ export async function login(req: Request, res: Response, next: NextFunction) {
       role: user.role
     });
 
-    // #region agent log
-    fs.appendFileSync(logPath, JSON.stringify({location:'authController.ts:100',message:'Sending login response',data:{hasToken:!!token,tokenLength:token?.length,userId:user.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})+'\n');
-    // #endregion
     res.json({
       user: {
         id: user.id,
@@ -135,11 +106,6 @@ export async function login(req: Request, res: Response, next: NextFunction) {
       token
     });
   } catch (error) {
-    // #region agent log
-    const fs = require('fs');
-    const logPath = '/Users/mohamed/Documents/pmpro/.cursor/debug.log';
-    fs.appendFileSync(logPath, JSON.stringify({location:'authController.ts:109',message:'Login endpoint error',data:{errorMessage:error?.message,errorStack:error?.stack},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})+'\n');
-    // #endregion
     next(error);
   }
 }

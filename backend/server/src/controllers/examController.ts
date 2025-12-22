@@ -140,7 +140,18 @@ export async function getExam(req: AuthRequest, res: Response, next: NextFunctio
       return next(new NotFoundError('Exam not found'));
     }
 
-    res.json(result.rows[0]);
+    // Transform to camelCase for API response
+    const exam = result.rows[0];
+    res.json({
+      id: exam.id,
+      userId: exam.user_id,
+      certificationId: exam.certification_id,
+      startedAt: exam.started_at,
+      completedAt: exam.completed_at,
+      totalQuestions: exam.total_questions,
+      correctAnswers: exam.correct_answers,
+      score: exam.score,
+    });
   } catch (error) {
     next(error);
   }
@@ -156,7 +167,19 @@ export async function getUserExams(req: AuthRequest, res: Response, next: NextFu
       [req.user!.userId]
     );
 
-    res.json({ exams: result.rows });
+    // Transform to camelCase for API response
+    const exams = result.rows.map((exam: any) => ({
+      id: exam.id,
+      userId: exam.user_id,
+      certificationId: exam.certification_id,
+      startedAt: exam.started_at,
+      completedAt: exam.completed_at,
+      totalQuestions: exam.total_questions,
+      correctAnswers: exam.correct_answers,
+      score: exam.score,
+    }));
+
+    res.json({ exams });
   } catch (error) {
     next(error);
   }
@@ -193,9 +216,32 @@ export async function getExamReview(req: AuthRequest, res: Response, next: NextF
       [req.user!.userId, id]
     );
 
+    // Transform to camelCase for API response
+    const exam = examResult.rows[0];
+    const answers = answersResult.rows.map((answer: any) => ({
+      id: answer.id,
+      userId: answer.user_id,
+      questionId: answer.question_id,
+      answerId: answer.answer_id,
+      isCorrect: answer.is_correct,
+      answeredAt: answer.answered_at,
+      questionText: answer.question_text,
+      explanation: answer.explanation,
+      answerText: answer.answer_text,
+    }));
+
     res.json({
-      exam: examResult.rows[0],
-      answers: answersResult.rows
+      exam: {
+        id: exam.id,
+        userId: exam.user_id,
+        certificationId: exam.certification_id,
+        startedAt: exam.started_at,
+        completedAt: exam.completed_at,
+        totalQuestions: exam.total_questions,
+        correctAnswers: exam.correct_answers,
+        score: exam.score,
+      },
+      answers
     });
   } catch (error) {
     next(error);

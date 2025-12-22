@@ -1,13 +1,12 @@
 import React, { useEffect } from 'react';
 import { View, StyleSheet, ScrollView, SafeAreaView } from 'react-native';
-import { Card, Text, ActivityIndicator } from 'react-native-paper';
+import { Card, Text, ActivityIndicator, ProgressBar } from 'react-native-paper';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { fetchProgress } from '../../store/slices/progressSlice';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {
-  StatCard,
-  ProgressRing,
   ActionButton,
   SectionHeader,
   StreakBadge,
@@ -49,14 +48,9 @@ export default function DashboardScreen() {
 
   // Ensure accuracy is always a number
   const accuracyValue = overallProgress?.accuracy;
-  const accuracy = typeof accuracyValue === 'number' ? accuracyValue : (typeof accuracyValue === 'string' ? parseFloat(accuracyValue) : 0);
+  const accuracy = typeof accuracyValue === 'number' && !isNaN(accuracyValue) ? accuracyValue : (typeof accuracyValue === 'string' ? parseFloat(accuracyValue) || 0 : 0);
   const totalAnswered = overallProgress?.totalQuestionsAnswered || overallProgress?.total_questions_answered || 0;
   const correctAnswers = overallProgress?.correctAnswers || overallProgress?.correct_answers || 0;
-  // #region agent log
-  React.useEffect(() => {
-    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DashboardScreen.tsx:45',message:'Accuracy value check',data:{accuracyValue,accuracy,accuracyType:typeof accuracy,isNaN:isNaN(accuracy),totalAnswered,correctAnswers},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'accuracy-error'})}).catch(()=>{});
-  }, [accuracyValue, accuracy, totalAnswered, correctAnswers]);
-  // #endregion
   const streakDays = 7; // TODO: Get from backend
 
   if (isLoading && !overallProgress) {
@@ -87,41 +81,83 @@ export default function DashboardScreen() {
           <StreakBadge days={streakDays} size="medium" />
         </View>
 
-        {/* Progress Overview */}
+        {/* Progress Overview - Redesigned */}
         <SectionHeader title="Your Progress" icon="chart-line" />
-        <View style={styles.progressContainer}>
-          <View style={styles.progressRingContainer}>
-            <ProgressRing
-              progress={(!isNaN(accuracy) && typeof accuracy === 'number' ? accuracy : 0)}
-              size={140}
-              strokeWidth={14}
-              color={colors.primary}
-              label="Overall Accuracy"
-            />
-          </View>
-          <View style={styles.statsRow}>
-            <StatCard
-              title="Questions"
-              value={totalAnswered}
-              icon="book-open-variant"
-              iconColor={colors.info}
-              subtitle="Total answered"
-            />
-            <StatCard
-              title="Correct"
-              value={correctAnswers}
-              icon="check-circle"
-              iconColor={colors.success}
-              subtitle="Right answers"
-            />
-          </View>
-        </View>
+        <Card style={styles.progressCard}>
+          <Card.Content style={styles.progressCardContent}>
+            {/* Main Accuracy Display */}
+            <View style={styles.accuracySection}>
+              <View style={styles.accuracyHeader}>
+                <Text variant="titleMedium" style={styles.accuracyLabel}>
+                  Overall Accuracy
+                </Text>
+                <Text variant="displaySmall" style={styles.accuracyValue}>
+                  {accuracy.toFixed(0)}%
+                </Text>
+              </View>
+              <ProgressBar
+                progress={accuracy / 100}
+                color={colors.primary}
+                style={styles.accuracyProgressBar}
+              />
+            </View>
+
+            {/* Stats Grid */}
+            <View style={styles.statsGrid}>
+              <View style={styles.statItem}>
+                <View style={[styles.statIconContainer, { backgroundColor: `${colors.info}15` }]}>
+                  <Icon name="book-open-variant" size={28} color={colors.info} />
+                </View>
+                <View style={styles.statTextContainer}>
+                  <Text variant="headlineSmall" style={styles.statValue}>
+                    {totalAnswered}
+                  </Text>
+                  <Text variant="bodySmall" style={styles.statLabel}>
+                    Questions
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.statDivider} />
+
+              <View style={styles.statItem}>
+                <View style={[styles.statIconContainer, { backgroundColor: `${colors.success}15` }]}>
+                  <Icon name="check-circle" size={28} color={colors.success} />
+                </View>
+                <View style={styles.statTextContainer}>
+                  <Text variant="headlineSmall" style={styles.statValue}>
+                    {correctAnswers}
+                  </Text>
+                  <Text variant="bodySmall" style={styles.statLabel}>
+                    Correct
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.statDivider} />
+
+              <View style={styles.statItem}>
+                <View style={[styles.statIconContainer, { backgroundColor: `${colors.warning}15` }]}>
+                  <Icon name="target" size={28} color={colors.warning} />
+                </View>
+                <View style={styles.statTextContainer}>
+                  <Text variant="headlineSmall" style={styles.statValue}>
+                    {totalAnswered > 0 ? ((correctAnswers / totalAnswered) * 100).toFixed(0) : 0}%
+                  </Text>
+                  <Text variant="bodySmall" style={styles.statLabel}>
+                    Success Rate
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </Card.Content>
+        </Card>
 
         {/* Today's Quiz */}
         <Card style={styles.card}>
           <Card.Content style={styles.cardContent}>
             <View style={styles.quizHeader}>
-              <View>
+              <View style={styles.quizTextContainer}>
                 <Text variant="titleLarge" style={styles.cardTitle}>
                   Today's Quiz
                 </Text>
@@ -215,7 +251,7 @@ export default function DashboardScreen() {
                 People
               </Text>
               <Text variant="headlineSmall" style={[styles.domainValue, { color: colors.domain.people }]}>
-                {(!isNaN(accuracy) && typeof accuracy === 'number' ? accuracy.toFixed(0) : '0')}%
+                {accuracy.toFixed(0)}%
               </Text>
             </Card.Content>
           </Card>
@@ -225,7 +261,7 @@ export default function DashboardScreen() {
                 Process
               </Text>
               <Text variant="headlineSmall" style={[styles.domainValue, { color: colors.domain.process }]}>
-                {(!isNaN(accuracy) && typeof accuracy === 'number' ? accuracy.toFixed(0) : '0')}%
+                {accuracy.toFixed(0)}%
               </Text>
             </Card.Content>
           </Card>
@@ -235,7 +271,7 @@ export default function DashboardScreen() {
                 Business
               </Text>
               <Text variant="headlineSmall" style={[styles.domainValue, { color: colors.domain.business }]}>
-                {(!isNaN(accuracy) && typeof accuracy === 'number' ? accuracy.toFixed(0) : '0')}%
+                {accuracy.toFixed(0)}%
               </Text>
             </Card.Content>
           </Card>
@@ -281,17 +317,72 @@ const styles = StyleSheet.create({
   greetingSubtext: {
     color: colors.textSecondary,
   },
-  progressContainer: {
+  progressCard: {
     marginBottom: spacing.lg,
+    borderRadius: borderRadius.lg,
+    ...shadows.md,
   },
-  progressRingContainer: {
-    alignItems: 'center',
-    marginBottom: spacing.base,
+  progressCardContent: {
+    padding: spacing.lg,
   },
-  statsRow: {
+  accuracySection: {
+    marginBottom: spacing.lg,
+    paddingBottom: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.gray200,
+  },
+  accuracyHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: spacing.base,
+    alignItems: 'flex-end',
+    marginBottom: spacing.md,
+  },
+  accuracyLabel: {
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  accuracyValue: {
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  accuracyProgressBar: {
+    height: 12,
+    borderRadius: borderRadius.sm,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+  },
+  statItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  statIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: borderRadius.md,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  statTextContainer: {
+    flex: 1,
+  },
+  statValue: {
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  statLabel: {
+    color: colors.textSecondary,
+  },
+  statDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: colors.gray200,
+    marginHorizontal: spacing.sm,
   },
   card: {
     marginBottom: spacing.lg,
@@ -306,6 +397,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: spacing.base,
+  },
+  quizTextContainer: {
+    flex: 1,
+    marginRight: spacing.sm,
   },
   cardTitle: {
     fontWeight: '700',

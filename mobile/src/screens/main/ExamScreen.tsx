@@ -1,17 +1,34 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, StyleSheet, ScrollView, SafeAreaView } from 'react-native';
-import { Card, Text } from 'react-native-paper';
-import { useNavigation } from '@react-navigation/native';
+import { Card, Text, ActivityIndicator } from 'react-native-paper';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useSelector, useDispatch } from 'react-redux';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { ActionButton, SectionHeader, EmptyState } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
+import { RootState, AppDispatch } from '../../store';
+import { fetchUserExams } from '../../store/slices/examSlice';
 
 export default function ExamScreen() {
   const navigation = useNavigation();
+  const dispatch = useDispatch<AppDispatch>();
+  const { exams, isLoading } = useSelector((state: RootState) => state.exams);
 
-  // TODO: Fetch previous exams from backend
-  const previousExams: any[] = [];
+  // Fetch exams when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      dispatch(fetchUserExams());
+    }, [dispatch])
+  );
+
+  // Also fetch on initial mount
+  useEffect(() => {
+    dispatch(fetchUserExams());
+  }, [dispatch]);
+
+  // Filter only completed exams
+  const previousExams = exams.filter((exam) => exam.completedAt && exam.score !== undefined);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -96,7 +113,12 @@ export default function ExamScreen() {
           icon="history"
         />
 
-        {previousExams.length === 0 ? (
+        {isLoading && previousExams.length === 0 ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.loadingText}>Loading exams...</Text>
+          </View>
+        ) : previousExams.length === 0 ? (
           <EmptyState
             icon="file-document-outline"
             title="No previous exams"
@@ -104,55 +126,76 @@ export default function ExamScreen() {
           />
         ) : (
           <View style={styles.examsList}>
-            {previousExams.map((exam: any) => (
-              <Card key={exam.id} style={styles.examResultCard}>
-                <Card.Content style={styles.examResultContent}>
-                  <View style={styles.examResultHeader}>
-                    <View>
-                      <Text variant="titleMedium" style={styles.examResultTitle}>
-                        Mock Exam #{exam.id}
-                      </Text>
-                      <Text variant="bodySmall" style={styles.examResultDate}>
-                        {new Date(exam.date).toLocaleDateString()}
-                      </Text>
+            {previousExams.map((exam) => {
+              // Calculate duration
+              const startDate = new Date(exam.startedAt);
+              const endDate = exam.completedAt ? new Date(exam.completedAt) : new Date();
+              const durationMs = endDate.getTime() - startDate.getTime();
+              const durationMinutes = Math.floor(durationMs / 60000);
+              const durationHours = Math.floor(durationMinutes / 60);
+              const durationText = durationHours > 0 
+                ? `${durationHours}h ${durationMinutes % 60}m`
+                : `${durationMinutes}m`;
+
+              // Format score
+              const score = typeof exam.score === 'number' && !isNaN(exam.score) 
+                ? exam.score 
+                : 0;
+
+              return (
+                <Card key={exam.id} style={styles.examResultCard}>
+                  <Card.Content style={styles.examResultContent}>
+                    <View style={styles.examResultHeader}>
+                      <View>
+                        <Text variant="titleMedium" style={styles.examResultTitle}>
+                          Mock Exam
+                        </Text>
+                        <Text variant="bodySmall" style={styles.examResultDate}>
+                          {new Date(exam.completedAt || exam.startedAt).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </Text>
+                      </View>
+                      <View style={styles.examResultScore}>
+                        <Text variant="headlineSmall" style={styles.examResultScoreText}>
+                          {score.toFixed(1)}%
+                        </Text>
+                        <Text variant="bodySmall" style={styles.examResultScoreLabel}>
+                          Score
+                        </Text>
+                      </View>
                     </View>
-                    <View style={styles.examResultScore}>
-                      <Text variant="headlineSmall" style={styles.examResultScoreText}>
-                        {exam.score}%
-                      </Text>
-                      <Text variant="bodySmall" style={styles.examResultScoreLabel}>
-                        Score
-                      </Text>
+                    <View style={styles.examResultDetails}>
+                      <View style={styles.examResultDetailItem}>
+                        <Text variant="bodySmall" style={styles.examResultDetailLabel}>
+                          Duration
+                        </Text>
+                        <Text variant="bodyMedium" style={styles.examResultDetailValue}>
+                          {durationText}
+                        </Text>
+                      </View>
+                      <View style={styles.examResultDetailItem}>
+                        <Text variant="bodySmall" style={styles.examResultDetailLabel}>
+                          Correct
+                        </Text>
+                        <Text variant="bodyMedium" style={styles.examResultDetailValue}>
+                          {exam.correctAnswers}/{exam.totalQuestions}
+                        </Text>
+                      </View>
                     </View>
-                  </View>
-                  <View style={styles.examResultDetails}>
-                    <View style={styles.examResultDetailItem}>
-                      <Text variant="bodySmall" style={styles.examResultDetailLabel}>
-                        Duration
-                      </Text>
-                      <Text variant="bodyMedium" style={styles.examResultDetailValue}>
-                        {exam.duration}
-                      </Text>
-                    </View>
-                    <View style={styles.examResultDetailItem}>
-                      <Text variant="bodySmall" style={styles.examResultDetailLabel}>
-                        Correct
-                      </Text>
-                      <Text variant="bodyMedium" style={styles.examResultDetailValue}>
-                        {exam.correct}/{exam.total}
-                      </Text>
-                    </View>
-                  </View>
-                  <ActionButton
-                    label="Review Exam"
-                    onPress={() => navigation.navigate('ExamReview' as never, { examId: exam.id } as never)}
-                    variant="outlined"
-                    size="small"
-                    fullWidth
-                  />
-                </Card.Content>
-              </Card>
-            ))}
+                    <ActionButton
+                      label="Review Exam"
+                      onPress={() => navigation.navigate('ExamReview' as never, { examId: exam.id } as never)}
+                      variant="outlined"
+                      size="small"
+                      fullWidth
+                    />
+                  </Card.Content>
+                </Card>
+              );
+            })}
           </View>
         )}
       </ScrollView>
@@ -171,6 +214,15 @@ const styles = StyleSheet.create({
   content: {
     padding: spacing.base,
     paddingBottom: spacing.xl,
+  },
+  loadingContainer: {
+    padding: spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: spacing.base,
+    color: colors.textSecondary,
   },
   examCard: {
     marginBottom: spacing.lg,

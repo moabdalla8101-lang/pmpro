@@ -121,7 +121,8 @@ export default function PracticeScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+      {/* Header Section */}
+      <View style={styles.headerContainer}>
         <SectionHeader
           title="Practice Questions"
           subtitle={`${questions.length} questions available`}
@@ -130,50 +131,52 @@ export default function PracticeScreen() {
       </View>
       
       {/* Filter Section */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterContainer}
-        style={styles.filterScrollView}
-      >
-        <CategoryBadge
-          label="All"
-          onPress={() => {
-            setSelectedDifficulty(null);
-            setSelectedKnowledgeArea(null);
-          }}
-          selected={!hasActiveFilters}
-          variant="pill"
-        />
-        {DIFFICULTIES.map((difficulty) => (
+      <View style={styles.filterWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterContainer}
+          style={styles.filterScrollView}
+        >
           <CategoryBadge
-            key={difficulty}
-            label={difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}
-            onPress={() => toggleDifficulty(difficulty)}
-            selected={selectedDifficulty === difficulty}
-            color={
-              difficulty === 'easy' ? colors.success :
-              difficulty === 'medium' ? colors.warning :
-              colors.error
-            }
-            variant="pill"
-          />
-        ))}
-        {hasActiveFilters && (
-          <TouchableOpacity
-            style={styles.clearButton}
+            label="All"
             onPress={() => {
               setSelectedDifficulty(null);
               setSelectedKnowledgeArea(null);
             }}
-          >
-            <Icon name="close-circle" size={20} color={colors.textSecondary} />
-            <Text variant="bodySmall" style={styles.clearButtonText}>
-              Clear
-            </Text>
-          </TouchableOpacity>
-        )}
-      </ScrollView>
+            selected={!hasActiveFilters}
+            variant="pill"
+          />
+          {DIFFICULTIES.map((difficulty) => (
+            <CategoryBadge
+              key={difficulty}
+              label={difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}
+              onPress={() => toggleDifficulty(difficulty)}
+              selected={selectedDifficulty === difficulty}
+              color={
+                difficulty === 'easy' ? colors.success :
+                difficulty === 'medium' ? colors.warning :
+                colors.error
+              }
+              variant="pill"
+            />
+          ))}
+          {hasActiveFilters && (
+            <TouchableOpacity
+              style={styles.clearButton}
+              onPress={() => {
+                setSelectedDifficulty(null);
+                setSelectedKnowledgeArea(null);
+              }}
+            >
+              <Icon name="close-circle" size={20} color={colors.textSecondary} />
+              <Text variant="bodySmall" style={styles.clearButtonText}>
+                Clear
+              </Text>
+            </TouchableOpacity>
+          )}
+        </ScrollView>
+      </View>
 
       <FlatList
         data={questions}
@@ -218,28 +221,32 @@ const styles = StyleSheet.create({
     marginTop: spacing.base,
     color: colors.textSecondary,
   },
-  header: {
+  headerContainer: {
     backgroundColor: '#ffffff',
     paddingTop: spacing.sm,
     paddingBottom: spacing.xs,
     ...shadows.sm,
   },
-  filterScrollView: {
-    maxHeight: 60,
-  },
-  filterContainer: {
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.sm,
+  filterWrapper: {
     backgroundColor: '#ffffff',
     borderBottomWidth: 1,
     borderBottomColor: colors.gray200,
+  },
+  filterScrollView: {
+    flexGrow: 0,
+  },
+  filterContainer: {
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    minHeight: 56,
   },
   clearButton: {
     flexDirection: 'row',
     alignItems: 'center',
     marginLeft: spacing.sm,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    paddingVertical: spacing.sm,
     borderRadius: borderRadius.pill,
     backgroundColor: colors.gray100,
   },
