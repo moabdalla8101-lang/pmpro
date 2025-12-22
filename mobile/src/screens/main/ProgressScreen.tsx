@@ -170,36 +170,48 @@ export default function ProgressScreen() {
         <SectionHeader title="By Knowledge Area" icon="book-open-page-variant" />
         {performanceByKnowledgeArea.length > 0 ? (
           <View style={styles.knowledgeAreas}>
-            {performanceByKnowledgeArea.map((area: any) => (
-              <Card key={area.knowledge_area_id} style={styles.areaCard}>
-                <Card.Content style={styles.areaContent}>
-                  <View style={styles.areaHeader}>
-                    <Text variant="titleMedium" style={styles.areaName}>
-                      {area.knowledge_area_name}
-                    </Text>
-                    <View style={styles.areaStats}>
-                      <Text variant="headlineSmall" style={styles.areaAccuracy}>
-                        {(() => {
-                          const areaAccuracy = typeof area.accuracy === 'number' ? area.accuracy : (typeof area.accuracy === 'string' ? parseFloat(area.accuracy) : 0);
-                          return (!isNaN(areaAccuracy) && typeof areaAccuracy === 'number' ? areaAccuracy.toFixed(1) : '0.0');
-                        })()}%
+            {performanceByKnowledgeArea.map((area: any) => {
+              // Handle accuracy conversion (decimal to percentage)
+              let areaAccuracy = area.accuracy || 0;
+              if (typeof areaAccuracy === 'number') {
+                areaAccuracy = !isNaN(areaAccuracy) ? areaAccuracy : 0;
+              } else if (typeof areaAccuracy === 'string') {
+                areaAccuracy = parseFloat(areaAccuracy) || 0;
+              }
+              // If accuracy is less than 1, it's a decimal (0.0-1.0), convert to percentage
+              if (areaAccuracy > 0 && areaAccuracy <= 1) {
+                areaAccuracy = areaAccuracy * 100;
+              }
+              
+              const areaName = area.knowledgeAreaName || area.knowledge_area_name || 'Unknown';
+              const totalAnswered = area.totalAnswered || area.total_answered || 0;
+              const correctAnswers = area.correctAnswers || area.correct_answers || 0;
+              
+              return (
+                <Card key={area.knowledgeAreaId || area.knowledge_area_id} style={styles.areaCard}>
+                  <Card.Content style={styles.areaContent}>
+                    <View style={styles.areaHeader}>
+                      <Text variant="titleMedium" style={styles.areaName}>
+                        {areaName}
                       </Text>
-                      <Text variant="bodySmall" style={styles.areaCount}>
-                        {area.correct_answers}/{area.total_answered}
-                      </Text>
+                      <View style={styles.areaStats}>
+                        <Text variant="headlineSmall" style={styles.areaAccuracy}>
+                          {(!isNaN(areaAccuracy) && typeof areaAccuracy === 'number' ? areaAccuracy.toFixed(1) : '0.0')}%
+                        </Text>
+                        <Text variant="bodySmall" style={styles.areaCount}>
+                          {correctAnswers}/{totalAnswered}
+                        </Text>
+                      </View>
                     </View>
-                  </View>
-                  <ProgressBar
-                    progress={(() => {
-                      const areaAccuracy = typeof area.accuracy === 'number' ? area.accuracy : (typeof area.accuracy === 'string' ? parseFloat(area.accuracy) : 0);
-                      return (!isNaN(areaAccuracy) && typeof areaAccuracy === 'number' ? areaAccuracy / 100 : 0);
-                    })()}
-                    color={colors.primary}
-                    style={styles.areaProgressBar}
-                  />
-                </Card.Content>
-              </Card>
-            ))}
+                    <ProgressBar
+                      progress={(!isNaN(areaAccuracy) && typeof areaAccuracy === 'number' ? areaAccuracy : 0) / 100}
+                      color={colors.primary}
+                      style={styles.areaProgressBar}
+                    />
+                  </Card.Content>
+                </Card>
+              );
+            })}
           </View>
         ) : (
           <Card style={styles.emptyCard}>
