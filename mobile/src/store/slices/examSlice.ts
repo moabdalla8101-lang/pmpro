@@ -42,6 +42,14 @@ export const fetchExam = createAsyncThunk(
   }
 );
 
+export const deleteExam = createAsyncThunk(
+  'exams/deleteExam',
+  async (examId: string) => {
+    await examService.deleteExam(examId);
+    return examId;
+  }
+);
+
 const examSlice = createSlice({
   name: 'exams',
   initialState,
@@ -113,6 +121,21 @@ const examSlice = createSlice({
       .addCase(fetchExam.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.error.message || 'Failed to fetch exam';
+      })
+      .addCase(deleteExam.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(deleteExam.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.exams = state.exams.filter((exam) => exam.id !== action.payload);
+        if (state.currentExam?.id === action.payload) {
+          state.currentExam = null;
+        }
+      })
+      .addCase(deleteExam.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.error.message || 'Failed to delete exam';
       });
   },
 });

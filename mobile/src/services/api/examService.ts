@@ -25,6 +25,11 @@ export const examService = {
     const response = await client.get('/api/exams');
     return response.data;
   },
+
+  async deleteExam(examId: string) {
+    const response = await client.delete(`/api/exams/${examId}`);
+    return response.data;
+  },
 };
 
 

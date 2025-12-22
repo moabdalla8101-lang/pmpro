@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, StyleSheet, ScrollView, SafeAreaView } from 'react-native';
+import { View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Alert } from 'react-native';
 import { Card, Text, ActivityIndicator } from 'react-native-paper';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useSelector, useDispatch } from 'react-redux';
@@ -8,7 +8,7 @@ import { ActionButton, SectionHeader, EmptyState } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { RootState, AppDispatch } from '../../store';
-import { fetchUserExams } from '../../store/slices/examSlice';
+import { fetchUserExams, deleteExam } from '../../store/slices/examSlice';
 
 export default function ExamScreen() {
   const navigation = useNavigation();
@@ -185,29 +185,64 @@ export default function ExamScreen() {
               // Display score or "N/A" if not available
               const scoreDisplay = score !== null ? `${score.toFixed(1)}%` : 'N/A';
 
+              const handleDelete = () => {
+                Alert.alert(
+                  'Delete Exam',
+                  'Are you sure you want to delete this exam? This action cannot be undone.',
+                  [
+                    {
+                      text: 'Cancel',
+                      style: 'cancel',
+                    },
+                    {
+                      text: 'Delete',
+                      style: 'destructive',
+                      onPress: async () => {
+                        try {
+                          await dispatch(deleteExam(exam.id)).unwrap();
+                        } catch (error: any) {
+                          Alert.alert('Error', error.message || 'Failed to delete exam');
+                        }
+                      },
+                    },
+                  ]
+                );
+              };
+
               return (
                 <Card key={exam.id} style={styles.examResultCard}>
                   <Card.Content style={styles.examResultContent}>
                     <View style={styles.examResultHeader}>
-                      <View>
-                        <Text variant="titleMedium" style={styles.examResultTitle}>
-                          Mock Exam
-                        </Text>
-                        <Text variant="bodySmall" style={styles.examResultDate}>
-                          {new Date(exam.completedAt || exam.startedAt).toLocaleDateString('en-US', {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric',
-                          })}
-                        </Text>
+                      <View style={styles.examResultHeaderLeft}>
+                        <View>
+                          <Text variant="titleMedium" style={styles.examResultTitle}>
+                            Mock Exam
+                          </Text>
+                          <Text variant="bodySmall" style={styles.examResultDate}>
+                            {new Date(exam.completedAt || exam.startedAt).toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </Text>
+                        </View>
                       </View>
-                      <View style={styles.examResultScore}>
-                        <Text variant="headlineSmall" style={styles.examResultScoreText}>
-                          {scoreDisplay}
-                        </Text>
-                        <Text variant="bodySmall" style={styles.examResultScoreLabel}>
-                          Score
-                        </Text>
+                      <View style={styles.examResultHeaderRight}>
+                        <View style={styles.examResultScore}>
+                          <Text variant="headlineSmall" style={styles.examResultScoreText}>
+                            {scoreDisplay}
+                          </Text>
+                          <Text variant="bodySmall" style={styles.examResultScoreLabel}>
+                            Score
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          onPress={handleDelete}
+                          style={styles.deleteButton}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <Icon name="delete-outline" size={20} color={colors.error} />
+                        </TouchableOpacity>
                       </View>
                     </View>
                     <View style={styles.examResultDetails}>
@@ -357,6 +392,13 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: spacing.base,
   },
+  examResultHeaderLeft: {
+    flex: 1,
+  },
+  examResultHeaderRight: {
+    alignItems: 'flex-end',
+    gap: spacing.xs,
+  },
   examResultTitle: {
     fontWeight: '600',
     color: colors.textPrimary,
@@ -367,6 +409,11 @@ const styles = StyleSheet.create({
   },
   examResultScore: {
     alignItems: 'flex-end',
+  },
+  deleteButton: {
+    padding: spacing.xs,
+    borderRadius: borderRadius.sm,
+    backgroundColor: `${colors.error}10`,
   },
   examResultScoreText: {
     fontWeight: '700',

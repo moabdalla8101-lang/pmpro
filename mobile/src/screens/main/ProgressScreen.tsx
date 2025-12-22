@@ -36,13 +36,20 @@ export default function ProgressScreen() {
   };
 
   const knowledgeAreaData = performanceByKnowledgeArea.length > 0
-    ? performanceByKnowledgeArea.map((area: any, index: number) => ({
-        name: area.knowledge_area_name?.substring(0, 10) || `Area ${index + 1}`,
-        accuracy: area.accuracy || 0,
-        color: Object.values(colors.knowledgeArea)[index % Object.keys(colors.knowledgeArea).length],
-        legendFontColor: colors.textSecondary,
-        legendFontSize: 12,
-      }))
+    ? performanceByKnowledgeArea.map((area: any, index: number) => {
+        let areaAccuracy = area.accuracy || 0;
+        // If accuracy is less than 1, it's a decimal (0.0-1.0), convert to percentage
+        if (areaAccuracy > 0 && areaAccuracy <= 1) {
+          areaAccuracy = areaAccuracy * 100;
+        }
+        return {
+          name: (area.knowledgeAreaName || area.knowledge_area_name || `Area ${index + 1}`).substring(0, 10),
+          accuracy: areaAccuracy,
+          color: Object.values(colors.knowledgeArea)[index % Object.keys(colors.knowledgeArea).length],
+          legendFontColor: colors.textSecondary,
+          legendFontSize: 12,
+        };
+      })
     : [
         { name: 'Integration', accuracy: 75, color: colors.knowledgeArea.integration, legendFontColor: colors.textSecondary, legendFontSize: 12 },
         { name: 'Scope', accuracy: 80, color: colors.knowledgeArea.scope, legendFontColor: colors.textSecondary, legendFontSize: 12 },

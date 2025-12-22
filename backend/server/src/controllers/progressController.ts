@@ -19,17 +19,33 @@ export async function getUserProgress(req: AuthRequest, res: Response, next: Nex
     const result = await pool.query(query, params);
 
     // Transform to camelCase and ensure numeric types
-    const progress = result.rows.map((row: any) => ({
-      id: row.id,
-      userId: row.user_id,
-      certificationId: row.certification_id,
-      totalQuestionsAnswered: parseInt(row.total_questions_answered || '0', 10),
-      correctAnswers: parseInt(row.correct_answers || '0', 10),
-      accuracy: typeof row.accuracy === 'number' ? row.accuracy : parseFloat(row.accuracy || '0'),
-      lastActivityAt: row.last_activity_at,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }));
+    // Accuracy is stored as decimal (0.0-1.0), convert to percentage (0-100)
+    const progress = result.rows.map((row: any) => {
+      let accuracy = 0;
+      if (row.accuracy !== null && row.accuracy !== undefined) {
+        if (typeof row.accuracy === 'number') {
+          accuracy = row.accuracy;
+        } else {
+          accuracy = parseFloat(row.accuracy || '0');
+        }
+        // If accuracy is less than 1, it's a decimal (0.0-1.0), convert to percentage
+        if (accuracy <= 1 && accuracy >= 0) {
+          accuracy = accuracy * 100;
+        }
+      }
+      
+      return {
+        id: row.id,
+        userId: row.user_id,
+        certificationId: row.certification_id,
+        totalQuestionsAnswered: parseInt(row.total_questions_answered || '0', 10),
+        correctAnswers: parseInt(row.correct_answers || '0', 10),
+        accuracy: accuracy,
+        lastActivityAt: row.last_activity_at,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      };
+    });
 
     res.json({ progress });
   } catch (error) {
