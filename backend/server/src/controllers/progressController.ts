@@ -143,7 +143,26 @@ export async function getPerformanceByKnowledgeArea(req: AuthRequest, res: Respo
       [req.user!.userId, certificationId]
     );
 
-    res.json({ performance: result.rows });
+    // Transform to camelCase and ensure numeric types
+    // Accuracy is already calculated as percentage in the query (multiplied by 100)
+    const performance = result.rows.map((row: any) => {
+      let accuracy = parseFloat(row.accuracy || '0');
+      // The query already multiplies by 100, so accuracy should be 0-100
+      // But handle edge case if it's still a decimal
+      if (accuracy > 0 && accuracy <= 1) {
+        accuracy = accuracy * 100;
+      }
+      
+      return {
+        knowledgeAreaId: row.knowledge_area_id,
+        knowledgeAreaName: row.knowledge_area_name,
+        totalAnswered: parseInt(row.total_answered || '0', 10),
+        correctAnswers: parseInt(row.correct_answers || '0', 10),
+        accuracy: accuracy,
+      };
+    });
+
+    res.json({ performance });
   } catch (error) {
     next(error);
   }
