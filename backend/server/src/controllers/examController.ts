@@ -201,16 +201,20 @@ export async function getExamReview(req: AuthRequest, res: Response, next: NextF
       return next(new NotFoundError('Exam not found'));
     }
 
-    // Get all answers for this exam
+    // Get all answers for this exam with knowledge area information
     const answersResult = await pool.query(
       `SELECT 
          ua.*,
          q.question_text,
          q.explanation,
+         q.difficulty,
+         q.knowledge_area_id,
+         ka.name as knowledge_area_name,
          a.answer_text,
          a.is_correct
        FROM user_answers ua
        JOIN questions q ON ua.question_id = q.id
+       LEFT JOIN knowledge_areas ka ON q.knowledge_area_id = ka.id
        JOIN answers a ON ua.answer_id = a.id
        WHERE ua.user_id = $1
        AND ua.answered_at >= (SELECT started_at FROM mock_exams WHERE id = $2)
@@ -231,6 +235,9 @@ export async function getExamReview(req: AuthRequest, res: Response, next: NextF
       questionText: answer.question_text,
       explanation: answer.explanation,
       answerText: answer.answer_text,
+      knowledgeAreaId: answer.knowledge_area_id,
+      knowledgeAreaName: answer.knowledge_area_name,
+      difficulty: answer.difficulty,
     }));
 
     res.json({

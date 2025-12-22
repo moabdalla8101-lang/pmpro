@@ -72,11 +72,18 @@ export default function ExamReviewScreen() {
   }
 
   const { exam, answers } = examData;
+  
+  // Debug: Log the exam data to see what we're getting
+  console.log('Exam Review - Exam Data:', exam);
+  console.log('Exam Review - Answers Count:', answers?.length);
+  console.log('Exam Review - First Answer:', answers?.[0]);
+  
   const score = typeof exam?.score === 'number' && !isNaN(exam.score) 
     ? exam.score 
     : (typeof exam?.score === 'string' ? parseFloat(exam.score) || 0 : 0);
-  const correctCount = exam?.correct_answers || 0;
-  const totalQuestions = exam?.total_questions || 0;
+  // Handle both camelCase and snake_case
+  const correctCount = exam?.correctAnswers || exam?.correct_answers || 0;
+  const totalQuestions = exam?.totalQuestions || exam?.total_questions || 0;
   const incorrectCount = totalQuestions - correctCount;
   const passThreshold = 61; // PMP passing score
   const hasPassed = score >= passThreshold;
@@ -84,6 +91,7 @@ export default function ExamReviewScreen() {
   // Calculate performance by knowledge area
   const knowledgeAreaStats: { [key: string]: { correct: number; total: number } } = {};
   answers?.forEach((item: any) => {
+    // Get knowledge area name, fallback to 'Other' if not available
     const area = item.knowledgeAreaName || item.knowledge_area_name || 'Other';
     if (!knowledgeAreaStats[area]) {
       knowledgeAreaStats[area] = { correct: 0, total: 0 };
@@ -93,6 +101,9 @@ export default function ExamReviewScreen() {
       knowledgeAreaStats[area].correct++;
     }
   });
+  
+  // Debug: Log knowledge area stats
+  console.log('Knowledge Area Stats:', knowledgeAreaStats);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -133,7 +144,7 @@ export default function ExamReviewScreen() {
           <Card style={[styles.statCard, { borderLeftColor: colors.success }]}>
             <Card.Content style={styles.statCardContent}>
               <View style={[styles.statIconCircle, { backgroundColor: `${colors.success}15` }]}>
-                <Icon name="check-circle" size={24} color={colors.success} />
+                <Icon name="check-circle" size={20} color={colors.success} />
               </View>
               <View style={styles.statTextContainer}>
                 <Text variant="headlineSmall" style={styles.statValue}>
@@ -149,7 +160,7 @@ export default function ExamReviewScreen() {
           <Card style={[styles.statCard, { borderLeftColor: colors.error }]}>
             <Card.Content style={styles.statCardContent}>
               <View style={[styles.statIconCircle, { backgroundColor: `${colors.error}15` }]}>
-                <Icon name="close-circle" size={24} color={colors.error} />
+                <Icon name="close-circle" size={20} color={colors.error} />
               </View>
               <View style={styles.statTextContainer}>
                 <Text variant="headlineSmall" style={styles.statValue}>
@@ -165,7 +176,7 @@ export default function ExamReviewScreen() {
           <Card style={[styles.statCard, { borderLeftColor: colors.primary }]}>
             <Card.Content style={styles.statCardContent}>
               <View style={[styles.statIconCircle, { backgroundColor: `${colors.primary}15` }]}>
-                <Icon name="help-circle" size={24} color={colors.primary} />
+                <Icon name="help-circle" size={20} color={colors.primary} />
               </View>
               <View style={styles.statTextContainer}>
                 <Text variant="headlineSmall" style={styles.statValue}>
@@ -429,26 +440,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: spacing.base,
     marginBottom: spacing.lg,
-    gap: spacing.base,
+    gap: spacing.sm,
   },
   statCard: {
     flex: 1,
-    borderRadius: borderRadius.lg,
-    borderLeftWidth: 4,
+    borderRadius: borderRadius.md,
+    borderLeftWidth: 3,
     ...shadows.sm,
   },
   statCardContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: spacing.base,
+    padding: spacing.sm,
   },
   statIconCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: borderRadius.md,
+    width: 36,
+    height: 36,
+    borderRadius: borderRadius.sm,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: spacing.sm,
+    marginRight: spacing.xs,
   },
   statTextContainer: {
     flex: 1,
@@ -456,10 +467,12 @@ const styles = StyleSheet.create({
   statValue: {
     fontWeight: '700',
     color: colors.textPrimary,
-    marginBottom: spacing.xs,
+    fontSize: 18,
+    marginBottom: 2,
   },
   statLabel: {
     color: colors.textSecondary,
+    fontSize: 11,
   },
   knowledgeAreaContainer: {
     paddingHorizontal: spacing.base,
