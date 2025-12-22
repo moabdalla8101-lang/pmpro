@@ -23,6 +23,7 @@ import progressRoutes from './routes/progress';
 import analyticsRoutes from './routes/analytics';
 import examRoutes from './routes/exams';
 import badgeRoutes from './routes/badges';
+import bookmarkRoutes from './routes/bookmarks';
 
 dotenv.config();
 
@@ -59,6 +60,7 @@ app.use('/api/progress', apiRateLimiter, progressRoutes);
 app.use('/api/analytics', apiRateLimiter, analyticsRoutes);
 app.use('/api/exams', apiRateLimiter, examRoutes);
 app.use('/api/badges', apiRateLimiter, badgeRoutes);
+app.use('/api/bookmarks', apiRateLimiter, bookmarkRoutes);
 
 // Root route - API information
 app.get('/', (req, res) => {

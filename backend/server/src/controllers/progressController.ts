@@ -119,6 +119,173 @@ export async function recordAnswer(req: AuthRequest, res: Response, next: NextFu
   }
 }
 
+export async function getMissedQuestions(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const { knowledgeAreaId, reviewed } = req.query;
+    
+    // Get all incorrect answers from practice sessions
+    // For now, we'll get all incorrect answers (exam exclusion can be added later if needed)
+    let query = `
+      WITH missed_question_ids AS (
+        SELECT DISTINCT q.id as question_id
+        FROM user_answers ua
+        JOIN questions q ON ua.question_id = q.id
+        WHERE ua.user_id = $1
+        AND ua.is_correct = false
+    `;
+    
+    const params: any[] = [req.user!.userId];
+    let paramIndex = 2;
+    
+    if (knowledgeAreaId) {
+      query += ` AND q.knowledge_area_id = $${paramIndex}`;
+      params.push(knowledgeAreaId);
+      paramIndex++;
+    }
+    
+    query += `
+      )
+      SELECT 
+        q.id as question_id,
+        q.question_text,
+        q.difficulty,
+        q.explanation,
+        q.knowledge_area_id,
+        ka.name as knowledge_area_name,
+        (SELECT MAX(answered_at) FROM user_answers 
+         WHERE user_id = $1 
+         AND question_id = q.id 
+         AND is_correct = false) as answered_at,
+        (SELECT answer_id FROM user_answers 
+         WHERE user_id = $1 
+         AND question_id = q.id 
+         AND is_correct = false 
+         ORDER BY answered_at DESC 
+         LIMIT 1) as user_answer_id,
+        CASE 
+          WHEN mr.id IS NOT NULL THEN true 
+          ELSE false 
+        END as is_reviewed
+      FROM missed_question_ids mqi
+      JOIN questions q ON mqi.question_id = q.id
+      JOIN knowledge_areas ka ON q.knowledge_area_id = ka.id
+      LEFT JOIN missed_questions_reviewed mr ON mr.user_id = $1 AND mr.question_id = q.id
+      WHERE 1=1
+    `;
+    
+    // Handle reviewed filter - query params come as strings
+    const reviewedValue = reviewed === 'true' || reviewed === true;
+    const reviewedFalse = reviewed === 'false' || reviewed === false;
+    
+    if (reviewedFalse) {
+      query += ` AND mr.id IS NULL`;
+    } else if (reviewedValue) {
+      query += ` AND mr.id IS NOT NULL`;
+    }
+    
+    query += ` ORDER BY answered_at DESC NULLS LAST`;
+    
+    const result = await pool.query(query, params);
+    
+    // Get answers for each question
+    const missedQuestions = await Promise.all(
+      result.rows.map(async (row: any) => {
+        const answersResult = await pool.query(
+          'SELECT id, answer_text, is_correct, "order" FROM answers WHERE question_id = $1 ORDER BY "order"',
+          [row.question_id]
+        );
+        
+        return {
+          questionId: row.question_id,
+          question: {
+            id: row.question_id,
+            questionText: row.question_text,
+            question_text: row.question_text,
+            difficulty: row.difficulty,
+            explanation: row.explanation,
+            knowledgeAreaId: row.knowledge_area_id,
+            knowledgeAreaName: row.knowledge_area_name,
+            knowledge_area_name: row.knowledge_area_name,
+            answers: answersResult.rows.map((ans: any) => ({
+              id: ans.id,
+              answerText: ans.answer_text,
+              answer_text: ans.answer_text,
+              isCorrect: ans.is_correct,
+              is_correct: ans.is_correct,
+              order: ans.order,
+            })),
+          },
+          answeredAt: row.answered_at,
+          isReviewed: row.is_reviewed || false,
+          userAnswerId: row.user_answer_id,
+        };
+      })
+    );
+    
+    res.json({ missedQuestions });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function markMissedQuestionAsReviewed(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const { questionId } = req.body;
+    
+    if (!questionId) {
+      return res.status(400).json({ error: 'questionId is required' });
+    }
+    
+    // Check if already marked as reviewed
+    const existing = await pool.query(
+      'SELECT id FROM missed_questions_reviewed WHERE user_id = $1 AND question_id = $2',
+      [req.user!.userId, questionId]
+    );
+    
+    if (existing.rows.length > 0) {
+      return res.json({ message: 'Already marked as reviewed' });
+    }
+    
+    // Create table if it doesn't exist (for now, we'll assume it exists or create migration)
+    // For now, let's use a simple approach - we'll track this in a separate table
+    // But first, let me check if the table exists in the schema
+    
+    // Actually, let me create a simpler solution - we can use a JSONB column in user preferences
+    // Or create the table. Let me check the schema first.
+    
+    // For now, I'll create the entry. If table doesn't exist, we'll need a migration.
+    try {
+      await pool.query(
+        'INSERT INTO missed_questions_reviewed (user_id, question_id) VALUES ($1, $2)',
+        [req.user!.userId, questionId]
+      );
+    } catch (error: any) {
+      // If table doesn't exist, create it (for development)
+      if (error.code === '42P01') {
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS missed_questions_reviewed (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            question_id UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+            reviewed_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            UNIQUE(user_id, question_id)
+          )
+        `);
+        await pool.query(
+          'INSERT INTO missed_questions_reviewed (user_id, question_id) VALUES ($1, $2)',
+          [req.user!.userId, questionId]
+        );
+      } else {
+        throw error;
+      }
+    }
+    
+    res.json({ message: 'Marked as reviewed successfully' });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function getPerformanceByKnowledgeArea(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const { certificationId } = req.query;

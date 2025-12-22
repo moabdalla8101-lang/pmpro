@@ -5,6 +5,7 @@ import { useRoute } from '@react-navigation/native';
 import { useSelector, useDispatch } from 'react-redux';
 import { fetchQuestion } from '../../store/slices/questionSlice';
 import { progressService } from '../../services/api/progressService';
+import { addBookmark, removeBookmark, checkBookmark } from '../../store/slices/bookmarkSlice';
 import { RootState, AppDispatch } from '../../store';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { CategoryBadge, ActionButton } from '../../components';
@@ -13,42 +14,163 @@ import { spacing, borderRadius, shadows } from '../../utils/styles';
 
 export default function QuestionDetailScreen() {
   const route = useRoute();
-  const { questionId } = route.params as { questionId: string };
+  const { questionId } = (route.params as { questionId?: string }) || {};
+  
+  // Safety check - if questionId is missing, return early
+  if (!questionId) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>Loading question...</Text>
+      </SafeAreaView>
+    );
+  }
   const dispatch = useDispatch<AppDispatch>();
   const { currentQuestion, isLoading } = useSelector((state: RootState) => state.questions);
+  const { bookmarkedQuestionIds } = useSelector((state: RootState) => state.bookmarks);
   
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
+  const [selectedAnswers, setSelectedAnswers] = useState<string[]>([]); // For multiple selection
   const [showExplanation, setShowExplanation] = useState(false);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [isBookmarked, setIsBookmarked] = useState(false);
+  
+  // Determine if question supports multiple selection
+  const isMultipleSelection = currentQuestion?.questionType === 'select_multiple' || 
+                              currentQuestion?.question_type === 'select_multiple';
+
+  // Track previous questionId to detect when it actually changes
+  const prevQuestionIdRef = React.useRef<string | undefined>(questionId);
 
   useEffect(() => {
-    if (questionId && !currentQuestion) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QuestionDetailScreen.tsx:28',message:'QuestionDetailScreen useEffect - questionId changed',data:{questionId,prevQuestionId:prevQuestionIdRef.current,currentQuestionId:currentQuestion?.id,shouldFetch:questionId && currentQuestion?.id !== questionId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H2'})}).catch(()=>{});
+    // #endregion
+    // Always fetch if questionId changes or if currentQuestion doesn't match questionId
+    if (questionId && (currentQuestion?.id !== questionId)) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QuestionDetailScreen.tsx:32',message:'Dispatching fetchQuestion',data:{questionId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
+      // #endregion
       dispatch(fetchQuestion(questionId));
+      // Reset local state when question changes to a DIFFERENT question
+      if (prevQuestionIdRef.current && prevQuestionIdRef.current !== questionId) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QuestionDetailScreen.tsx:40',message:'Resetting state - question changed',data:{prevQuestionId:prevQuestionIdRef.current,newQuestionId:questionId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
+        // #endregion
+        setSelectedAnswer(null);
+        setSelectedAnswers([]);
+        setShowExplanation(false);
+        setIsCorrect(null);
+      }
+      prevQuestionIdRef.current = questionId;
+    }
+  }, [questionId, currentQuestion?.id, dispatch]);
+
+  // #region agent log
+  useEffect(() => {
+    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QuestionDetailScreen.tsx:48',message:'Render state check',data:{isLoading,hasCurrentQuestion:!!currentQuestion,currentQuestionId:currentQuestion?.id,questionId,matches:currentQuestion?.id === questionId,showExplanation},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2,H3'})}).catch(()=>{});
+  }, [isLoading, currentQuestion, questionId, showExplanation]);
+  // #endregion
+
+  useEffect(() => {
+    if (questionId) {
+      dispatch(checkBookmark(questionId) as any);
     }
   }, [questionId, dispatch]);
 
   useEffect(() => {
-    if (currentQuestion && currentQuestion.id === questionId) {
-      setSelectedAnswer(null);
-      setShowExplanation(false);
-      setIsCorrect(null);
+    setIsBookmarked(bookmarkedQuestionIds.includes(questionId));
+  }, [bookmarkedQuestionIds, questionId]);
+
+  const handleToggleBookmark = async () => {
+    if (isBookmarked) {
+      await dispatch(removeBookmark(questionId) as any);
+    } else {
+      await dispatch(addBookmark(questionId) as any);
     }
-  }, [currentQuestion, questionId]);
+  };
 
   const handleSubmit = async () => {
-    if (!selectedAnswer || !currentQuestion) return;
+    if (!currentQuestion) return;
+    
+    // For multiple selection, check if at least one answer is selected
+    if (isMultipleSelection && selectedAnswers.length === 0) {
+      return;
+    }
+    
+    // For single selection, check if an answer is selected
+    if (!isMultipleSelection && !selectedAnswer) {
+      return;
+    }
 
     setSubmitting(true);
     try {
-      const result = await progressService.recordAnswer(questionId, selectedAnswer);
-      setIsCorrect(result.isCorrect);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QuestionDetailScreen.tsx:88',message:'handleSubmit called',data:{questionId,selectedAnswer,selectedAnswers,isMultipleSelection,hasCurrentQuestion:!!currentQuestion},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H4'})}).catch(()=>{});
+      // #endregion
+      
+      if (isMultipleSelection) {
+        // For multiple selection, record all answers and check if all are correct
+        let allCorrect = true;
+        let correctCount = 0;
+        let totalCorrectAnswers = 0;
+        
+        // Count total correct answers for this question
+        currentQuestion.answers?.forEach((a: any) => {
+          if (a.isCorrect || a.is_correct) {
+            totalCorrectAnswers++;
+          }
+        });
+        
+        // Record each selected answer
+        for (const answerId of selectedAnswers) {
+          const result = await progressService.recordAnswer(questionId, answerId);
+          const answer = currentQuestion.answers?.find((a: any) => a.id === answerId);
+          const isAnswerCorrect = answer?.isCorrect || answer?.is_correct || false;
+          
+          if (isAnswerCorrect) {
+            correctCount++;
+          } else {
+            allCorrect = false;
+          }
+        }
+        
+        // For multiple selection, all selected must be correct AND all correct must be selected
+        const allCorrectSelected = allCorrect && correctCount === totalCorrectAnswers && selectedAnswers.length === totalCorrectAnswers;
+        setIsCorrect(allCorrectSelected);
+      } else {
+        // Single selection
+        const result = await progressService.recordAnswer(questionId, selectedAnswer!);
+        setIsCorrect(result.isCorrect);
+      }
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QuestionDetailScreen.tsx:120',message:'Answer recorded, setting explanation',data:{isCorrect},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H4'})}).catch(()=>{});
+      // #endregion
+      
       setShowExplanation(true);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QuestionDetailScreen.tsx:124',message:'Explanation state set to true',data:{isCorrect},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H4'})}).catch(()=>{});
+      // #endregion
     } catch (error: any) {
       console.error('Failed to record answer:', error);
-      // Still show explanation based on selected answer
-      const answer = currentQuestion.answers?.find((a: any) => a.id === selectedAnswer);
-      setIsCorrect(answer?.isCorrect || false);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QuestionDetailScreen.tsx:127',message:'Error recording answer, showing explanation anyway',data:{error:error?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H4'})}).catch(()=>{});
+      // #endregion
+      // Still show explanation based on selected answer(s)
+      if (isMultipleSelection) {
+        // Check if all selected are correct and all correct are selected
+        const correctAnswers = currentQuestion.answers?.filter((a: any) => a.isCorrect || a.is_correct) || [];
+        const selectedCorrect = selectedAnswers.filter(id => {
+          const answer = currentQuestion.answers?.find((a: any) => a.id === id);
+          return answer?.isCorrect || answer?.is_correct;
+        });
+        setIsCorrect(selectedCorrect.length === correctAnswers.length && selectedAnswers.length === correctAnswers.length);
+      } else {
+        const answer = currentQuestion.answers?.find((a: any) => a.id === selectedAnswer);
+        setIsCorrect(answer?.isCorrect || answer?.is_correct || false);
+      }
       setShowExplanation(true);
     } finally {
       setSubmitting(false);
@@ -56,53 +178,82 @@ export default function QuestionDetailScreen() {
   };
 
   const getAnswerStyle = (answerId: string) => {
-    if (!showExplanation || selectedAnswer !== answerId) {
-      return selectedAnswer === answerId
+    const isSelected = isMultipleSelection 
+      ? selectedAnswers.includes(answerId)
+      : selectedAnswer === answerId;
+    
+    if (!showExplanation) {
+      return isSelected
         ? [styles.answerOption, styles.answerOptionSelected]
         : styles.answerOption;
     }
     
+    // Show explanation styles
     const answer = currentQuestion?.answers?.find((a: any) => a.id === answerId);
-    if (answer?.isCorrect) {
+    const isAnswerCorrect = answer?.isCorrect || answer?.is_correct || false;
+    
+    if (isAnswerCorrect) {
       return [styles.answerOption, styles.answerOptionCorrect];
     }
-    if (selectedAnswer === answerId && !answer?.isCorrect) {
+    if (isSelected && !isAnswerCorrect) {
       return [styles.answerOption, styles.answerOptionIncorrect];
     }
     return styles.answerOption;
   };
 
   const getAnswerIcon = (answerId: string) => {
+    const isSelected = isMultipleSelection 
+      ? selectedAnswers.includes(answerId)
+      : selectedAnswer === answerId;
+    
     if (!showExplanation) {
-      return selectedAnswer === answerId ? 'radiobox-marked' : 'radiobox-blank';
+      if (isMultipleSelection) {
+        return isSelected ? 'checkbox-marked' : 'checkbox-blank-outline';
+      } else {
+        return isSelected ? 'radiobox-marked' : 'radiobox-blank';
+      }
     }
     
+    // Show explanation icons
     const answer = currentQuestion?.answers?.find((a: any) => a.id === answerId);
-    if (answer?.isCorrect) {
+    const isAnswerCorrect = answer?.isCorrect || answer?.is_correct || false;
+    
+    if (isAnswerCorrect) {
       return 'check-circle';
     }
-    if (selectedAnswer === answerId && !answer?.isCorrect) {
+    if (isSelected && !isAnswerCorrect) {
       return 'close-circle';
     }
-    return 'circle-outline';
+    return isMultipleSelection ? 'checkbox-blank-outline' : 'circle-outline';
   };
 
   const getAnswerIconColor = (answerId: string) => {
+    const isSelected = isMultipleSelection 
+      ? selectedAnswers.includes(answerId)
+      : selectedAnswer === answerId;
+    
     if (!showExplanation) {
-      return selectedAnswer === answerId ? colors.primary : colors.gray400;
+      return isSelected ? colors.primary : colors.gray400;
     }
     
+    // Show explanation colors
     const answer = currentQuestion?.answers?.find((a: any) => a.id === answerId);
-    if (answer?.isCorrect) {
+    const isAnswerCorrect = answer?.isCorrect || answer?.is_correct || false;
+    
+    if (isAnswerCorrect) {
       return colors.success;
     }
-    if (selectedAnswer === answerId && !answer?.isCorrect) {
+    if (isSelected && !isAnswerCorrect) {
       return colors.error;
     }
     return colors.gray400;
   };
 
-  if (isLoading || !currentQuestion) {
+  // Show loading if fetching or if current question doesn't match route questionId
+  if (isLoading || !currentQuestion || currentQuestion.id !== questionId) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QuestionDetailScreen.tsx:144',message:'Render check - showing loading',data:{isLoading,hasCurrentQuestion:!!currentQuestion,currentQuestionId:currentQuestion?.id,questionId,matches:currentQuestion?.id === questionId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2,H3'})}).catch(()=>{});
+    // #endregion
     return (
       <SafeAreaView style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary} />
@@ -123,21 +274,34 @@ export default function QuestionDetailScreen() {
       >
         {/* Question Header */}
         <View style={styles.header}>
-          {knowledgeArea && (
+          <View style={styles.headerLeft}>
+            {knowledgeArea && (
+              <CategoryBadge
+                label={knowledgeArea}
+                variant="outlined"
+              />
+            )}
             <CategoryBadge
-              label={knowledgeArea}
-              variant="outlined"
+              label={difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}
+              color={
+                difficulty === 'easy' ? colors.success :
+                difficulty === 'medium' ? colors.warning :
+                colors.error
+              }
+              variant="pill"
             />
-          )}
-          <CategoryBadge
-            label={difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}
-            color={
-              difficulty === 'easy' ? colors.success :
-              difficulty === 'medium' ? colors.warning :
-              colors.error
-            }
-            variant="pill"
-          />
+          </View>
+          <TouchableOpacity
+            onPress={handleToggleBookmark}
+            style={styles.bookmarkButton}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Icon
+              name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
+              size={24}
+              color={isBookmarked ? colors.primary : colors.textSecondary}
+            />
+          </TouchableOpacity>
         </View>
 
         {/* Question Text */}
@@ -150,13 +314,32 @@ export default function QuestionDetailScreen() {
         {/* Answer Options */}
         <View style={styles.answersContainer}>
           <Text variant="titleMedium" style={styles.answersTitle}>
-            Select your answer:
+            {isMultipleSelection ? 'Select all that apply:' : 'Select your answer:'}
           </Text>
-          {currentQuestion.answers?.map((answer: any, index: number) => (
+          {currentQuestion.answers?.map((answer: any, index: number) => {
+            const handleAnswerPress = () => {
+              if (showExplanation) return;
+              
+              if (isMultipleSelection) {
+                // Toggle answer in selectedAnswers array
+                setSelectedAnswers(prev => {
+                  if (prev.includes(answer.id)) {
+                    return prev.filter(id => id !== answer.id);
+                  } else {
+                    return [...prev, answer.id];
+                  }
+                });
+              } else {
+                // Single selection
+                setSelectedAnswer(answer.id);
+              }
+            };
+            
+            return (
             <TouchableOpacity
               key={answer.id}
               style={getAnswerStyle(answer.id)}
-              onPress={() => !showExplanation && setSelectedAnswer(answer.id)}
+              onPress={handleAnswerPress}
               disabled={showExplanation}
               activeOpacity={0.7}
             >
@@ -181,7 +364,8 @@ export default function QuestionDetailScreen() {
                 />
               </View>
             </TouchableOpacity>
-          ))}
+            );
+          })}
         </View>
 
         {/* Submit Button */}
@@ -194,7 +378,7 @@ export default function QuestionDetailScreen() {
               variant="primary"
               size="large"
               loading={submitting}
-              disabled={!selectedAnswer || submitting}
+              disabled={(isMultipleSelection ? selectedAnswers.length === 0 : !selectedAnswer) || submitting}
               fullWidth
             />
           </View>
@@ -244,6 +428,7 @@ export default function QuestionDetailScreen() {
                 // Navigate back or to next question
                 // For now, just reset
                 setSelectedAnswer(null);
+                setSelectedAnswers([]);
                 setShowExplanation(false);
                 setIsCorrect(null);
               }}
@@ -283,9 +468,19 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: spacing.base,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    flex: 1,
     gap: spacing.sm,
+  },
+  bookmarkButton: {
+    padding: spacing.xs,
+    marginLeft: spacing.sm,
   },
   questionCard: {
     backgroundColor: '#ffffff',

@@ -28,6 +28,24 @@ export const progressService = {
     const response = await client.post('/api/progress/answer', { questionId, answerId });
     return response.data;
   },
+
+  async getMissedQuestions(knowledgeAreaId?: string, reviewed?: boolean) {
+    const params = new URLSearchParams();
+    if (knowledgeAreaId) {
+      params.append('knowledgeAreaId', knowledgeAreaId);
+    }
+    if (reviewed !== undefined) {
+      // Explicitly pass 'true' or 'false' as strings
+      params.append('reviewed', reviewed ? 'true' : 'false');
+    }
+    const response = await client.get(`/api/progress/missed-questions?${params.toString()}`);
+    return response.data;
+  },
+
+  async markAsReviewed(questionId: string) {
+    const response = await client.post('/api/progress/missed-questions/reviewed', { questionId });
+    return response.data;
+  },
 };
 
 

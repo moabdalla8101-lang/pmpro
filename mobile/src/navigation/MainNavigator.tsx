@@ -12,6 +12,8 @@ import SettingsScreen from '../screens/main/SettingsScreen';
 import QuestionDetailScreen from '../screens/main/QuestionDetailScreen';
 import ExamStartScreen from '../screens/main/ExamStartScreen';
 import ExamReviewScreen from '../screens/main/ExamReviewScreen';
+import BookmarkedQuestionsScreen from '../screens/main/BookmarkedQuestionsScreen';
+import MissedQuestionsScreen from '../screens/main/MissedQuestionsScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -42,6 +44,22 @@ function PracticeStack() {
         component={QuestionDetailScreen}
         options={{
           title: 'Question',
+          headerBackTitleVisible: false,
+        }}
+      />
+      <Stack.Screen
+        name="BookmarkedQuestions"
+        component={BookmarkedQuestionsScreen}
+        options={{
+          title: 'Bookmarked Questions',
+          headerBackTitleVisible: false,
+        }}
+      />
+      <Stack.Screen
+        name="MissedQuestions"
+        component={MissedQuestionsScreen}
+        options={{
+          title: 'Missed Questions',
           headerBackTitleVisible: false,
         }}
       />

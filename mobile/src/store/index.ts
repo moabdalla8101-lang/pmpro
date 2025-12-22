@@ -3,6 +3,8 @@ import authReducer from './slices/authSlice';
 import questionReducer from './slices/questionSlice';
 import progressReducer from './slices/progressSlice';
 import examReducer from './slices/examSlice';
+import bookmarkReducer from './slices/bookmarkSlice';
+import missedQuestionsReducer from './slices/missedQuestionsSlice';
 
 export const store = configureStore({
   reducer: {
@@ -10,6 +12,8 @@ export const store = configureStore({
     questions: questionReducer,
     progress: progressReducer,
     exams: examReducer,
+    bookmarks: bookmarkReducer,
+    missedQuestions: missedQuestionsReducer,
   },
 });
 

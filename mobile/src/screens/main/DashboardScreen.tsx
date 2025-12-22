@@ -258,6 +258,49 @@ export default function DashboardScreen() {
           </View>
         </View>
 
+        <View style={styles.quickActions}>
+          <View style={styles.quickActionCard}>
+            <Card
+              style={[styles.actionCard, { backgroundColor: `${colors.warning}10` }]}
+              onPress={() => {
+                navigation.navigate('BookmarkedQuestions' as never);
+              }}
+            >
+              <Card.Content style={styles.actionCardContent}>
+                <View style={[styles.actionIconCircle, { backgroundColor: colors.warning }]}>
+                  <Icon name="bookmark" size={28} color="#ffffff" />
+                </View>
+                <Text variant="titleMedium" style={styles.actionTitle}>
+                  Bookmarked
+                </Text>
+                <Text variant="bodySmall" style={styles.actionSubtitle}>
+                  Review saved
+                </Text>
+              </Card.Content>
+            </Card>
+          </View>
+          <View style={styles.quickActionCard}>
+            <Card
+              style={[styles.actionCard, { backgroundColor: `${colors.info}10` }]}
+              onPress={() => {
+                navigation.navigate('MissedQuestions' as never);
+              }}
+            >
+              <Card.Content style={styles.actionCardContent}>
+                <View style={[styles.actionIconCircle, { backgroundColor: colors.info }]}>
+                  <Icon name="alert-circle" size={28} color="#ffffff" />
+                </View>
+                <Text variant="titleMedium" style={styles.actionTitle}>
+                  Missed
+                </Text>
+                <Text variant="bodySmall" style={styles.actionSubtitle}>
+                  Review incorrect
+                </Text>
+              </Card.Content>
+            </Card>
+          </View>
+        </View>
+
         {/* Knowledge Area Performance Preview */}
         <SectionHeader
           title="Performance by Domain"

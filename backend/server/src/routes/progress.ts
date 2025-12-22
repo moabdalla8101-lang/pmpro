@@ -4,7 +4,9 @@ import {
   getUserProgress,
   updateUserProgress,
   recordAnswer,
-  getPerformanceByKnowledgeArea
+  getPerformanceByKnowledgeArea,
+  getMissedQuestions,
+  markMissedQuestionAsReviewed,
 } from '../controllers/progressController';
 import { authenticate } from '../middleware/auth';
 import { validate } from '../middleware/validate';
@@ -15,6 +17,7 @@ router.use(authenticate);
 
 router.get('/', getUserProgress);
 router.get('/knowledge-area', getPerformanceByKnowledgeArea);
+router.get('/missed-questions', getMissedQuestions);
 router.put('/', updateUserProgress);
 router.post(
   '/answer',
@@ -25,6 +28,7 @@ router.post(
   ],
   recordAnswer
 );
+router.post('/missed-questions/reviewed', markMissedQuestionAsReviewed);
 
 export default router;
 

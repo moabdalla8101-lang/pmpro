@@ -6,6 +6,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { examService } from '../../services/api/examService';
 import { RootState, AppDispatch } from '../../store';
 import { fetchQuestions } from '../../store/slices/questionSlice';
+import { addBookmark, removeBookmark, checkBookmark } from '../../store/slices/bookmarkSlice';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { ActionButton } from '../../components';
 import { colors } from '../../theme';
@@ -19,6 +20,7 @@ export default function ExamStartScreen() {
   const route = useRoute();
   const dispatch = useDispatch<AppDispatch>();
   const { questions } = useSelector((state: RootState) => state.questions);
+  const { bookmarkedQuestionIds } = useSelector((state: RootState) => state.bookmarks);
   
   const [examId, setExamId] = useState<string | null>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -78,6 +80,24 @@ export default function ExamStartScreen() {
       });
     }
   };
+
+  const handleToggleBookmark = async () => {
+    if (!currentQuestion) return;
+    const questionId = currentQuestion.id;
+    const isBookmarked = bookmarkedQuestionIds.includes(questionId);
+    
+    if (isBookmarked) {
+      await dispatch(removeBookmark(questionId) as any);
+    } else {
+      await dispatch(addBookmark(questionId) as any);
+    }
+  };
+
+  useEffect(() => {
+    if (currentQuestion?.id) {
+      dispatch(checkBookmark(currentQuestion.id) as any);
+    }
+  }, [currentQuestion?.id, dispatch]);
 
   const handleNext = () => {
     if (currentQuestionIndex < questions.length - 1) {
@@ -226,6 +246,17 @@ export default function ExamStartScreen() {
               Question {currentQuestionIndex + 1} of {questions.length}
             </Text>
           </View>
+          <TouchableOpacity
+            onPress={handleToggleBookmark}
+            style={styles.bookmarkButton}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Icon
+              name={currentQuestion && bookmarkedQuestionIds.includes(currentQuestion.id) ? 'bookmark' : 'bookmark-outline'}
+              size={24}
+              color={currentQuestion && bookmarkedQuestionIds.includes(currentQuestion.id) ? colors.primary : colors.textSecondary}
+            />
+          </TouchableOpacity>
         </View>
         <ProgressBar
           progress={progress}
@@ -398,6 +429,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: spacing.sm,
+  },
+  bookmarkButton: {
+    padding: spacing.xs,
+    marginLeft: spacing.sm,
   },
   timerContainer: {
     flexDirection: 'row',

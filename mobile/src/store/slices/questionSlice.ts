@@ -3,10 +3,17 @@ import { questionService } from '../../services/api/questionService';
 
 interface Question {
   id: string;
+  questionId?: string;
   questionText: string;
   question_text?: string; // Fallback for snake_case
   explanation?: string;
   difficulty: string;
+  questionType?: string;
+  question_type?: string; // Fallback for snake_case
+  domain?: string;
+  task?: string;
+  pmApproach?: string;
+  pm_approach?: string; // Fallback for snake_case
   answers: Answer[];
   knowledgeAreaName?: string; // Added for consistency
   knowledge_area_name?: string; // Fallback for snake_case
@@ -59,7 +66,21 @@ export const fetchQuestions = createAsyncThunk(
 export const fetchQuestion = createAsyncThunk(
   'questions/fetchOne',
   async (id: string) => {
-    return await questionService.getQuestion(id);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionSlice.ts:59',message:'fetchQuestion thunk called',data:{questionId:id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
+    // #endregion
+    try {
+      const result = await questionService.getQuestion(id);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionSlice.ts:64',message:'fetchQuestion result received',data:{hasResult:!!result,questionId:result?.id,hasAnswers:!!result?.answers,answersCount:result?.answers?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H3'})}).catch(()=>{});
+      // #endregion
+      return result;
+    } catch (error: any) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionSlice.ts:68',message:'fetchQuestion error',data:{error:error?.message,status:error?.response?.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H2'})}).catch(()=>{});
+      // #endregion
+      throw error;
+    }
   }
 );
 
@@ -99,14 +120,53 @@ const questionSlice = createSlice({
         state.error = action.error.message || 'Failed to fetch questions';
       })
       .addCase(fetchQuestion.pending, (state) => {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionSlice.ts:101',message:'fetchQuestion pending',data:{currentQuestionId:state.currentQuestion?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
+        // #endregion
         state.isLoading = true;
         state.error = null;
+        // Clear current question when fetching new one to avoid showing stale data
+        state.currentQuestion = null;
       })
       .addCase(fetchQuestion.fulfilled, (state, action) => {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionSlice.ts:107',message:'fetchQuestion fulfilled',data:{questionId:action.payload?.id,hasAnswers:!!action.payload?.answers,answersCount:action.payload?.answers?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H3'})}).catch(()=>{});
+        // #endregion
         state.isLoading = false;
-        state.currentQuestion = action.payload;
+        // Transform to match Question interface
+        const question = action.payload;
+        state.currentQuestion = {
+          id: question.id,
+          questionId: question.questionId || question.question_id,
+          questionText: question.questionText || question.question_text,
+          question_text: question.question_text,
+          explanation: question.explanation,
+          difficulty: question.difficulty,
+          questionType: question.questionType || question.question_type,
+          question_type: question.question_type,
+          domain: question.domain,
+          task: question.task,
+          pmApproach: question.pmApproach || question.pm_approach,
+          pm_approach: question.pm_approach,
+          knowledgeAreaName: question.knowledgeAreaName || question.knowledge_area_name,
+          knowledge_area_name: question.knowledge_area_name,
+          answers: (question.answers || []).map((ans: any) => ({
+            id: ans.id,
+            answerText: ans.answerText || ans.answer_text,
+            answer_text: ans.answer_text,
+            isCorrect: ans.isCorrect || ans.is_correct || false,
+            is_correct: ans.is_correct,
+            order: ans.order,
+          })),
+        };
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionSlice.ts:125',message:'Current question state updated',data:{currentQuestionId:state.currentQuestion?.id,hasAnswers:!!state.currentQuestion?.answers,answersCount:state.currentQuestion?.answers?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
+        // #endregion
       })
       .addCase(fetchQuestion.rejected, (state, action) => {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionSlice.ts:128',message:'fetchQuestion rejected',data:{error:action.error.message,errorCode:action.error.code},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H2'})}).catch(()=>{});
+        // #endregion
         state.isLoading = false;
         state.error = action.error.message || 'Failed to fetch question';
       });
