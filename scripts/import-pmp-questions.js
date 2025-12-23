@@ -169,13 +169,27 @@ async function importQuestions() {
           correctAnswersArray = [correctAnswer];
         }
 
+        // Prepare question metadata for drag_and_match questions
+        let questionMetadata = null;
+        if (questionType === 'drag_and_match') {
+          const leftItems = parsedOptions.left_items || [];
+          const rightItems = parsedOptions.right_items || [];
+          const matches = correctOptions.matches || {};
+          
+          questionMetadata = {
+            leftItems,
+            rightItems,
+            matches
+          };
+        }
+
         // Insert question
         const questionResult = await pool.query(
           `INSERT INTO questions (
             question_id, certification_id, knowledge_area_id, 
             question_text, explanation, difficulty, 
-            question_type, domain, task, pm_approach, is_active
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true)
+            question_type, domain, task, pm_approach, question_metadata, is_active
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, true)
           RETURNING id`,
           [
             questionId,
@@ -187,7 +201,8 @@ async function importQuestions() {
             record['Question Type'] || 'select_one',
             record['Domain'] || null,
             record['Task'] || null,
-            record['PM Approach'] || null
+            record['PM Approach'] || null,
+            questionMetadata ? JSON.stringify(questionMetadata) : null
           ]
         );
 

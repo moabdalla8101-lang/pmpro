@@ -135,6 +135,17 @@ const questionSlice = createSlice({
         state.isLoading = false;
         // Transform to match Question interface
         const question = action.payload;
+        // Parse questionMetadata if it's a string
+        let parsedMetadata = question.questionMetadata || question.question_metadata;
+        if (typeof parsedMetadata === 'string') {
+          try {
+            parsedMetadata = JSON.parse(parsedMetadata);
+          } catch (e) {
+            console.warn('Failed to parse questionMetadata:', e);
+            parsedMetadata = null;
+          }
+        }
+        
         state.currentQuestion = {
           id: question.id,
           questionId: question.questionId || question.question_id,
@@ -148,6 +159,7 @@ const questionSlice = createSlice({
           task: question.task,
           pmApproach: question.pmApproach || question.pm_approach,
           pm_approach: question.pm_approach,
+          questionMetadata: parsedMetadata,
           knowledgeAreaName: question.knowledgeAreaName || question.knowledge_area_name,
           knowledge_area_name: question.knowledge_area_name,
           answers: (question.answers || []).map((ans: any) => ({

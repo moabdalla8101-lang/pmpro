@@ -26,9 +26,14 @@ export const colors = {
   gray900: '#212121',
   
   // Text colors
+  text: '#212121',
   textPrimary: '#212121',
   textSecondary: '#757575',
   textDisabled: '#bdbdbd',
+  
+  // Additional colors
+  white: '#ffffff',
+  surface: '#ffffff',
   
   // Knowledge area colors
   knowledgeArea: {

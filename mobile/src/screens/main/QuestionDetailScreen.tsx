@@ -1,19 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
-import { useRoute } from '@react-navigation/native';
+import { useRoute, useNavigation } from '@react-navigation/native';
 import { useSelector, useDispatch } from 'react-redux';
 import { fetchQuestion } from '../../store/slices/questionSlice';
 import { progressService } from '../../services/api/progressService';
 import { addBookmark, removeBookmark, checkBookmark } from '../../store/slices/bookmarkSlice';
 import { RootState, AppDispatch } from '../../store';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { CategoryBadge, ActionButton } from '../../components';
+import { CategoryBadge, ActionButton, DragAndMatch } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 
 export default function QuestionDetailScreen() {
   const route = useRoute();
+  const navigation = useNavigation();
   const { questionId } = (route.params as { questionId?: string }) || {};
   
   // Safety check - if questionId is missing, return early
@@ -26,11 +27,12 @@ export default function QuestionDetailScreen() {
     );
   }
   const dispatch = useDispatch<AppDispatch>();
-  const { currentQuestion, isLoading } = useSelector((state: RootState) => state.questions);
+  const { currentQuestion, questions, isLoading } = useSelector((state: RootState) => state.questions);
   const { bookmarkedQuestionIds } = useSelector((state: RootState) => state.bookmarks);
   
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [selectedAnswers, setSelectedAnswers] = useState<string[]>([]); // For multiple selection
+  const [dragMatches, setDragMatches] = useState<{ [leftItem: string]: string }>({}); // For drag_and_match
   const [showExplanation, setShowExplanation] = useState(false);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -39,6 +41,33 @@ export default function QuestionDetailScreen() {
   // Determine if question supports multiple selection
   const isMultipleSelection = currentQuestion?.questionType === 'select_multiple' || 
                               currentQuestion?.question_type === 'select_multiple';
+  
+  // Determine if question is drag_and_match
+  const isDragAndMatch = currentQuestion?.questionType === 'drag_and_match' || 
+                          currentQuestion?.question_type === 'drag_and_match';
+  
+  // Get drag_and_match metadata
+  const dragMetadata = currentQuestion?.questionMetadata || currentQuestion?.question_metadata || null;
+  const leftItems = dragMetadata?.leftItems || dragMetadata?.left_items || [];
+  const rightItems = dragMetadata?.rightItems || dragMetadata?.right_items || [];
+  const correctMatches = dragMetadata?.matches || {};
+  
+  // Debug logging
+  React.useEffect(() => {
+    if (currentQuestion) {
+      console.log('Question Detail Debug:', {
+        questionId: currentQuestion.id,
+        questionType: currentQuestion.questionType || currentQuestion.question_type,
+        isDragAndMatch,
+        hasDragMetadata: !!dragMetadata,
+        dragMetadata,
+        hasAnswers: !!currentQuestion.answers,
+        answersCount: currentQuestion.answers?.length || 0,
+        leftItemsCount: leftItems.length,
+        rightItemsCount: rightItems.length,
+      });
+    }
+  }, [currentQuestion, isDragAndMatch, dragMetadata, leftItems.length, rightItems.length]);
 
   // Track previous questionId to detect when it actually changes
   const prevQuestionIdRef = React.useRef<string | undefined>(questionId);
@@ -60,6 +89,7 @@ export default function QuestionDetailScreen() {
         // #endregion
         setSelectedAnswer(null);
         setSelectedAnswers([]);
+        setDragMatches({});
         setShowExplanation(false);
         setIsCorrect(null);
       }
@@ -94,13 +124,21 @@ export default function QuestionDetailScreen() {
   const handleSubmit = async () => {
     if (!currentQuestion) return;
     
+    // For drag_and_match, check if all left items are matched
+    if (isDragAndMatch) {
+      const allMatched = leftItems.every(leftItem => dragMatches[leftItem]);
+      if (!allMatched) {
+        return;
+      }
+    }
+    
     // For multiple selection, check if at least one answer is selected
     if (isMultipleSelection && selectedAnswers.length === 0) {
       return;
     }
     
     // For single selection, check if an answer is selected
-    if (!isMultipleSelection && !selectedAnswer) {
+    if (!isMultipleSelection && !isDragAndMatch && !selectedAnswer) {
       return;
     }
 
@@ -110,7 +148,23 @@ export default function QuestionDetailScreen() {
       fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QuestionDetailScreen.tsx:88',message:'handleSubmit called',data:{questionId,selectedAnswer,selectedAnswers,isMultipleSelection,hasCurrentQuestion:!!currentQuestion},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H4'})}).catch(()=>{});
       // #endregion
       
-      if (isMultipleSelection) {
+      if (isDragAndMatch) {
+        // For drag_and_match, check if all matches are correct
+        let allCorrect = true;
+        for (const leftItem of leftItems) {
+          const userMatch = dragMatches[leftItem];
+          const correctMatch = correctMatches[leftItem];
+          if (userMatch !== correctMatch) {
+            allCorrect = false;
+            break;
+          }
+        }
+        setIsCorrect(allCorrect);
+        
+        // Record matches as answers (we'll need to find the answer IDs)
+        // For now, we'll just mark it as correct/incorrect
+        // TODO: Update backend to handle drag_and_match submissions properly
+      } else if (isMultipleSelection) {
         // For multiple selection, record all answers and check if all are correct
         let allCorrect = true;
         let correctCount = 0;
@@ -159,7 +213,19 @@ export default function QuestionDetailScreen() {
       fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QuestionDetailScreen.tsx:127',message:'Error recording answer, showing explanation anyway',data:{error:error?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H4'})}).catch(()=>{});
       // #endregion
       // Still show explanation based on selected answer(s)
-      if (isMultipleSelection) {
+      if (isDragAndMatch) {
+        // Check if all matches are correct
+        let allCorrect = true;
+        for (const leftItem of leftItems) {
+          const userMatch = dragMatches[leftItem];
+          const correctMatch = correctMatches[leftItem];
+          if (userMatch !== correctMatch) {
+            allCorrect = false;
+            break;
+          }
+        }
+        setIsCorrect(allCorrect);
+      } else if (isMultipleSelection) {
         // Check if all selected are correct and all correct are selected
         const correctAnswers = currentQuestion.answers?.filter((a: any) => a.isCorrect || a.is_correct) || [];
         const selectedCorrect = selectedAnswers.filter(id => {
@@ -311,62 +377,136 @@ export default function QuestionDetailScreen() {
           </Text>
         </View>
 
-        {/* Answer Options */}
-        <View style={styles.answersContainer}>
-          <Text variant="titleMedium" style={styles.answersTitle}>
-            {isMultipleSelection ? 'Select all that apply:' : 'Select your answer:'}
-          </Text>
-          {currentQuestion.answers?.map((answer: any, index: number) => {
-            const handleAnswerPress = () => {
-              if (showExplanation) return;
+        {/* Drag and Match Component */}
+        {isDragAndMatch && dragMetadata && leftItems.length > 0 && rightItems.length > 0 ? (
+          <DragAndMatch
+            leftItems={leftItems}
+            rightItems={rightItems}
+            correctMatches={correctMatches}
+            onMatchChange={setDragMatches}
+            showExplanation={showExplanation}
+            userMatches={dragMatches}
+          />
+        ) : isDragAndMatch ? (
+          <View style={styles.answersContainer}>
+            <Text variant="bodyMedium" style={{ color: colors.error, textAlign: 'center', padding: spacing.md }}>
+              Drag and match data not available. Please check the question metadata.
+            </Text>
+            <Text variant="bodySmall" style={{ color: colors.textSecondary, textAlign: 'center', padding: spacing.sm }}>
+              Debug: isDragAndMatch={String(isDragAndMatch)}, hasMetadata={String(!!dragMetadata)}, leftItems={leftItems.length}, rightItems={rightItems.length}
+            </Text>
+          </View>
+        ) : null}
+
+        {/* Answer Options - for select_one and select_multiple */}
+        {!isDragAndMatch && currentQuestion.answers && currentQuestion.answers.length > 0 && (
+          <View style={styles.answersContainer}>
+            <Text variant="titleMedium" style={styles.answersTitle}>
+              {isMultipleSelection ? 'Select all that apply:' : 'Select your answer:'}
+            </Text>
+            {currentQuestion.answers.map((answer: any, index: number) => {
+              const handleAnswerPress = () => {
+                if (showExplanation) return;
+                
+                if (isMultipleSelection) {
+                  // Toggle answer in selectedAnswers array
+                  setSelectedAnswers(prev => {
+                    if (prev.includes(answer.id)) {
+                      return prev.filter(id => id !== answer.id);
+                    } else {
+                      return [...prev, answer.id];
+                    }
+                  });
+                } else {
+                  // Single selection
+                  setSelectedAnswer(answer.id);
+                }
+              };
               
-              if (isMultipleSelection) {
-                // Toggle answer in selectedAnswers array
-                setSelectedAnswers(prev => {
-                  if (prev.includes(answer.id)) {
-                    return prev.filter(id => id !== answer.id);
-                  } else {
-                    return [...prev, answer.id];
-                  }
-                });
-              } else {
-                // Single selection
-                setSelectedAnswer(answer.id);
-              }
-            };
-            
-            return (
-            <TouchableOpacity
-              key={answer.id}
-              style={getAnswerStyle(answer.id)}
-              onPress={handleAnswerPress}
-              disabled={showExplanation}
-              activeOpacity={0.7}
-            >
-              <View style={styles.answerContent}>
-                <View style={styles.answerIndicator}>
-                  <View style={styles.answerLetter}>
-                    <Text style={styles.answerLetterText}>
-                      {String.fromCharCode(65 + index)}
+              return (
+                <TouchableOpacity
+                  key={answer.id}
+                  style={getAnswerStyle(answer.id)}
+                  onPress={handleAnswerPress}
+                  disabled={showExplanation}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.answerContent}>
+                    <View style={styles.answerIndicator}>
+                      <View style={styles.answerLetter}>
+                        <Text style={styles.answerLetterText}>
+                          {String.fromCharCode(65 + index)}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.answerTextContainer}>
+                      <Text style={styles.answerText}>
+                        {answer.answerText || answer.answer_text}
+                      </Text>
+                    </View>
+                    <Icon
+                      name={getAnswerIcon(answer.id)}
+                      size={24}
+                      color={getAnswerIconColor(answer.id)}
+                      style={styles.answerIcon}
+                    />
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+
+        {/* Show message if no answers available */}
+        {!isDragAndMatch && (!currentQuestion.answers || currentQuestion.answers.length === 0) && (
+          <View style={styles.answersContainer}>
+            <Text variant="bodyMedium" style={{ color: colors.error, textAlign: 'center', padding: spacing.md }}>
+              No answer options available for this question.
+            </Text>
+            <Text variant="bodySmall" style={{ color: colors.textSecondary, textAlign: 'center', padding: spacing.sm }}>
+              Debug: questionType={currentQuestion.questionType || currentQuestion.question_type || 'unknown'}, answers={currentQuestion.answers ? currentQuestion.answers.length : 'null'}
+            </Text>
+          </View>
+        )}
+
+        {/* Fallback: Show answers if drag_and_match metadata is missing */}
+        {isDragAndMatch && (!dragMetadata || leftItems.length === 0 || rightItems.length === 0) && currentQuestion.answers && currentQuestion.answers.length > 0 && (
+          <View style={styles.answersContainer}>
+            <Text variant="titleMedium" style={styles.answersTitle}>
+              Select your answer:
+            </Text>
+            {currentQuestion.answers.map((answer: any, index: number) => (
+              <TouchableOpacity
+                key={answer.id}
+                style={getAnswerStyle(answer.id)}
+                onPress={() => !showExplanation && setSelectedAnswer(answer.id)}
+                disabled={showExplanation}
+                activeOpacity={0.7}
+              >
+                <View style={styles.answerContent}>
+                  <View style={styles.answerIndicator}>
+                    <View style={styles.answerLetter}>
+                      <Text style={styles.answerLetterText}>
+                        {String.fromCharCode(65 + index)}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.answerTextContainer}>
+                    <Text style={styles.answerText}>
+                      {answer.answerText || answer.answer_text}
                     </Text>
                   </View>
+                  <Icon
+                    name={getAnswerIcon(answer.id)}
+                    size={24}
+                    color={getAnswerIconColor(answer.id)}
+                    style={styles.answerIcon}
+                  />
                 </View>
-                <View style={styles.answerTextContainer}>
-                  <Text style={styles.answerText}>
-                    {answer.answerText || answer.answer_text}
-                  </Text>
-                </View>
-                <Icon
-                  name={getAnswerIcon(answer.id)}
-                  size={24}
-                  color={getAnswerIconColor(answer.id)}
-                  style={styles.answerIcon}
-                />
-              </View>
-            </TouchableOpacity>
-            );
-          })}
-        </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         {/* Submit Button */}
         {!showExplanation && (
@@ -378,7 +518,8 @@ export default function QuestionDetailScreen() {
               variant="primary"
               size="large"
               loading={submitting}
-              disabled={(isMultipleSelection ? selectedAnswers.length === 0 : !selectedAnswer) || submitting}
+              disabled={(isDragAndMatch ? !leftItems.every(leftItem => dragMatches[leftItem]) : 
+                        isMultipleSelection ? selectedAnswers.length === 0 : !selectedAnswer) || submitting}
               fullWidth
             />
           </View>
@@ -425,12 +566,18 @@ export default function QuestionDetailScreen() {
             <ActionButton
               label="Continue"
               onPress={() => {
-                // Navigate back or to next question
-                // For now, just reset
-                setSelectedAnswer(null);
-                setSelectedAnswers([]);
-                setShowExplanation(false);
-                setIsCorrect(null);
+                // Find current question index in the questions list
+                const currentIndex = questions.findIndex(q => q.id === questionId);
+                const nextIndex = currentIndex + 1;
+                
+                if (nextIndex < questions.length) {
+                  // Navigate to next question
+                  const nextQuestion = questions[nextIndex];
+                  navigation.navigate('QuestionDetail' as never, { questionId: nextQuestion.id } as never);
+                } else {
+                  // No more questions, go back to practice screen
+                  navigation.goBack();
+                }
               }}
               icon="arrow-right"
               variant="primary"
