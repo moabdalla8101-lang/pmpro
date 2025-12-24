@@ -13,6 +13,7 @@ import QuestionDetailScreen from '../screens/main/QuestionDetailScreen';
 import ExamStartScreen from '../screens/main/ExamStartScreen';
 import ExamReviewScreen from '../screens/main/ExamReviewScreen';
 import DailyQuizScreen from '../screens/main/DailyQuizScreen';
+import PracticeTestScreen from '../screens/main/PracticeTestScreen';
 import BookmarkedQuestionsScreen from '../screens/main/BookmarkedQuestionsScreen';
 import MissedQuestionsScreen from '../screens/main/MissedQuestionsScreen';
 import FlashcardFilterScreen from '../screens/main/FlashcardFilterScreen';
@@ -87,6 +88,14 @@ function PracticeStack() {
         component={MarkedFlashcardsScreen}
         options={{
           title: 'Marked Flashcards',
+          headerBackTitleVisible: false,
+        }}
+      />
+      <Stack.Screen
+        name="PracticeTest"
+        component={PracticeTestScreen}
+        options={{
+          title: 'Practice Test',
           headerBackTitleVisible: false,
         }}
       />

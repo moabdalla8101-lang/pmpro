@@ -1,17 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, SafeAreaView } from 'react-native';
-import { Card, Text, ActivityIndicator, ProgressBar } from 'react-native-paper';
+import { Card, Text, ActivityIndicator } from 'react-native-paper';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { fetchProgress, fetchPerformanceByDomain } from '../../store/slices/progressSlice';
 import { fetchMarkedFlashcards } from '../../store/slices/flashcardSlice';
+import { loadSettings } from '../../store/slices/settingsSlice';
 import { examService } from '../../services/api/examService';
+import { dailyActivityService } from '../../services/dailyActivityService';
+import client from '../../services/api/client';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {
-  ActionButton,
   SectionHeader,
-  DailyQuizStreakCard,
+  DailyGoalsHero,
 } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
@@ -23,42 +25,105 @@ export default function DashboardScreen() {
   const dispatch = useDispatch<AppDispatch>();
   const { user } = useSelector((state: RootState) => state.auth);
   const { overallProgress, performanceByDomain, isLoading } = useSelector((state: RootState) => state.progress);
+  
+  // Debug: Log performanceByDomain to see what we're getting
+  useEffect(() => {
+    console.log('Performance by Domain:', performanceByDomain);
+    console.log('Performance by Domain length:', performanceByDomain?.length);
+    if (performanceByDomain && performanceByDomain.length > 0) {
+      performanceByDomain.forEach((domain: any, index: number) => {
+        console.log(`Domain ${index}:`, domain);
+      });
+    }
+  }, [performanceByDomain]);
   const { markedFlashcards } = useSelector((state: RootState) => state.flashcards);
-  const [dailyQuizStatus, setDailyQuizStatus] = useState<any>(null);
-  const [loadingQuizStatus, setLoadingQuizStatus] = useState(false);
+  const { dailyQuestionsGoal, dailyMinutesGoal } = useSelector((state: RootState) => state.settings);
+  const [todayActivity, setTodayActivity] = useState({ questionsAnswered: 0, practiceMinutes: 0 });
+  const [currentStreak, setCurrentStreak] = useState(0);
+  const [loadingActivity, setLoadingActivity] = useState(true);
+  const [weeklyCompletions, setWeeklyCompletions] = useState<Array<{ date: string; completed: boolean }>>([]);
 
-  // Fetch progress when screen comes into focus
+  // Fetch data when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DashboardScreen.tsx:18',message:'Dashboard focused, fetching progress',data:{certificationId:PMP_CERTIFICATION_ID},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'progress-refresh'})}).catch(()=>{});
-      // #endregion
-      dispatch(fetchProgress(PMP_CERTIFICATION_ID));
-      dispatch(fetchPerformanceByDomain(PMP_CERTIFICATION_ID));
-      dispatch(fetchMarkedFlashcards() as any);
-      fetchDailyQuizStatus();
+      loadDashboardData();
     }, [dispatch])
   );
 
   // Also fetch on initial mount
   useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DashboardScreen.tsx:25',message:'Dashboard mounted, fetching progress',data:{certificationId:PMP_CERTIFICATION_ID},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'progress-refresh'})}).catch(()=>{});
-    // #endregion
-    dispatch(fetchProgress(PMP_CERTIFICATION_ID));
-    dispatch(fetchPerformanceByDomain(PMP_CERTIFICATION_ID));
-    fetchDailyQuizStatus();
+    loadDashboardData();
   }, [dispatch]);
 
-  const fetchDailyQuizStatus = async () => {
-    setLoadingQuizStatus(true);
+  const loadDashboardData = async () => {
+    dispatch(loadSettings() as any);
+    dispatch(fetchProgress(PMP_CERTIFICATION_ID));
+    dispatch(fetchPerformanceByDomain(PMP_CERTIFICATION_ID));
+    dispatch(fetchMarkedFlashcards() as any);
+    fetchTodayActivity();
+    fetchStreak();
+    fetchWeeklyCompletions();
+  };
+
+  const fetchTodayActivity = async () => {
     try {
-      const status = await examService.getDailyQuizStatus(PMP_CERTIFICATION_ID);
-      setDailyQuizStatus(status);
-    } catch (error: any) {
-      console.error('Failed to fetch daily quiz status:', error);
+      setLoadingActivity(true);
+      const activity = await dailyActivityService.getTodayActivity();
+      setTodayActivity(activity);
+    } catch (error) {
+      console.error('Failed to fetch today activity:', error);
     } finally {
-      setLoadingQuizStatus(false);
+      setLoadingActivity(false);
+    }
+  };
+
+  const fetchStreak = async () => {
+    try {
+      const response = await client.get('/api/badges/streak');
+      setCurrentStreak(response.data.currentStreak || 0);
+    } catch (error) {
+      console.error('Failed to fetch streak:', error);
+      setCurrentStreak(0);
+    }
+  };
+
+  const fetchWeeklyCompletions = async () => {
+    try {
+      const today = new Date();
+      const sevenDaysAgo = new Date(today);
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+      sevenDaysAgo.setHours(0, 0, 0, 0);
+      
+      try {
+        const response = await client.get(
+          `/api/exams/daily-quiz/weekly?certificationId=${PMP_CERTIFICATION_ID}&startDate=${sevenDaysAgo.toISOString()}`
+        );
+        const completionDates = (response.data?.completions || []).map((c: any) => c.date);
+        const completions: Array<{ date: string; completed: boolean }> = [];
+        
+        for (let i = 6; i >= 0; i--) {
+          const date = new Date(today);
+          date.setDate(date.getDate() - i);
+          date.setHours(0, 0, 0, 0);
+          const dateStr = date.toISOString().split('T')[0];
+          const completed = completionDates.includes(dateStr);
+          completions.push({ date: dateStr, completed });
+        }
+        setWeeklyCompletions(completions);
+      } catch (error) {
+        // If endpoint fails, create empty completions
+        const completions: Array<{ date: string; completed: boolean }> = [];
+        for (let i = 6; i >= 0; i--) {
+          const date = new Date(today);
+          date.setDate(date.getDate() - i);
+          date.setHours(0, 0, 0, 0);
+          const dateStr = date.toISOString().split('T')[0];
+          completions.push({ date: dateStr, completed: false });
+        }
+        setWeeklyCompletions(completions);
+      }
+    } catch (error) {
+      console.error('Failed to fetch weekly completions:', error);
     }
   };
 
@@ -109,7 +174,7 @@ export default function DashboardScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* Hero Section */}
+        {/* Hero Section - Greeting */}
         <View style={styles.heroSection}>
           <View style={styles.greetingContainer}>
             <Text variant="headlineMedium" style={styles.greeting}>
@@ -121,108 +186,29 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* Progress Overview - Redesigned */}
-        <SectionHeader title="Your Progress" icon="chart-line" />
-        <Card style={styles.progressCard}>
-          <Card.Content style={styles.progressCardContent}>
-            {/* Main Accuracy Display */}
-            <View style={styles.accuracySection}>
-              <View style={styles.accuracyHeader}>
-                <Text variant="titleMedium" style={styles.accuracyLabel}>
-                  Overall Accuracy
-                </Text>
-                <Text variant="displaySmall" style={styles.accuracyValue}>
-                  {accuracy.toFixed(0)}%
-                </Text>
-              </View>
-              <ProgressBar
-                progress={accuracy / 100}
-                color={colors.primary}
-                style={styles.accuracyProgressBar}
-              />
-            </View>
-
-            {/* Stats Grid */}
-            <View style={styles.statsGrid}>
-              <View style={styles.statItem}>
-                <View style={[styles.statIconContainer, { backgroundColor: `${colors.info}15` }]}>
-                  <Icon name="book-open-variant" size={28} color={colors.info} />
-                </View>
-                <View style={styles.statTextContainer}>
-                  <Text variant="headlineSmall" style={styles.statValue}>
-                    {totalAnswered}
-                  </Text>
-                  <Text variant="bodySmall" style={styles.statLabel}>
-                    Questions
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.statDivider} />
-
-              <View style={styles.statItem}>
-                <View style={[styles.statIconContainer, { backgroundColor: `${colors.success}15` }]}>
-                  <Icon name="check-circle" size={28} color={colors.success} />
-                </View>
-                <View style={styles.statTextContainer}>
-                  <Text variant="headlineSmall" style={styles.statValue}>
-                    {correctAnswers}
-                  </Text>
-                  <Text variant="bodySmall" style={styles.statLabel}>
-                    Correct
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.statDivider} />
-
-              <View style={styles.statItem}>
-                <View style={[styles.statIconContainer, { backgroundColor: `${colors.warning}15` }]}>
-                  <Icon name="target" size={28} color={colors.warning} />
-                </View>
-                <View style={styles.statTextContainer}>
-                  <Text variant="headlineSmall" style={styles.statValue}>
-                    {totalAnswered > 0 ? ((correctAnswers / totalAnswered) * 100).toFixed(0) : 0}%
-                  </Text>
-                  <Text variant="bodySmall" style={styles.statLabel}>
-                    Success Rate
-                  </Text>
-                </View>
-              </View>
-            </View>
-          </Card.Content>
-        </Card>
-
-        {/* Today's Quiz - Daily Quiz Streak Card */}
-        <DailyQuizStreakCard
-          certificationId={PMP_CERTIFICATION_ID}
-          onStartQuiz={() => {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DashboardScreen.tsx:54',message:'Start Daily Quiz button pressed',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
-            // #endregion
-            if (dailyQuizStatus?.hasTakenToday && !dailyQuizStatus?.completedAt && dailyQuizStatus?.examId) {
-              (navigation as any).navigate('Exam', { 
-                screen: 'DailyQuiz', 
-                params: { examId: dailyQuizStatus.examId } 
+        {/* Daily Goals Hero Banner */}
+        {!loadingActivity && (
+          <DailyGoalsHero
+            dailyQuestionsGoal={dailyQuestionsGoal}
+            dailyMinutesGoal={dailyMinutesGoal}
+            todayQuestions={todayActivity.questionsAnswered}
+            todayMinutes={todayActivity.practiceMinutes}
+            currentStreak={currentStreak}
+            weeklyCompletions={weeklyCompletions}
+            onStartPracticeTest={() => {
+              (navigation as any).navigate('Practice', {
+                screen: 'PracticeTest',
               });
-            } else {
-              (navigation as any).navigate('Exam', { 
-                screen: 'DailyQuiz' 
-              });
-            }
-          }}
-        />
+            }}
+          />
+        )}
 
-        {/* Quick Actions */}
-        <SectionHeader title="Quick Actions" icon="lightning-bolt" />
-        <View style={styles.quickActions}>
+        {/* Quick Actions Grid - Reorganized */}
+        <View style={styles.quickActionsGrid}>
           <View style={styles.quickActionCard}>
             <Card
               style={[styles.actionCard, { backgroundColor: `${colors.primary}10` }]}
               onPress={() => {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DashboardScreen.tsx:66',message:'Practice button pressed',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
-                // #endregion
                 navigation.navigate('Practice' as never);
               }}
             >
@@ -243,9 +229,6 @@ export default function DashboardScreen() {
             <Card
               style={[styles.actionCard, { backgroundColor: `${colors.error}10` }]}
               onPress={() => {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DashboardScreen.tsx:73',message:'Mock Exam button pressed',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
-                // #endregion
                 navigation.navigate('Exam' as never);
               }}
             >
@@ -262,9 +245,6 @@ export default function DashboardScreen() {
               </Card.Content>
             </Card>
           </View>
-        </View>
-
-        <View style={styles.quickActions}>
           <View style={styles.quickActionCard}>
             <Card
               style={[styles.actionCard, { backgroundColor: `${colors.secondary}10` }]}
@@ -291,7 +271,9 @@ export default function DashboardScreen() {
             <Card
               style={[styles.actionCard, { backgroundColor: `${colors.warning}10` }]}
               onPress={() => {
-                navigation.navigate('BookmarkedQuestions' as never);
+                (navigation as any).navigate('Practice', {
+                  screen: 'BookmarkedQuestions',
+                });
               }}
             >
               <Card.Content style={styles.actionCardContent}>
@@ -307,14 +289,13 @@ export default function DashboardScreen() {
               </Card.Content>
             </Card>
           </View>
-        </View>
-
-        <View style={styles.quickActions}>
           <View style={styles.quickActionCard}>
             <Card
               style={[styles.actionCard, { backgroundColor: `${colors.info}10` }]}
               onPress={() => {
-                navigation.navigate('MissedQuestions' as never);
+                (navigation as any).navigate('Practice', {
+                  screen: 'MissedQuestions',
+                });
               }}
             >
               <Card.Content style={styles.actionCardContent}>
@@ -330,114 +311,138 @@ export default function DashboardScreen() {
               </Card.Content>
             </Card>
           </View>
+          {markedFlashcards && markedFlashcards.length > 0 && (
+            <View style={styles.quickActionCard}>
+              <Card
+                style={[styles.actionCard, { backgroundColor: `${colors.primaryLight}10` }]}
+                onPress={() => {
+                  (navigation as any).navigate('Practice', {
+                    screen: 'MarkedFlashcards',
+                  });
+                }}
+              >
+                <Card.Content style={styles.actionCardContent}>
+                  <View style={[styles.actionIconCircle, { backgroundColor: colors.primaryLight }]}>
+                    <Icon name="cards" size={28} color="#ffffff" />
+                  </View>
+                  <Text variant="titleMedium" style={styles.actionTitle}>
+                    Marked Cards
+                  </Text>
+                  <Text variant="bodySmall" style={styles.actionSubtitle}>
+                    {markedFlashcards.length} cards
+                  </Text>
+                </Card.Content>
+              </Card>
+            </View>
+          )}
         </View>
 
-        {/* Marked Flashcards Section (only show if there are marked cards) */}
-        {markedFlashcards && markedFlashcards.length > 0 && (
-          <>
-            <SectionHeader
-              title="Marked Flashcards"
-              subtitle={`${markedFlashcards.length} cards to review`}
-              icon="bookmark"
-            />
-            <Card
-              style={styles.card}
-              onPress={() => {
-                (navigation as any).navigate('Practice', {
-                  screen: 'MarkedFlashcards',
-                });
-              }}
-            >
-              <Card.Content style={styles.cardContent}>
-                <View style={styles.markedFlashcardsContent}>
-                  <View style={styles.markedFlashcardsLeft}>
-                    <Icon name="cards" size={32} color={colors.primary} />
-                    <View style={styles.markedFlashcardsText}>
-                      <Text variant="titleMedium" style={styles.markedFlashcardsTitle}>
-                        Review Marked Cards
-                      </Text>
-                      <Text variant="bodySmall" style={styles.markedFlashcardsSubtitle}>
-                        {markedFlashcards.length} flashcards saved for review
-                      </Text>
-                    </View>
-                  </View>
-                  <Icon name="chevron-right" size={24} color={colors.textSecondary} />
-                </View>
-              </Card.Content>
-            </Card>
-          </>
-        )}
-
-        {/* Knowledge Area Performance Preview */}
+        {/* Performance by Domain (People, Process, Business) */}
         <SectionHeader
           title="Performance by Domain"
-          subtitle="People, Process, Business"
-          icon="chart-box"
+          subtitle="Your progress in People, Process, and Business"
+          icon="chart-bar"
         />
-        <View style={styles.domainStats}>
-          {(() => {
-            // Get domain performance data
-            const peopleDomain = performanceByDomain.find((d: any) => d.domain === 'People');
-            const processDomain = performanceByDomain.find((d: any) => d.domain === 'Process');
-            const businessDomain = performanceByDomain.find((d: any) => d.domain === 'Business');
-            
-            const peopleAccuracy = peopleDomain?.accuracy || 0;
-            const processAccuracy = processDomain?.accuracy || 0;
-            const businessAccuracy = businessDomain?.accuracy || 0;
-            
-            // Ensure accuracy is a number and handle decimal conversion
-            const getDomainAccuracy = (acc: any) => {
-              let accValue = 0;
-              if (acc !== null && acc !== undefined) {
-                if (typeof acc === 'number') {
-                  accValue = !isNaN(acc) ? acc : 0;
-                } else if (typeof acc === 'string') {
-                  accValue = parseFloat(acc) || 0;
-                }
-                // If accuracy is less than 1, it's a decimal (0.0-1.0), convert to percentage
-                if (accValue > 0 && accValue <= 1) {
-                  accValue = accValue * 100;
-                }
-              }
-              return accValue;
-            };
-            
-            return (
-              <>
-                <Card style={[styles.domainCard, { borderLeftColor: colors.domain.people }]}>
-                  <Card.Content style={styles.domainContent}>
-                    <Text variant="titleMedium" style={styles.domainTitle}>
-                      People
-                    </Text>
-                    <Text variant="headlineSmall" style={[styles.domainValue, { color: colors.domain.people }]}>
-                      {getDomainAccuracy(peopleAccuracy).toFixed(0)}%
-                    </Text>
-                  </Card.Content>
-                </Card>
-                <Card style={[styles.domainCard, { borderLeftColor: colors.domain.process }]}>
-                  <Card.Content style={styles.domainContent}>
-                    <Text variant="titleMedium" style={styles.domainTitle}>
-                      Process
-                    </Text>
-                    <Text variant="headlineSmall" style={[styles.domainValue, { color: colors.domain.process }]}>
-                      {getDomainAccuracy(processAccuracy).toFixed(0)}%
-                    </Text>
-                  </Card.Content>
-                </Card>
-                <Card style={[styles.domainCard, { borderLeftColor: colors.domain.business }]}>
-                  <Card.Content style={styles.domainContent}>
-                    <Text variant="titleMedium" style={styles.domainTitle}>
-                      Business
-                    </Text>
-                    <Text variant="headlineSmall" style={[styles.domainValue, { color: colors.domain.business }]}>
-                      {getDomainAccuracy(businessAccuracy).toFixed(0)}%
-                    </Text>
-                  </Card.Content>
-                </Card>
-              </>
-            );
-          })()}
-        </View>
+        {isLoading ? (
+          <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: spacing.lg }} />
+        ) : performanceByDomain && performanceByDomain.length > 0 ? (
+          <View style={styles.processProgressContainer}>
+            {performanceByDomain.map((domain: any, index: number) => {
+                const totalAnswered = domain.totalAnswered || domain.total_answered || 0;
+                const correct = domain.correctAnswers || domain.correct_answers || 0;
+                const incorrect = totalAnswered - correct;
+                const totalQuestions = domain.totalQuestions || domain.total_questions || 0;
+                const unanswered = totalQuestions - totalAnswered;
+                
+                const correctPercent = totalQuestions > 0 ? (correct / totalQuestions) : 0;
+                const incorrectPercent = totalQuestions > 0 ? (incorrect / totalQuestions) : 0;
+                const unansweredPercent = totalQuestions > 0 ? (unanswered / totalQuestions) : 0;
+                
+                // Get domain color
+                const domainName = domain.domain || '';
+                const domainColor = domainName === 'People' ? colors.domain.people :
+                                  domainName === 'Process' ? colors.domain.process :
+                                  domainName === 'Business' ? colors.domain.business :
+                                  colors.primary;
+                
+                return (
+                  <Card key={domain.domain || index} style={[styles.processCard, { borderLeftWidth: 4, borderLeftColor: domainColor }]}>
+                    <Card.Content style={styles.processContent}>
+                      <View style={styles.processHeader}>
+                        <Text variant="titleMedium" style={[styles.processTitle, { color: domainColor }]}>
+                          {domain.domain || 'Unknown'}
+                        </Text>
+                        <Text variant="bodySmall" style={styles.processTotal}>
+                          {totalAnswered} / {totalQuestions} answered
+                        </Text>
+                      </View>
+                      
+                      {/* Segmented Progress Bar */}
+                      <View style={styles.progressBarContainer}>
+                        <View style={styles.progressBarWrapper}>
+                          {correct > 0 && (
+                            <View
+                              style={[
+                                styles.progressSegment,
+                                styles.progressSegmentCorrect,
+                                { width: `${correctPercent * 100}%` },
+                              ]}
+                            />
+                          )}
+                          {incorrect > 0 && (
+                            <View
+                              style={[
+                                styles.progressSegment,
+                                styles.progressSegmentIncorrect,
+                                { width: `${incorrectPercent * 100}%` },
+                              ]}
+                            />
+                          )}
+                          {unanswered > 0 && (
+                            <View
+                              style={[
+                                styles.progressSegment,
+                                styles.progressSegmentUnanswered,
+                                { width: `${unansweredPercent * 100}%` },
+                              ]}
+                            />
+                          )}
+                        </View>
+                      </View>
+                      
+                      <View style={styles.processStats}>
+                        <View style={styles.processStatItem}>
+                          <View style={[styles.processStatDot, { backgroundColor: colors.success }]} />
+                          <Text variant="bodySmall" style={styles.processStatText}>
+                            {correct} correct
+                          </Text>
+                        </View>
+                        <View style={styles.processStatItem}>
+                          <View style={[styles.processStatDot, { backgroundColor: colors.error }]} />
+                          <Text variant="bodySmall" style={styles.processStatText}>
+                            {incorrect} incorrect
+                          </Text>
+                        </View>
+                        {unanswered > 0 && (
+                          <View style={styles.processStatItem}>
+                            <View style={[styles.processStatDot, { backgroundColor: colors.gray300 }]} />
+                            <Text variant="bodySmall" style={styles.processStatText}>
+                              {unanswered} unanswered
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    </Card.Content>
+                  </Card>
+                );
+              })}
+            </View>
+        ) : (
+          <Text variant="bodyMedium" style={{ textAlign: 'center', color: colors.textSecondary, padding: spacing.lg }}>
+            No domain performance data available
+          </Text>
+        )}
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -582,17 +587,26 @@ const styles = StyleSheet.create({
     color: colors.warning,
     fontWeight: '600',
   },
+  quickActionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.base,
+    marginBottom: spacing.lg,
+    justifyContent: 'space-between',
+  },
   quickActions: {
     flexDirection: 'row',
     gap: spacing.base,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.base,
   },
   quickActionCard: {
-    flex: 1,
+    width: '47%', // 2 columns with gap - using 47% to account for gap
+    maxWidth: '47%',
   },
   actionCard: {
     borderRadius: borderRadius.lg,
     ...shadows.sm,
+    width: '100%',
   },
   actionCardContent: {
     alignItems: 'center',
@@ -661,6 +675,72 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   markedFlashcardsSubtitle: {
+    color: colors.textSecondary,
+  },
+  processProgressContainer: {
+    gap: spacing.base,
+    marginBottom: spacing.lg,
+  },
+  processCard: {
+    borderRadius: borderRadius.lg,
+    ...shadows.sm,
+    marginBottom: spacing.base,
+  },
+  processContent: {
+    padding: spacing.base,
+  },
+  processHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  processTitle: {
+    fontWeight: '600',
+    color: colors.textPrimary,
+    flex: 1,
+  },
+  processTotal: {
+    color: colors.textSecondary,
+  },
+  progressBarContainer: {
+    marginBottom: spacing.sm,
+  },
+  progressBarWrapper: {
+    height: 12,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.gray200,
+    flexDirection: 'row',
+    overflow: 'hidden',
+  },
+  progressSegment: {
+    height: '100%',
+  },
+  progressSegmentCorrect: {
+    backgroundColor: colors.success,
+  },
+  progressSegmentIncorrect: {
+    backgroundColor: colors.error,
+  },
+  progressSegmentUnanswered: {
+    backgroundColor: colors.gray300,
+  },
+  processStats: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.md,
+  },
+  processStatItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  processStatDot: {
+    width: 8,
+    height: 8,
+    borderRadius: borderRadius.round,
+  },
+  processStatText: {
     color: colors.textSecondary,
   },
 });

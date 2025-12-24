@@ -109,7 +109,16 @@ async function importQuestions() {
         const questionType = record['Question Type'] || 'select_one';
         const questionText = record['Question Text'] || '';
         const explanation = record['Explanation'] || null;
-        const domain = record['Domain'] || null;
+        // Normalize domain: remove prefix (e.g., "1. People" -> "People", "3. Business Environment" -> "Business")
+        let domain = record['Domain'] || null;
+        if (domain) {
+          // Remove prefix like "1. ", "2. ", "3. "
+          domain = domain.replace(/^\d+\.\s*/, '').trim();
+          // Map "Business Environment" to "Business"
+          if (domain === 'Business Environment') {
+            domain = 'Business';
+          }
+        }
         const task = record['Task'] || null;
         const pmApproach = record['PM Approach'] || null;
 

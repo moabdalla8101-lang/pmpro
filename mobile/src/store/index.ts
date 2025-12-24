@@ -6,6 +6,7 @@ import examReducer from './slices/examSlice';
 import bookmarkReducer from './slices/bookmarkSlice';
 import missedQuestionsReducer from './slices/missedQuestionsSlice';
 import flashcardReducer from './slices/flashcardSlice';
+import settingsReducer from './slices/settingsSlice';
 
 export const store = configureStore({
   reducer: {
@@ -16,6 +17,7 @@ export const store = configureStore({
     bookmarks: bookmarkReducer,
     missedQuestions: missedQuestionsReducer,
     flashcards: flashcardReducer,
+    settings: settingsReducer,
   },
 });
 

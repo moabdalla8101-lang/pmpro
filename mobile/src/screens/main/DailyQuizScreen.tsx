@@ -8,6 +8,8 @@ import { RootState, AppDispatch } from '../../store';
 import { fetchQuestions } from '../../store/slices/questionSlice';
 import { questionService } from '../../services/api/questionService';
 import { addBookmark, removeBookmark, checkBookmark } from '../../store/slices/bookmarkSlice';
+import { dailyActivityService } from '../../services/dailyActivityService';
+import { useFocusEffect } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { ActionButton } from '../../components';
 import { colors } from '../../theme';
@@ -76,6 +78,7 @@ export default function DailyQuizScreen() {
       const response = await examService.startDailyQuiz(PMP_CERTIFICATION_ID);
       setExamId(response.examId);
       setIsQuizStarted(true);
+      dailyActivityService.startSession();
 
       // Fetch the specific questions for this quiz using the questionIds returned
       if (response.questionIds && response.questionIds.length > 0) {
@@ -202,6 +205,13 @@ export default function DailyQuizScreen() {
       }));
 
       await examService.submitExam(examId, answers);
+      
+      // Track questions answered for daily goals
+      await dailyActivityService.incrementQuestions(displayQuestions.length);
+      
+      // End session and track time
+      await dailyActivityService.endSession();
+      
       navigation.navigate('ExamReview' as never, { examId } as never);
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to submit quiz');

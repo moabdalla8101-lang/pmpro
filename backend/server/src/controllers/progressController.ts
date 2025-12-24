@@ -372,24 +372,83 @@ export async function getPerformanceByDomain(req: AuthRequest, res: Response, ne
     console.log('Questions with domain values:', domainCheck.rows);
 
     // Get performance grouped by domain (People, Process, Business)
-    // Only count questions that belong to the specified certification
+    // Normalize domain values: handle prefixes like "1. People", "2. Process", "3. Business Environment"
+    // Map knowledge areas to domains if domain is NULL (fallback)
+    // People: Resource Management, Communications Management, Stakeholder Management
+    // Process: Integration, Scope, Schedule, Cost, Quality, Risk, Procurement
+    // Business: (newer domain)
     const result = await pool.query(
-      `SELECT 
-         q.domain,
-         COUNT(DISTINCT ua.id) as total_answered,
-         SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END) as correct_answers,
-         CASE 
-           WHEN COUNT(DISTINCT ua.id) > 0 
-           THEN (SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END)::float / COUNT(DISTINCT ua.id)::float * 100)
-           ELSE 0 
-         END as accuracy
-       FROM questions q
-       LEFT JOIN user_answers ua ON q.id = ua.question_id AND ua.user_id = $1
-       WHERE q.certification_id = $2
-         AND q.domain IS NOT NULL
-         AND q.domain IN ('People', 'Process', 'Business')
-       GROUP BY q.domain
-       ORDER BY q.domain`,
+      `WITH normalized_domains AS (
+        SELECT 
+          q.id,
+          q.certification_id,
+          COALESCE(
+            CASE 
+              -- Normalize domain values with prefixes (e.g., "1. People" -> "People", "3. Business Environment" -> "Business")
+              WHEN TRIM(q.domain) ~ '^[0-9]+\.\s*People' OR TRIM(q.domain) = 'People' THEN 'People'
+              WHEN TRIM(q.domain) ~ '^[0-9]+\.\s*Process' OR TRIM(q.domain) = 'Process' THEN 'Process'
+              WHEN TRIM(q.domain) ~ '^[0-9]+\.\s*Business' OR TRIM(q.domain) IN ('Business', 'Business Environment') THEN 'Business'
+              WHEN q.domain IS NOT NULL AND TRIM(q.domain) IN ('People', 'Process', 'Business') THEN TRIM(q.domain)
+              ELSE NULL
+            END,
+            CASE 
+              WHEN ka.name LIKE '%Resource Management%' OR 
+                   ka.name LIKE '%Communications Management%' OR 
+                   ka.name LIKE '%Stakeholder Management%' 
+              THEN 'People'
+              WHEN ka.name LIKE '%Integration%' OR 
+                   ka.name LIKE '%Scope%' OR 
+                   ka.name LIKE '%Schedule%' OR 
+                   ka.name LIKE '%Cost%' OR 
+                   ka.name LIKE '%Quality%' OR 
+                   ka.name LIKE '%Risk%' OR 
+                   ka.name LIKE '%Procurement%'
+              THEN 'Process'
+              ELSE NULL
+            END
+          ) as domain
+        FROM questions q
+        LEFT JOIN knowledge_areas ka ON q.knowledge_area_id = ka.id
+        WHERE q.certification_id = $2
+          AND COALESCE(
+            CASE 
+              WHEN TRIM(q.domain) ~ '^[0-9]+\.\s*People' OR TRIM(q.domain) = 'People' THEN 'People'
+              WHEN TRIM(q.domain) ~ '^[0-9]+\.\s*Process' OR TRIM(q.domain) = 'Process' THEN 'Process'
+              WHEN TRIM(q.domain) ~ '^[0-9]+\.\s*Business' OR TRIM(q.domain) IN ('Business', 'Business Environment') THEN 'Business'
+              WHEN q.domain IS NOT NULL AND TRIM(q.domain) IN ('People', 'Process', 'Business') THEN TRIM(q.domain)
+              ELSE NULL
+            END,
+            CASE 
+              WHEN ka.name LIKE '%Resource Management%' OR 
+                   ka.name LIKE '%Communications Management%' OR 
+                   ka.name LIKE '%Stakeholder Management%' 
+              THEN 'People'
+              WHEN ka.name LIKE '%Integration%' OR 
+                   ka.name LIKE '%Scope%' OR 
+                   ka.name LIKE '%Schedule%' OR 
+                   ka.name LIKE '%Cost%' OR 
+                   ka.name LIKE '%Quality%' OR 
+                   ka.name LIKE '%Risk%' OR 
+                   ka.name LIKE '%Procurement%'
+              THEN 'Process'
+              ELSE NULL
+            END
+          ) IN ('People', 'Process', 'Business')
+      )
+      SELECT 
+        nd.domain,
+        COUNT(DISTINCT nd.id) as total_questions,
+        COUNT(DISTINCT ua.id) as total_answered,
+        SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END) as correct_answers,
+        CASE 
+          WHEN COUNT(DISTINCT ua.id) > 0 
+          THEN (SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END)::float / COUNT(DISTINCT ua.id)::float * 100)
+          ELSE 0 
+        END as accuracy
+      FROM normalized_domains nd
+      LEFT JOIN user_answers ua ON nd.id = ua.question_id AND ua.user_id = $1
+      GROUP BY nd.domain
+      ORDER BY nd.domain`,
       [req.user!.userId, certificationId]
     );
 
@@ -413,6 +472,7 @@ export async function getPerformanceByDomain(req: AuthRequest, res: Response, ne
       
       return {
         domain: row.domain,
+        totalQuestions: parseInt(row.total_questions || '0', 10),
         totalAnswered: parseInt(row.total_answered || '0', 10),
         correctAnswers: parseInt(row.correct_answers || '0', 10),
         accuracy: accuracy,
@@ -427,17 +487,66 @@ export async function getPerformanceByDomain(req: AuthRequest, res: Response, ne
     });
 
     const allDomains = ['People', 'Process', 'Business'];
-    const finalPerformance = allDomains.map((domain) => {
+    const finalPerformance = await Promise.all(allDomains.map(async (domain) => {
       if (domainMap[domain]) {
         return domainMap[domain];
       }
+      // If domain has no data, we need to get total questions for that domain
+      // Include both direct domain matches (with normalization) and knowledge area mappings
+      const domainTotalResult = await pool.query(
+        `SELECT COUNT(*) as total_questions
+         FROM questions q
+         LEFT JOIN knowledge_areas ka ON q.knowledge_area_id = ka.id
+         WHERE q.certification_id = $1
+           AND (
+             -- Normalized domain matches (handle prefixes like "1. People", "2. Process", "3. Business Environment")
+             (CASE 
+               WHEN TRIM(q.domain) ~ '^[0-9]+\.\s*People' OR TRIM(q.domain) = 'People' THEN 'People'
+               WHEN TRIM(q.domain) ~ '^[0-9]+\.\s*Process' OR TRIM(q.domain) = 'Process' THEN 'Process'
+               WHEN TRIM(q.domain) ~ '^[0-9]+\.\s*Business' OR TRIM(q.domain) IN ('Business', 'Business Environment') THEN 'Business'
+               WHEN q.domain IS NOT NULL AND TRIM(q.domain) IN ('People', 'Process', 'Business') THEN TRIM(q.domain)
+               ELSE NULL
+             END) = $2
+             OR (
+               -- Fallback to knowledge area mapping if domain is NULL
+               q.domain IS NULL AND
+               CASE 
+                 WHEN $2 = 'People' AND (
+                   ka.name LIKE '%Resource Management%' OR 
+                   ka.name LIKE '%Communications Management%' OR 
+                   ka.name LIKE '%Stakeholder Management%'
+                 ) THEN true
+                 WHEN $2 = 'Process' AND (
+                   ka.name LIKE '%Integration%' OR 
+                   ka.name LIKE '%Scope%' OR 
+                   ka.name LIKE '%Schedule%' OR 
+                   ka.name LIKE '%Cost%' OR 
+                   ka.name LIKE '%Quality%' OR 
+                   ka.name LIKE '%Risk%' OR 
+                   ka.name LIKE '%Procurement%'
+                 ) THEN true
+                 ELSE false
+               END
+             )
+           )`,
+        [certificationId, domain]
+      );
+      const domainTotal = parseInt(
+        (domainTotalResult.rows[0] && domainTotalResult.rows[0].total_questions) || '0',
+        10
+      );
+      
       return {
         domain: domain,
+        totalQuestions: domainTotal,
         totalAnswered: 0,
         correctAnswers: 0,
         accuracy: 0,
       };
-    });
+    }));
+
+    // Debug logging
+    console.log('Final Performance before response:', finalPerformance);
 
     res.json({ performance: finalPerformance });
   } catch (error) {

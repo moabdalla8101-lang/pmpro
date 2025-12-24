@@ -1,17 +1,61 @@
-import React from 'react';
-import { View, StyleSheet, ScrollView, SafeAreaView } from 'react-native';
-import { List, Divider, Avatar, Switch, Card, Text } from 'react-native-paper';
+import React, { useEffect, useState } from 'react';
+import { View, StyleSheet, ScrollView, SafeAreaView, TextInput, Alert } from 'react-native';
+import { List, Divider, Avatar, Switch, Card, Text, Button } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { logout } from '../../store/slices/authSlice';
-import { RootState } from '../../store';
+import { RootState, AppDispatch } from '../../store';
+import { loadSettings, saveSettings, setDailyQuestionsGoal, setDailyMinutesGoal } from '../../store/slices/settingsSlice';
 import { ActionButton, SectionHeader } from '../../components';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 
 export default function SettingsScreen() {
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const { user } = useSelector((state: RootState) => state.auth);
+  const { dailyQuestionsGoal, dailyMinutesGoal } = useSelector((state: RootState) => state.settings);
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
+  const [questionsInput, setQuestionsInput] = useState(dailyQuestionsGoal.toString());
+  const [minutesInput, setMinutesInput] = useState(dailyMinutesGoal.toString());
+  const [isEditingGoals, setIsEditingGoals] = useState(false);
+
+  useEffect(() => {
+    dispatch(loadSettings() as any);
+  }, [dispatch]);
+
+  useEffect(() => {
+    setQuestionsInput(dailyQuestionsGoal.toString());
+    setMinutesInput(dailyMinutesGoal.toString());
+  }, [dailyQuestionsGoal, dailyMinutesGoal]);
+
+  const handleSaveGoals = async () => {
+    const questions = parseInt(questionsInput, 10);
+    const minutes = parseInt(minutesInput, 10);
+
+    if (isNaN(questions) || questions < 10 || questions > 200) {
+      Alert.alert('Invalid Input', 'Questions per day must be between 10 and 200');
+      return;
+    }
+
+    if (isNaN(minutes) || minutes < 10 || minutes > 120) {
+      Alert.alert('Invalid Input', 'Practice minutes per day must be between 10 and 120');
+      return;
+    }
+
+    try {
+      await dispatch(saveSettings({ dailyQuestionsGoal: questions, dailyMinutesGoal: minutes }) as any).unwrap();
+      setIsEditingGoals(false);
+      Alert.alert('Success', 'Daily goals updated successfully');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to save daily goals');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setQuestionsInput(dailyQuestionsGoal.toString());
+    setMinutesInput(dailyMinutesGoal.toString());
+    setIsEditingGoals(false);
+  };
 
   const handleLogout = () => {
     dispatch(logout() as any);
@@ -106,15 +150,105 @@ export default function SettingsScreen() {
             style={styles.listItem}
             onPress={() => {}}
           />
-          <Divider />
-          <List.Item
-            title="Daily Goal"
-            description="Questions to complete per day"
-            left={(props) => <List.Icon {...props} icon="target" color={colors.primary} />}
-            right={(props) => <List.Icon {...props} icon="chevron-right" />}
-            style={styles.listItem}
-            onPress={() => {}}
-          />
+        </Card>
+
+        {/* Daily Goals Settings */}
+        <SectionHeader title="Daily Goals" icon="target" />
+        <Card style={styles.card}>
+          <Card.Content style={styles.goalsContent}>
+            <View style={styles.goalItem}>
+              <View style={styles.goalHeader}>
+                <Icon name="help-circle" size={24} color={colors.primary} style={styles.goalIcon} />
+                <View style={styles.goalTextContainer}>
+                  <Text variant="titleMedium" style={styles.goalTitle}>
+                    Questions per day
+                  </Text>
+                  <Text variant="bodySmall" style={styles.goalDescription}>
+                    Target number of questions to answer daily (10-200)
+                  </Text>
+                </View>
+              </View>
+              {isEditingGoals ? (
+                <TextInput
+                  style={styles.goalInput}
+                  value={questionsInput}
+                  onChangeText={setQuestionsInput}
+                  keyboardType="numeric"
+                  placeholder="50"
+                />
+              ) : (
+                <View style={styles.goalValueContainer}>
+                  <Text variant="headlineSmall" style={styles.goalValue}>
+                    {dailyQuestionsGoal}
+                  </Text>
+                  <Text variant="bodySmall" style={styles.goalUnit}>questions</Text>
+                </View>
+              )}
+            </View>
+
+            <Divider style={styles.goalDivider} />
+
+            <View style={styles.goalItem}>
+              <View style={styles.goalHeader}>
+                <Icon name="clock-outline" size={24} color={colors.primary} style={styles.goalIcon} />
+                <View style={styles.goalTextContainer}>
+                  <Text variant="titleMedium" style={styles.goalTitle}>
+                    Practice minutes per day
+                  </Text>
+                  <Text variant="bodySmall" style={styles.goalDescription}>
+                    Target minutes of practice time daily (10-120)
+                  </Text>
+                </View>
+              </View>
+              {isEditingGoals ? (
+                <TextInput
+                  style={styles.goalInput}
+                  value={minutesInput}
+                  onChangeText={setMinutesInput}
+                  keyboardType="numeric"
+                  placeholder="30"
+                />
+              ) : (
+                <View style={styles.goalValueContainer}>
+                  <Text variant="headlineSmall" style={styles.goalValue}>
+                    {dailyMinutesGoal}
+                  </Text>
+                  <Text variant="bodySmall" style={styles.goalUnit}>minutes</Text>
+                </View>
+              )}
+            </View>
+
+            {isEditingGoals ? (
+              <View style={styles.goalActions}>
+                <Button
+                  mode="outlined"
+                  onPress={handleCancelEdit}
+                  style={styles.goalButton}
+                  textColor={colors.textSecondary}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  mode="contained"
+                  onPress={handleSaveGoals}
+                  style={[styles.goalButton, styles.goalButtonPrimary]}
+                  buttonColor={colors.primary}
+                >
+                  Save
+                </Button>
+              </View>
+            ) : (
+              <Button
+                mode="outlined"
+                onPress={() => setIsEditingGoals(true)}
+                style={styles.editButton}
+                icon="pencil"
+                textColor={colors.primary}
+              >
+                Edit Goals
+              </Button>
+            )}
+          </Card.Content>
         </Card>
 
         {/* Support Section */}
@@ -222,6 +356,75 @@ const styles = StyleSheet.create({
   },
   listItem: {
     paddingVertical: spacing.sm,
+  },
+  goalsContent: {
+    padding: spacing.base,
+  },
+  goalItem: {
+    marginBottom: spacing.base,
+  },
+  goalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: spacing.sm,
+  },
+  goalIcon: {
+    marginRight: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  goalTextContainer: {
+    flex: 1,
+  },
+  goalTitle: {
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs / 2,
+  },
+  goalDescription: {
+    color: colors.textSecondary,
+  },
+  goalValueContainer: {
+    alignItems: 'flex-end',
+    marginTop: spacing.xs,
+  },
+  goalValue: {
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  goalUnit: {
+    color: colors.textSecondary,
+    marginTop: spacing.xs / 2,
+  },
+  goalInput: {
+    borderWidth: 1,
+    borderColor: colors.gray300,
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+    backgroundColor: colors.surface,
+  },
+  goalDivider: {
+    marginVertical: spacing.base,
+  },
+  goalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
+    marginTop: spacing.base,
+  },
+  goalButton: {
+    flex: 1,
+  },
+  goalButtonPrimary: {
+    marginLeft: spacing.sm,
+  },
+  editButton: {
+    marginTop: spacing.base,
+    borderColor: colors.primary,
   },
   logoutContainer: {
     marginTop: spacing.base,

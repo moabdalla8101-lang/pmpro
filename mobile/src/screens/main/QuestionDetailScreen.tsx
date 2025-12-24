@@ -6,6 +6,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { fetchQuestion } from '../../store/slices/questionSlice';
 import { progressService } from '../../services/api/progressService';
 import { addBookmark, removeBookmark, checkBookmark } from '../../store/slices/bookmarkSlice';
+import { dailyActivityService } from '../../services/dailyActivityService';
 import { RootState, AppDispatch } from '../../store';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { CategoryBadge, ActionButton, DragAndMatch } from '../../components';
@@ -231,6 +232,9 @@ export default function QuestionDetailScreen() {
         const result = await progressService.recordAnswer(questionId, selectedAnswer!);
         setIsCorrect(result.isCorrect);
       }
+      
+      // Track question answered for daily goals
+      await dailyActivityService.incrementQuestions(1);
       
       // #region agent log
       fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QuestionDetailScreen.tsx:120',message:'Answer recorded, setting explanation',data:{isCorrect},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H4'})}).catch(()=>{});

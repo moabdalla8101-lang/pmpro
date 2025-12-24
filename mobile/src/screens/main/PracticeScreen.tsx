@@ -2,9 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, FlatList, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
 import { Card, Text, ActivityIndicator } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
-import { fetchQuestions } from '../../store/slices/questionSlice';
+import { fetchQuestions, clearQuestions } from '../../store/slices/questionSlice';
 import { RootState, AppDispatch } from '../../store';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { dailyActivityService } from '../../services/dailyActivityService';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { CategoryBadge, SectionHeader, EmptyState } from '../../components';
 import { colors } from '../../theme';
@@ -21,13 +22,6 @@ export default function PracticeScreen() {
   
   const [selectedDifficulty, setSelectedDifficulty] = useState<string | null>(null);
   const [selectedKnowledgeArea, setSelectedKnowledgeArea] = useState<string | null>(null);
-
-  useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'PracticeScreen.tsx:20',message:'PracticeScreen useEffect triggered',data:{selectedDifficulty,selectedKnowledgeArea},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
-    // #endregion
-    loadQuestions();
-  }, [selectedDifficulty, selectedKnowledgeArea]);
 
   const loadQuestions = () => {
     const filters: any = {
@@ -47,6 +41,25 @@ export default function PracticeScreen() {
     // #endregion
     dispatch(fetchQuestions(filters));
   };
+
+  // Clear questions and reload when screen is focused (to avoid showing exam questions)
+  useFocusEffect(
+    React.useCallback(() => {
+      dispatch(clearQuestions());
+      loadQuestions();
+      dailyActivityService.startSession();
+      return () => {
+        dailyActivityService.endSession();
+      };
+    }, [dispatch, selectedDifficulty, selectedKnowledgeArea])
+  );
+
+  useEffect(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'PracticeScreen.tsx:20',message:'PracticeScreen useEffect triggered',data:{selectedDifficulty,selectedKnowledgeArea},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
+    // #endregion
+    loadQuestions();
+  }, [selectedDifficulty, selectedKnowledgeArea]);
 
   const handleQuestionPress = (questionId: string) => {
     navigation.navigate('QuestionDetail' as never, { questionId } as never);

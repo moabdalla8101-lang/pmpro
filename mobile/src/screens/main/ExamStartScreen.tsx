@@ -7,6 +7,8 @@ import { examService } from '../../services/api/examService';
 import { RootState, AppDispatch } from '../../store';
 import { fetchQuestions } from '../../store/slices/questionSlice';
 import { addBookmark, removeBookmark, checkBookmark } from '../../store/slices/bookmarkSlice';
+import { dailyActivityService } from '../../services/dailyActivityService';
+import { useFocusEffect } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { ActionButton } from '../../components';
 import { colors } from '../../theme';
@@ -62,6 +64,7 @@ export default function ExamStartScreen() {
       const response = await examService.startExam(certificationId, TOTAL_QUESTIONS);
       setExamId(response.examId);
       setIsExamStarted(true);
+      dailyActivityService.startSession();
 
       // Fetch questions for the exam
       await dispatch(fetchQuestions({ certificationId, limit: TOTAL_QUESTIONS.toString() }) as any);
@@ -130,6 +133,13 @@ export default function ExamStartScreen() {
               }));
 
               await examService.submitExam(examId, answers);
+              
+              // Track questions answered for daily goals
+              await dailyActivityService.incrementQuestions(questions.length);
+              
+              // End session and track time
+              await dailyActivityService.endSession();
+              
               navigation.navigate('ExamReview' as never, { examId } as never);
             } catch (error: any) {
               Alert.alert('Error', error.message || 'Failed to submit exam');

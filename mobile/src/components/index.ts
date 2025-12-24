@@ -8,4 +8,5 @@ export { default as StreakBadge } from './StreakBadge';
 export { default as DailyQuizStreakCard } from './DailyQuizStreakCard';
 export { default as AchievementCard } from './AchievementCard';
 export { default as DragAndMatch } from './DragAndMatch';
+export { default as DailyGoalsHero } from './DailyGoalsHero';
 

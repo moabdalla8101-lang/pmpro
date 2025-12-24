@@ -68,8 +68,18 @@ const progressSlice = createSlice({
       .addCase(fetchPerformanceByKnowledgeArea.fulfilled, (state, action) => {
         state.performanceByKnowledgeArea = action.payload.performance || [];
       })
+      .addCase(fetchPerformanceByDomain.pending, (state) => {
+        state.isLoading = true;
+      })
       .addCase(fetchPerformanceByDomain.fulfilled, (state, action) => {
+        console.log('fetchPerformanceByDomain fulfilled:', action.payload);
         state.performanceByDomain = action.payload.performance || [];
+        state.isLoading = false;
+      })
+      .addCase(fetchPerformanceByDomain.rejected, (state, action) => {
+        console.error('fetchPerformanceByDomain rejected:', action.error);
+        state.isLoading = false;
+        state.error = action.error.message || 'Failed to fetch performance by domain';
       });
   },
 });
