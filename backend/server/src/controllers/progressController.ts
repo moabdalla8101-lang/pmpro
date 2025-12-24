@@ -121,7 +121,7 @@ export async function recordAnswer(req: AuthRequest, res: Response, next: NextFu
 
 export async function getMissedQuestions(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    const { knowledgeAreaId, reviewed } = req.query;
+    const { knowledgeAreaId, reviewed, certificationId } = req.query;
     
     // Get all incorrect answers from practice sessions
     // For now, we'll get all incorrect answers (exam exclusion can be added later if needed)
@@ -136,6 +136,13 @@ export async function getMissedQuestions(req: AuthRequest, res: Response, next: 
     
     const params: any[] = [req.user!.userId];
     let paramIndex = 2;
+    
+    // Filter by certification if provided
+    if (certificationId) {
+      query += ` AND q.certification_id = $${paramIndex}`;
+      params.push(certificationId);
+      paramIndex++;
+    }
     
     if (knowledgeAreaId) {
       query += ` AND q.knowledge_area_id = $${paramIndex}`;
@@ -174,18 +181,31 @@ export async function getMissedQuestions(req: AuthRequest, res: Response, next: 
     `;
     
     // Handle reviewed filter - query params come as strings
-    const reviewedValue = reviewed === 'true' || reviewed === true;
-    const reviewedFalse = reviewed === 'false' || reviewed === false;
-    
-    if (reviewedFalse) {
-      query += ` AND mr.id IS NULL`;
-    } else if (reviewedValue) {
-      query += ` AND mr.id IS NOT NULL`;
+    // If reviewed is explicitly 'false' or false, show only non-reviewed
+    // If reviewed is explicitly 'true' or true, show only reviewed
+    // If reviewed is undefined/null, show all (no filter)
+    if (reviewed !== undefined && reviewed !== null) {
+      const reviewedValue = reviewed === 'true' || reviewed === true;
+      const reviewedFalse = reviewed === 'false' || reviewed === false;
+      
+      if (reviewedFalse) {
+        query += ` AND mr.id IS NULL`;
+      } else if (reviewedValue) {
+        query += ` AND mr.id IS NOT NULL`;
+      }
     }
+    
+    // Ensure the query executes even if missed_questions_reviewed table doesn't exist
+    // The table will be created on first use via markMissedQuestionAsReviewed
     
     query += ` ORDER BY answered_at DESC NULLS LAST`;
     
+    console.log('Missed Questions Query:', query);
+    console.log('Missed Questions Params:', params);
+    
     const result = await pool.query(query, params);
+    
+    console.log('Missed Questions Result Count:', result.rows.length);
     
     // Get answers for each question
     const missedQuestions = await Promise.all(
@@ -330,6 +350,96 @@ export async function getPerformanceByKnowledgeArea(req: AuthRequest, res: Respo
     });
 
     res.json({ performance });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getPerformanceByDomain(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const { certificationId } = req.query;
+
+    // First, check if questions have domain values
+    const domainCheck = await pool.query(
+      `SELECT domain, COUNT(*) as count 
+       FROM questions 
+       WHERE certification_id = $1 
+         AND domain IS NOT NULL 
+         AND domain IN ('People', 'Process', 'Business')
+       GROUP BY domain`,
+      [certificationId]
+    );
+    console.log('Questions with domain values:', domainCheck.rows);
+
+    // Get performance grouped by domain (People, Process, Business)
+    // Only count questions that belong to the specified certification
+    const result = await pool.query(
+      `SELECT 
+         q.domain,
+         COUNT(DISTINCT ua.id) as total_answered,
+         SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END) as correct_answers,
+         CASE 
+           WHEN COUNT(DISTINCT ua.id) > 0 
+           THEN (SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END)::float / COUNT(DISTINCT ua.id)::float * 100)
+           ELSE 0 
+         END as accuracy
+       FROM questions q
+       LEFT JOIN user_answers ua ON q.id = ua.question_id AND ua.user_id = $1
+       WHERE q.certification_id = $2
+         AND q.domain IS NOT NULL
+         AND q.domain IN ('People', 'Process', 'Business')
+       GROUP BY q.domain
+       ORDER BY q.domain`,
+      [req.user!.userId, certificationId]
+    );
+
+    // Debug logging
+    console.log('Domain Performance Query Result:', {
+      userId: req.user!.userId,
+      certificationId,
+      rowCount: result.rows.length,
+      rows: result.rows
+    });
+
+    // Transform to camelCase and ensure numeric types
+    // Accuracy is already calculated as percentage in the query (multiplied by 100)
+    const performance = result.rows.map((row: any) => {
+      let accuracy = parseFloat(row.accuracy || '0');
+      // The query already multiplies by 100, so accuracy should be 0-100
+      // But handle edge case if it's still a decimal
+      if (accuracy > 0 && accuracy <= 1) {
+        accuracy = accuracy * 100;
+      }
+      
+      return {
+        domain: row.domain,
+        totalAnswered: parseInt(row.total_answered || '0', 10),
+        correctAnswers: parseInt(row.correct_answers || '0', 10),
+        accuracy: accuracy,
+      };
+    });
+
+    // Ensure we have entries for all three domains (People, Process, Business)
+    // If a domain has no answers, it won't appear in the result, so we add it with 0 stats
+    const domainMap: { [key: string]: any } = {};
+    performance.forEach((perf: any) => {
+      domainMap[perf.domain] = perf;
+    });
+
+    const allDomains = ['People', 'Process', 'Business'];
+    const finalPerformance = allDomains.map((domain) => {
+      if (domainMap[domain]) {
+        return domainMap[domain];
+      }
+      return {
+        domain: domain,
+        totalAnswered: 0,
+        correctAnswers: 0,
+        accuracy: 0,
+      };
+    });
+
+    res.json({ performance: finalPerformance });
   } catch (error) {
     next(error);
   }

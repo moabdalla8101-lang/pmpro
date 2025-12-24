@@ -38,6 +38,8 @@ export default function QuestionsPage() {
     certificationId: '550e8400-e29b-41d4-a716-446655440000',
     knowledgeAreaId: '',
     answers: [{ answerText: '', isCorrect: false }],
+    questionImages: null as any,
+    explanationImages: null as any,
   });
   const queryClient = useQueryClient();
 
@@ -80,6 +82,8 @@ export default function QuestionsPage() {
         certificationId: question.certificationId || question.certification_id || '',
         knowledgeAreaId: question.knowledgeAreaId || question.knowledge_area_id || '',
         answers: question.answers || [{ answerText: '', isCorrect: false }],
+        questionImages: question.questionImages || question.question_images || null,
+        explanationImages: question.explanationImages || question.explanation_images || null,
       });
     } else {
       setEditingQuestion(null);
@@ -90,6 +94,8 @@ export default function QuestionsPage() {
         certificationId: '550e8400-e29b-41d4-a716-446655440000',
         knowledgeAreaId: '',
         answers: [{ answerText: '', isCorrect: false }],
+        questionImages: null,
+        explanationImages: null,
       });
     }
     setOpen(true);
@@ -291,6 +297,52 @@ export default function QuestionsPage() {
               setFormData({ ...formData, explanation: e.target.value })
             }
             margin="normal"
+          />
+
+          <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>
+            Question Images (JSON)
+          </Typography>
+          <TextField
+            fullWidth
+            label="Question Images (JSON array of image URLs)"
+            multiline
+            rows={3}
+            value={formData.questionImages ? JSON.stringify(formData.questionImages, null, 2) : ''}
+            onChange={(e) => {
+              try {
+                const parsed = e.target.value ? JSON.parse(e.target.value) : null;
+                setFormData({ ...formData, questionImages: parsed });
+              } catch (err) {
+                // Invalid JSON, keep as string for now
+                setFormData({ ...formData, questionImages: e.target.value || null });
+              }
+            }}
+            margin="normal"
+            placeholder='["https://example.com/image1.png", "https://example.com/image2.png"]'
+            helperText="Enter a JSON array of image URLs"
+          />
+
+          <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>
+            Explanation Images (JSON)
+          </Typography>
+          <TextField
+            fullWidth
+            label="Explanation Images (JSON array of image URLs)"
+            multiline
+            rows={3}
+            value={formData.explanationImages ? JSON.stringify(formData.explanationImages, null, 2) : ''}
+            onChange={(e) => {
+              try {
+                const parsed = e.target.value ? JSON.parse(e.target.value) : null;
+                setFormData({ ...formData, explanationImages: parsed });
+              } catch (err) {
+                // Invalid JSON, keep as string for now
+                setFormData({ ...formData, explanationImages: e.target.value || null });
+              }
+            }}
+            margin="normal"
+            placeholder='["https://example.com/image1.png", "https://example.com/image2.png"]'
+            helperText="Enter a JSON array of image URLs"
           />
         </DialogContent>
         <DialogActions>

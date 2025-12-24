@@ -11,12 +11,161 @@ export async function startExam(req: AuthRequest, res: Response, next: NextFunct
     const examId = uuidv4();
 
     await pool.query(
-      `INSERT INTO mock_exams (id, user_id, certification_id, started_at, total_questions, correct_answers)
-       VALUES ($1, $2, $3, NOW(), $4, 0)`,
+      `INSERT INTO mock_exams (id, user_id, certification_id, started_at, total_questions, correct_answers, exam_type)
+       VALUES ($1, $2, $3, NOW(), $4, 0, 'mock_exam')`,
       [examId, req.user!.userId, certificationId, totalQuestions]
     );
 
     res.status(201).json({ examId, startedAt: new Date() });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function startDailyQuiz(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const { certificationId } = req.body;
+    const DAILY_QUIZ_QUESTIONS = 10;
+
+    // Check if user has already taken today's quiz
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+
+    const existingQuiz = await pool.query(
+      `SELECT id, completed_at FROM mock_exams 
+       WHERE user_id = $1 
+       AND certification_id = $2 
+       AND exam_type = 'daily_quiz'
+       AND started_at >= $3 
+       AND started_at <= $4
+       ORDER BY started_at DESC
+       LIMIT 1`,
+      [req.user!.userId, certificationId, todayStart, todayEnd]
+    );
+
+    if (existingQuiz.rows.length > 0 && existingQuiz.rows[0].completed_at) {
+      // User has already completed today's quiz
+      return res.status(400).json({ 
+        error: 'Daily quiz already completed',
+        examId: existingQuiz.rows[0].id 
+      });
+    }
+
+    // Get 10 random questions
+    const questionsResult = await pool.query(
+      `SELECT id FROM questions 
+       WHERE certification_id = $1 
+       AND is_active = true 
+       ORDER BY RANDOM() 
+       LIMIT $2`,
+      [certificationId, DAILY_QUIZ_QUESTIONS]
+    );
+
+    if (questionsResult.rows.length < DAILY_QUIZ_QUESTIONS) {
+      return res.status(400).json({ error: 'Not enough questions available for daily quiz' });
+    }
+
+    const examId = uuidv4();
+
+    await pool.query(
+      `INSERT INTO mock_exams (id, user_id, certification_id, started_at, total_questions, correct_answers, exam_type)
+       VALUES ($1, $2, $3, NOW(), $4, 0, 'daily_quiz')`,
+      [examId, req.user!.userId, certificationId, DAILY_QUIZ_QUESTIONS]
+    );
+
+    const questionIds = questionsResult.rows.map((row: any) => row.id);
+
+    res.status(201).json({ 
+      examId, 
+      startedAt: new Date(),
+      questionIds,
+      totalQuestions: DAILY_QUIZ_QUESTIONS
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getDailyQuizStatus(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const { certificationId } = req.query;
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+
+    const result = await pool.query(
+      `SELECT id, started_at, completed_at, score, correct_answers, total_questions
+       FROM mock_exams 
+       WHERE user_id = $1 
+       AND certification_id = $2 
+       AND exam_type = 'daily_quiz'
+       AND started_at >= $3 
+       AND started_at <= $4
+       ORDER BY started_at DESC
+       LIMIT 1`,
+      [req.user!.userId, certificationId, todayStart, todayEnd]
+    );
+
+    if (result.rows.length === 0) {
+      return res.json({ 
+        hasTakenToday: false,
+        canTake: true 
+      });
+    }
+
+    const quiz = result.rows[0];
+    const hasCompleted = quiz.completed_at !== null;
+
+    res.json({
+      hasTakenToday: true,
+      canTake: !hasCompleted,
+      examId: quiz.id,
+      startedAt: quiz.started_at,
+      completedAt: quiz.completed_at,
+      score: quiz.score,
+      correctAnswers: quiz.correct_answers,
+      totalQuestions: quiz.total_questions
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getWeeklyDailyQuizCompletions(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const { certificationId, startDate } = req.query;
+    
+    const start = startDate ? new Date(startDate as string) : new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+
+    const result = await pool.query(
+      `SELECT DATE(completed_at) as date
+       FROM mock_exams 
+       WHERE user_id = $1 
+       AND certification_id = $2 
+       AND exam_type = 'daily_quiz'
+       AND completed_at IS NOT NULL
+       AND completed_at >= $3 
+       AND completed_at <= $4
+       GROUP BY DATE(completed_at)
+       ORDER BY date ASC`,
+      [req.user!.userId, certificationId, start, end]
+    );
+
+    res.json({
+      completions: result.rows.map((row: any) => {
+        const date = row.date instanceof Date ? row.date : new Date(row.date);
+        return {
+          date: date.toISOString().split('T')[0],
+        };
+      }),
+    });
   } catch (error) {
     next(error);
   }
@@ -253,6 +402,32 @@ export async function getExamReview(req: AuthRequest, res: Response, next: NextF
       },
       answers
     });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deleteExam(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const { id } = req.params;
+
+    // Verify the exam exists and belongs to the user
+    const examResult = await pool.query(
+      'SELECT id FROM mock_exams WHERE id = $1 AND user_id = $2',
+      [id, req.user!.userId]
+    );
+
+    if (examResult.rows.length === 0) {
+      return next(new NotFoundError('Exam not found'));
+    }
+
+    // Delete the exam (cascade will handle related records if foreign keys are set up)
+    await pool.query(
+      'DELETE FROM mock_exams WHERE id = $1 AND user_id = $2',
+      [id, req.user!.userId]
+    );
+
+    res.json({ message: 'Exam deleted successfully' });
   } catch (error) {
     next(error);
   }

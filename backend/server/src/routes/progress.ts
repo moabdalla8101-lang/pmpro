@@ -5,6 +5,7 @@ import {
   updateUserProgress,
   recordAnswer,
   getPerformanceByKnowledgeArea,
+  getPerformanceByDomain,
   getMissedQuestions,
   markMissedQuestionAsReviewed,
 } from '../controllers/progressController';
@@ -17,6 +18,7 @@ router.use(authenticate);
 
 router.get('/', getUserProgress);
 router.get('/knowledge-area', getPerformanceByKnowledgeArea);
+router.get('/domain', getPerformanceByDomain);
 router.get('/missed-questions', getMissedQuestions);
 router.put('/', updateUserProgress);
 router.post(

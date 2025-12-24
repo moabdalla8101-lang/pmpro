@@ -4,6 +4,7 @@ import { progressService } from '../../services/api/progressService';
 interface ProgressState {
   overallProgress: any;
   performanceByKnowledgeArea: any[];
+  performanceByDomain: any[];
   isLoading: boolean;
   error: string | null;
 }
@@ -11,6 +12,7 @@ interface ProgressState {
 const initialState: ProgressState = {
   overallProgress: null,
   performanceByKnowledgeArea: [],
+  performanceByDomain: [],
   isLoading: false,
   error: null,
 };
@@ -26,6 +28,13 @@ export const fetchPerformanceByKnowledgeArea = createAsyncThunk(
   'progress/fetchByKnowledgeArea',
   async (certificationId: string) => {
     return await progressService.getPerformanceByKnowledgeArea(certificationId);
+  }
+);
+
+export const fetchPerformanceByDomain = createAsyncThunk(
+  'progress/fetchByDomain',
+  async (certificationId: string) => {
+    return await progressService.getPerformanceByDomain(certificationId);
   }
 );
 
@@ -58,6 +67,9 @@ const progressSlice = createSlice({
       })
       .addCase(fetchPerformanceByKnowledgeArea.fulfilled, (state, action) => {
         state.performanceByKnowledgeArea = action.payload.performance || [];
+      })
+      .addCase(fetchPerformanceByDomain.fulfilled, (state, action) => {
+        state.performanceByDomain = action.payload.performance || [];
       });
   },
 });

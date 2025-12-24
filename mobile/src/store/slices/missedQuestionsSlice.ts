@@ -23,8 +23,8 @@ const initialState: MissedQuestionsState = {
 
 export const fetchMissedQuestions = createAsyncThunk(
   'missedQuestions/fetch',
-  async ({ knowledgeAreaId, reviewed }: { knowledgeAreaId?: string; reviewed?: boolean }) => {
-    const response = await progressService.getMissedQuestions(knowledgeAreaId, reviewed);
+  async ({ knowledgeAreaId, reviewed, certificationId }: { knowledgeAreaId?: string; reviewed?: boolean; certificationId?: string }) => {
+    const response = await progressService.getMissedQuestions(knowledgeAreaId, reviewed, certificationId);
     return response;
   }
 );
@@ -53,10 +53,16 @@ const missedQuestionsSlice = createSlice({
       })
       .addCase(fetchMissedQuestions.fulfilled, (state, action) => {
         state.isLoading = false;
+        console.log('Missed Questions Fetched:', {
+          payload: action.payload,
+          missedQuestions: action.payload?.missedQuestions,
+          count: action.payload?.missedQuestions?.length || 0
+        });
         state.missedQuestions = action.payload.missedQuestions || [];
       })
       .addCase(fetchMissedQuestions.rejected, (state, action) => {
         state.isLoading = false;
+        console.error('Missed Questions Fetch Error:', action.error);
         state.error = action.error.message || 'Failed to fetch missed questions';
       })
       .addCase(markAsReviewed.fulfilled, (state, action) => {

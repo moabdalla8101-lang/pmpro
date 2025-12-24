@@ -24,13 +24,21 @@ export const progressService = {
     return response.data;
   },
 
+  async getPerformanceByDomain(certificationId: string) {
+    const response = await client.get(`/api/progress/domain?certificationId=${certificationId}`);
+    return response.data;
+  },
+
   async recordAnswer(questionId: string, answerId: string) {
     const response = await client.post('/api/progress/answer', { questionId, answerId });
     return response.data;
   },
 
-  async getMissedQuestions(knowledgeAreaId?: string, reviewed?: boolean) {
+  async getMissedQuestions(knowledgeAreaId?: string, reviewed?: boolean, certificationId?: string) {
     const params = new URLSearchParams();
+    if (certificationId) {
+      params.append('certificationId', certificationId);
+    }
     if (knowledgeAreaId) {
       params.append('knowledgeAreaId', knowledgeAreaId);
     }

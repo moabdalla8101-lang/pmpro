@@ -27,6 +27,10 @@ export default function ActionButton({
   disabled = false,
   fullWidth = false,
 }: ActionButtonProps) {
+  // Ensure boolean props are actually booleans
+  const isLoading = Boolean(loading);
+  const isDisabled = Boolean(disabled);
+  const isFullWidth = Boolean(fullWidth);
   const isPrimary = variant === 'primary';
   const isSecondary = variant === 'secondary';
   const isOutlined = variant === 'outlined';
@@ -40,12 +44,12 @@ export default function ActionButton({
     return (
       <TouchableOpacity
         onPress={onPress}
-        disabled={disabled || loading}
+        disabled={isDisabled || isLoading}
         activeOpacity={0.8}
-        style={[fullWidth && styles.fullWidth, disabled && styles.disabled]}
+        style={[isFullWidth && styles.fullWidth, isDisabled && styles.disabled]}
       >
         <LinearGradient
-          colors={disabled ? [colors.gray400, colors.gray400] : [colors.primary, colors.primaryLight]}
+          colors={isDisabled ? [colors.gray400, colors.gray400] : [colors.primary, colors.primaryLight]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={[
@@ -55,10 +59,10 @@ export default function ActionButton({
           ]}
         >
           <View style={styles.buttonContent}>
-            {icon && !loading && (
+            {icon && !isLoading && (
               <Icon name={icon} size={20} color="#ffffff" style={styles.icon} />
             )}
-            {loading ? (
+            {isLoading ? (
               <Text style={[styles.buttonText, { fontSize, color: '#ffffff' }]}>Loading...</Text>
             ) : (
               <Text style={[styles.buttonText, { fontSize, color: '#ffffff' }]}>
@@ -76,12 +80,12 @@ export default function ActionButton({
       <Button
         mode="contained"
         onPress={onPress}
-        disabled={disabled || loading}
-        loading={loading}
+        disabled={isDisabled || isLoading}
+        loading={isLoading}
         icon={icon}
         buttonColor={colors.secondary}
         textColor="#000000"
-        style={[styles.button, fullWidth && styles.fullWidth]}
+        style={[styles.button, isFullWidth && styles.fullWidth]}
         labelStyle={{ fontSize, paddingVertical: spacing.xs }}
       >
         {label}
@@ -94,12 +98,12 @@ export default function ActionButton({
       <Button
         mode="outlined"
         onPress={onPress}
-        disabled={disabled || loading}
-        loading={loading}
+        disabled={isDisabled || isLoading}
+        loading={isLoading}
         icon={icon}
         buttonColor="transparent"
         textColor={colors.primary}
-        style={[styles.button, fullWidth && styles.fullWidth, { borderColor: colors.primary }]}
+        style={[styles.button, isFullWidth && styles.fullWidth, { borderColor: colors.primary }]}
         labelStyle={{ fontSize, paddingVertical: spacing.xs }}
       >
         {label}
@@ -112,11 +116,11 @@ export default function ActionButton({
     <Button
       mode="text"
       onPress={onPress}
-      disabled={disabled || loading}
-      loading={loading}
+      disabled={isDisabled || isLoading}
+      loading={isLoading}
       icon={icon}
       textColor={colors.primary}
-      style={[styles.button, fullWidth && styles.fullWidth]}
+      style={[styles.button, isFullWidth && styles.fullWidth]}
       labelStyle={{ fontSize, paddingVertical: spacing.xs }}
     >
       {label}

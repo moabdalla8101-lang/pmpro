@@ -12,8 +12,12 @@ import SettingsScreen from '../screens/main/SettingsScreen';
 import QuestionDetailScreen from '../screens/main/QuestionDetailScreen';
 import ExamStartScreen from '../screens/main/ExamStartScreen';
 import ExamReviewScreen from '../screens/main/ExamReviewScreen';
+import DailyQuizScreen from '../screens/main/DailyQuizScreen';
 import BookmarkedQuestionsScreen from '../screens/main/BookmarkedQuestionsScreen';
 import MissedQuestionsScreen from '../screens/main/MissedQuestionsScreen';
+import FlashcardFilterScreen from '../screens/main/FlashcardFilterScreen';
+import FlashcardStudyScreen from '../screens/main/FlashcardStudyScreen';
+import MarkedFlashcardsScreen from '../screens/main/MarkedFlashcardsScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -63,6 +67,29 @@ function PracticeStack() {
           headerBackTitleVisible: false,
         }}
       />
+      <Stack.Screen
+        name="FlashcardFilter"
+        component={FlashcardFilterScreen}
+        options={{
+          title: 'Study Flashcards',
+          headerBackTitleVisible: false,
+        }}
+      />
+      <Stack.Screen
+        name="FlashcardStudy"
+        component={FlashcardStudyScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="MarkedFlashcards"
+        component={MarkedFlashcardsScreen}
+        options={{
+          title: 'Marked Flashcards',
+          headerBackTitleVisible: false,
+        }}
+      />
     </Stack.Navigator>
   );
 }
@@ -104,6 +131,14 @@ function ExamStack() {
           headerBackTitleVisible: false,
         }}
       />
+      <Stack.Screen
+        name="DailyQuiz"
+        component={DailyQuizScreen}
+        options={{
+          title: "Today's Quiz",
+          headerBackTitleVisible: false,
+        }}
+      />
     </Stack.Navigator>
   );
 }
@@ -137,13 +172,17 @@ export default function MainNavigator() {
           backgroundColor: '#ffffff',
           borderTopWidth: 1,
           borderTopColor: colors.gray200,
-          height: 60,
-          paddingBottom: 8,
+          height: 75,
+          paddingBottom: 12,
           paddingTop: 8,
+        },
+        tabBarIconStyle: {
+          marginTop: 4,
         },
         tabBarLabelStyle: {
           fontSize: 12,
           fontWeight: '600',
+          marginTop: 4,
         },
         headerShown: false,
       })}

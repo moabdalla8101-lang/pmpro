@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { body, query } from 'express-validator';
 import {
   getQuestions,
+  getQuestionsByIds,
   getQuestion,
   createQuestion,
   updateQuestion,
@@ -15,6 +16,7 @@ const router = Router();
 
 // Public routes (authenticated users)
 router.get('/', authenticate, getQuestions);
+router.get('/by-ids', authenticate, getQuestionsByIds);
 router.get('/:id', authenticate, getQuestion);
 router.get('/knowledge-area/:knowledgeAreaId', authenticate, getQuestionsByKnowledgeArea);
 

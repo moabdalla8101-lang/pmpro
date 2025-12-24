@@ -10,6 +10,8 @@ import { CategoryBadge, SectionHeader, EmptyState, ActionButton } from '../../co
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 
+const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
+
 export default function MissedQuestionsScreen() {
   const dispatch = useDispatch<AppDispatch>();
   const navigation = useNavigation();
@@ -21,10 +23,12 @@ export default function MissedQuestionsScreen() {
   useEffect(() => {
     // When showReviewed is false, we want to show only non-reviewed (reviewed: false)
     // When showReviewed is true, we want to show only reviewed (reviewed: true)
+    // Pass undefined if we want to show all (but for now, default to false to show non-reviewed)
     dispatch(
       fetchMissedQuestions({
+        certificationId: PMP_CERTIFICATION_ID,
         knowledgeAreaId: selectedKnowledgeArea || undefined,
-        reviewed: showReviewed ? true : false,
+        reviewed: showReviewed ? true : false, // Explicitly pass false to show non-reviewed by default
       }) as any
     );
   }, [selectedKnowledgeArea, showReviewed, dispatch]);
@@ -38,6 +42,7 @@ export default function MissedQuestionsScreen() {
     // Refresh missed questions after marking as reviewed
     dispatch(
       fetchMissedQuestions({
+        certificationId: PMP_CERTIFICATION_ID,
         knowledgeAreaId: selectedKnowledgeArea || undefined,
         reviewed: showReviewed ? true : false,
       }) as any
@@ -60,6 +65,17 @@ export default function MissedQuestionsScreen() {
           mq.question?.knowledge_area_id === selectedKnowledgeArea
       )
     : missedQuestions;
+
+  // Debug logging
+  React.useEffect(() => {
+    console.log('Missed Questions Screen State:', {
+      missedQuestionsCount: missedQuestions.length,
+      filteredQuestionsCount: filteredQuestions.length,
+      selectedKnowledgeArea,
+      showReviewed,
+      isLoading
+    });
+  }, [missedQuestions.length, filteredQuestions.length, selectedKnowledgeArea, showReviewed, isLoading]);
 
   const renderQuestion = ({ item }: any) => {
     const question = item.question;
@@ -224,6 +240,7 @@ export default function MissedQuestionsScreen() {
         onRefresh={() =>
           dispatch(
             fetchMissedQuestions({
+              certificationId: PMP_CERTIFICATION_ID,
               knowledgeAreaId: selectedKnowledgeArea || undefined,
               reviewed: showReviewed || undefined,
             }) as any

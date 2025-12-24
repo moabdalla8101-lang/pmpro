@@ -7,15 +7,31 @@ import { LineChart, PieChart } from 'react-native-chart-kit';
 import { SectionHeader, StatCard, ProgressRing } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
+import { useDispatch } from 'react-redux';
+import { AppDispatch } from '../../store';
+import { fetchProgress, fetchPerformanceByKnowledgeArea, fetchPerformanceByDomain } from '../../store/slices/progressSlice';
+import { useFocusEffect } from '@react-navigation/native';
 
 const screenWidth = Dimensions.get('window').width;
 
+const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
+
 export default function ProgressScreen() {
-  const { overallProgress, performanceByKnowledgeArea } = useSelector(
+  const dispatch = useDispatch<AppDispatch>();
+  const { overallProgress, performanceByKnowledgeArea, performanceByDomain, isLoading, error } = useSelector(
     (state: RootState) => state.progress
   );
 
   const [timeRange, setTimeRange] = React.useState('all');
+
+  // Fetch all progress data when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      dispatch(fetchProgress(PMP_CERTIFICATION_ID));
+      dispatch(fetchPerformanceByKnowledgeArea(PMP_CERTIFICATION_ID));
+      dispatch(fetchPerformanceByDomain(PMP_CERTIFICATION_ID));
+    }, [dispatch])
+  );
 
   // Ensure accuracy is always a number (0-100 percentage)
   const accuracyValue = overallProgress?.accuracy;
@@ -93,6 +109,29 @@ export default function ProgressScreen() {
     },
   };
 
+  // Show loading state
+  if (isLoading && !overallProgress && performanceByKnowledgeArea.length === 0 && performanceByDomain.length === 0) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text variant="bodyLarge" style={styles.loadingText}>Loading progress data...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Show error state
+  if (error && !overallProgress && performanceByKnowledgeArea.length === 0 && performanceByDomain.length === 0) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Text variant="titleMedium" style={styles.errorText}>Error loading progress</Text>
+          <Text variant="bodyMedium" style={styles.errorMessage}>{error}</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
@@ -105,7 +144,7 @@ export default function ProgressScreen() {
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
             <ProgressRing
-              progress={(!isNaN(accuracy) && typeof accuracy === 'number' ? accuracy : 0)}
+              progress={Math.max(0, Math.min(100, (!isNaN(accuracy) && typeof accuracy === 'number' ? accuracy : 0)))}
               size={120}
               strokeWidth={12}
               color={colors.primary}
@@ -204,7 +243,7 @@ export default function ProgressScreen() {
                       </View>
                     </View>
                     <ProgressBar
-                      progress={(!isNaN(areaAccuracy) && typeof areaAccuracy === 'number' ? areaAccuracy : 0) / 100}
+                      progress={Math.max(0, Math.min(1, (!isNaN(areaAccuracy) && typeof areaAccuracy === 'number' ? areaAccuracy : 0) / 100))}
                       color={colors.primary}
                       style={styles.areaProgressBar}
                     />
@@ -226,74 +265,105 @@ export default function ProgressScreen() {
         {/* Domain Performance */}
         <SectionHeader title="By Domain" subtitle="People, Process, Business" icon="chart-box" />
         <View style={styles.domainStats}>
-          <Card style={[styles.domainCard, { borderLeftColor: colors.domain.people }]}>
-            <Card.Content style={styles.domainContent}>
-              <View style={styles.domainHeader}>
-                <Text variant="titleLarge" style={styles.domainTitle}>
-                  People
-                </Text>
-                <View style={[styles.domainBadge, { backgroundColor: `${colors.domain.people}20` }]}>
-                  <Text style={[styles.domainBadgeText, { color: colors.domain.people }]}>
-                    {(!isNaN(accuracy) && typeof accuracy === 'number' ? accuracy.toFixed(0) : '0')}%
-                  </Text>
-                </View>
-              </View>
-              <Text variant="bodySmall" style={styles.domainSubtitle}>
-                Leadership, team, stakeholders
-              </Text>
-              <ProgressBar
-                progress={(!isNaN(accuracy) && typeof accuracy === 'number' ? accuracy / 100 : 0)}
-                color={colors.domain.people}
-                style={styles.domainProgressBar}
-              />
-            </Card.Content>
-          </Card>
+          {(() => {
+            // Get domain performance data
+            const peopleDomain = performanceByDomain.find((d: any) => d.domain === 'People');
+            const processDomain = performanceByDomain.find((d: any) => d.domain === 'Process');
+            const businessDomain = performanceByDomain.find((d: any) => d.domain === 'Business');
+            
+            // Helper to get domain accuracy
+            const getDomainAccuracy = (domain: any) => {
+              if (!domain) return 0;
+              let accValue = domain.accuracy || 0;
+              if (typeof accValue === 'number') {
+                accValue = !isNaN(accValue) ? accValue : 0;
+              } else if (typeof accValue === 'string') {
+                accValue = parseFloat(accValue) || 0;
+              }
+              // If accuracy is less than 1, it's a decimal (0.0-1.0), convert to percentage
+              if (accValue > 0 && accValue <= 1) {
+                accValue = accValue * 100;
+              }
+              return accValue;
+            };
+            
+            const peopleAccuracy = getDomainAccuracy(peopleDomain);
+            const processAccuracy = getDomainAccuracy(processDomain);
+            const businessAccuracy = getDomainAccuracy(businessDomain);
+            
+            return (
+              <>
+                <Card style={[styles.domainCard, { borderLeftColor: colors.domain.people }]}>
+                  <Card.Content style={styles.domainContent}>
+                    <View style={styles.domainHeader}>
+                      <Text variant="titleLarge" style={styles.domainTitle}>
+                        People
+                      </Text>
+                      <View style={[styles.domainBadge, { backgroundColor: `${colors.domain.people}20` }]}>
+                        <Text style={[styles.domainBadgeText, { color: colors.domain.people }]}>
+                          {(!isNaN(peopleAccuracy) && typeof peopleAccuracy === 'number' ? peopleAccuracy.toFixed(0) : '0')}%
+                        </Text>
+                      </View>
+                    </View>
+                    <Text variant="bodySmall" style={styles.domainSubtitle}>
+                      Leadership, team, stakeholders
+                    </Text>
+                    <ProgressBar
+                      progress={Math.max(0, Math.min(1, peopleAccuracy / 100))}
+                      color={colors.domain.people}
+                      style={styles.domainProgressBar}
+                    />
+                  </Card.Content>
+                </Card>
 
-          <Card style={[styles.domainCard, { borderLeftColor: colors.domain.process }]}>
-            <Card.Content style={styles.domainContent}>
-              <View style={styles.domainHeader}>
-                <Text variant="titleLarge" style={styles.domainTitle}>
-                  Process
-                </Text>
-                <View style={[styles.domainBadge, { backgroundColor: `${colors.domain.process}20` }]}>
-                  <Text style={[styles.domainBadgeText, { color: colors.domain.process }]}>
-                    {(!isNaN(accuracy) && typeof accuracy === 'number' ? accuracy.toFixed(0) : '0')}%
-                  </Text>
-                </View>
-              </View>
-              <Text variant="bodySmall" style={styles.domainSubtitle}>
-                Project management processes
-              </Text>
-              <ProgressBar
-                progress={(!isNaN(accuracy) && typeof accuracy === 'number' ? accuracy / 100 : 0)}
-                color={colors.domain.process}
-                style={styles.domainProgressBar}
-              />
-            </Card.Content>
-          </Card>
+                <Card style={[styles.domainCard, { borderLeftColor: colors.domain.process }]}>
+                  <Card.Content style={styles.domainContent}>
+                    <View style={styles.domainHeader}>
+                      <Text variant="titleLarge" style={styles.domainTitle}>
+                        Process
+                      </Text>
+                      <View style={[styles.domainBadge, { backgroundColor: `${colors.domain.process}20` }]}>
+                        <Text style={[styles.domainBadgeText, { color: colors.domain.process }]}>
+                          {(!isNaN(processAccuracy) && typeof processAccuracy === 'number' ? processAccuracy.toFixed(0) : '0')}%
+                        </Text>
+                      </View>
+                    </View>
+                    <Text variant="bodySmall" style={styles.domainSubtitle}>
+                      Project management processes
+                    </Text>
+                    <ProgressBar
+                      progress={Math.max(0, Math.min(1, processAccuracy / 100))}
+                      color={colors.domain.process}
+                      style={styles.domainProgressBar}
+                    />
+                  </Card.Content>
+                </Card>
 
-          <Card style={[styles.domainCard, { borderLeftColor: colors.domain.business }]}>
-            <Card.Content style={styles.domainContent}>
-              <View style={styles.domainHeader}>
-                <Text variant="titleLarge" style={styles.domainTitle}>
-                  Business
-                </Text>
-                <View style={[styles.domainBadge, { backgroundColor: `${colors.domain.business}20` }]}>
-                  <Text style={[styles.domainBadgeText, { color: colors.domain.business }]}>
-                    {(!isNaN(accuracy) && typeof accuracy === 'number' ? accuracy.toFixed(0) : '0')}%
-                  </Text>
-                </View>
-              </View>
-              <Text variant="bodySmall" style={styles.domainSubtitle}>
-                Business environment, value delivery
-              </Text>
-              <ProgressBar
-                progress={(!isNaN(accuracy) && typeof accuracy === 'number' ? accuracy / 100 : 0)}
-                color={colors.domain.business}
-                style={styles.domainProgressBar}
-              />
-            </Card.Content>
-          </Card>
+                <Card style={[styles.domainCard, { borderLeftColor: colors.domain.business }]}>
+                  <Card.Content style={styles.domainContent}>
+                    <View style={styles.domainHeader}>
+                      <Text variant="titleLarge" style={styles.domainTitle}>
+                        Business
+                      </Text>
+                      <View style={[styles.domainBadge, { backgroundColor: `${colors.domain.business}20` }]}>
+                        <Text style={[styles.domainBadgeText, { color: colors.domain.business }]}>
+                          {(!isNaN(businessAccuracy) && typeof businessAccuracy === 'number' ? businessAccuracy.toFixed(0) : '0')}%
+                        </Text>
+                      </View>
+                    </View>
+                    <Text variant="bodySmall" style={styles.domainSubtitle}>
+                      Business environment, value delivery
+                    </Text>
+                    <ProgressBar
+                      progress={Math.max(0, Math.min(1, businessAccuracy / 100))}
+                      color={colors.domain.business}
+                      style={styles.domainProgressBar}
+                    />
+                  </Card.Content>
+                </Card>
+              </>
+            );
+          })()}
         </View>
 
         {/* Knowledge Area Distribution */}
@@ -455,5 +525,29 @@ const styles = StyleSheet.create({
   domainProgressBar: {
     height: 8,
     borderRadius: borderRadius.sm,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
+  loadingText: {
+    color: colors.textSecondary,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
+  errorText: {
+    color: colors.error,
+    marginBottom: spacing.sm,
+    fontWeight: '600',
+  },
+  errorMessage: {
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
 });

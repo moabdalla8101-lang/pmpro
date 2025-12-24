@@ -200,6 +200,8 @@ export default function ExamScreen() {
                       onPress: async () => {
                         try {
                           await dispatch(deleteExam(exam.id)).unwrap();
+                          // Refresh the exams list after successful deletion
+                          dispatch(fetchUserExams());
                         } catch (error: any) {
                           Alert.alert('Error', error.message || 'Failed to delete exam');
                         }

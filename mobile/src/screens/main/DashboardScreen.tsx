@@ -1,15 +1,17 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, SafeAreaView } from 'react-native';
 import { Card, Text, ActivityIndicator, ProgressBar } from 'react-native-paper';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { fetchProgress } from '../../store/slices/progressSlice';
+import { fetchProgress, fetchPerformanceByDomain } from '../../store/slices/progressSlice';
+import { fetchMarkedFlashcards } from '../../store/slices/flashcardSlice';
+import { examService } from '../../services/api/examService';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {
   ActionButton,
   SectionHeader,
-  StreakBadge,
+  DailyQuizStreakCard,
 } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
@@ -20,7 +22,10 @@ export default function DashboardScreen() {
   const navigation = useNavigation();
   const dispatch = useDispatch<AppDispatch>();
   const { user } = useSelector((state: RootState) => state.auth);
-  const { overallProgress, isLoading } = useSelector((state: RootState) => state.progress);
+  const { overallProgress, performanceByDomain, isLoading } = useSelector((state: RootState) => state.progress);
+  const { markedFlashcards } = useSelector((state: RootState) => state.flashcards);
+  const [dailyQuizStatus, setDailyQuizStatus] = useState<any>(null);
+  const [loadingQuizStatus, setLoadingQuizStatus] = useState(false);
 
   // Fetch progress when screen comes into focus
   useFocusEffect(
@@ -29,6 +34,9 @@ export default function DashboardScreen() {
       fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DashboardScreen.tsx:18',message:'Dashboard focused, fetching progress',data:{certificationId:PMP_CERTIFICATION_ID},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'progress-refresh'})}).catch(()=>{});
       // #endregion
       dispatch(fetchProgress(PMP_CERTIFICATION_ID));
+      dispatch(fetchPerformanceByDomain(PMP_CERTIFICATION_ID));
+      dispatch(fetchMarkedFlashcards() as any);
+      fetchDailyQuizStatus();
     }, [dispatch])
   );
 
@@ -38,7 +46,21 @@ export default function DashboardScreen() {
     fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DashboardScreen.tsx:25',message:'Dashboard mounted, fetching progress',data:{certificationId:PMP_CERTIFICATION_ID},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'progress-refresh'})}).catch(()=>{});
     // #endregion
     dispatch(fetchProgress(PMP_CERTIFICATION_ID));
+    dispatch(fetchPerformanceByDomain(PMP_CERTIFICATION_ID));
+    fetchDailyQuizStatus();
   }, [dispatch]);
+
+  const fetchDailyQuizStatus = async () => {
+    setLoadingQuizStatus(true);
+    try {
+      const status = await examService.getDailyQuizStatus(PMP_CERTIFICATION_ID);
+      setDailyQuizStatus(status);
+    } catch (error: any) {
+      console.error('Failed to fetch daily quiz status:', error);
+    } finally {
+      setLoadingQuizStatus(false);
+    }
+  };
 
   // #region agent log
   React.useEffect(() => {
@@ -62,7 +84,6 @@ export default function DashboardScreen() {
   }
   const totalAnswered = overallProgress?.totalQuestionsAnswered || overallProgress?.total_questions_answered || 0;
   const correctAnswers = overallProgress?.correctAnswers || overallProgress?.correct_answers || 0;
-  const streakDays = 7; // TODO: Get from backend
   
   // Debug log
   console.log('Dashboard - Progress Data:', {
@@ -98,7 +119,6 @@ export default function DashboardScreen() {
               Let's continue your PMP journey
             </Text>
           </View>
-          <StreakBadge days={streakDays} size="medium" />
         </View>
 
         {/* Progress Overview - Redesigned */}
@@ -173,39 +193,25 @@ export default function DashboardScreen() {
           </Card.Content>
         </Card>
 
-        {/* Today's Quiz */}
-        <Card style={styles.card}>
-          <Card.Content style={styles.cardContent}>
-            <View style={styles.quizHeader}>
-              <View style={styles.quizTextContainer}>
-                <Text variant="titleLarge" style={styles.cardTitle}>
-                  Today's Quiz
-                </Text>
-                <Text variant="bodyMedium" style={styles.cardText}>
-                  Complete 10 questions to maintain your streak!
-                </Text>
-              </View>
-              <View style={styles.quizBadge}>
-                <Text variant="labelLarge" style={styles.quizBadgeText}>
-                  Daily
-                </Text>
-              </View>
-            </View>
-            <ActionButton
-              label="Start Daily Quiz"
-              onPress={() => {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DashboardScreen.tsx:54',message:'Start Daily Quiz button pressed',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
-                // #endregion
-                navigation.navigate('Practice' as never);
-              }}
-              icon="rocket-launch"
-              variant="primary"
-              size="large"
-              fullWidth
-            />
-          </Card.Content>
-        </Card>
+        {/* Today's Quiz - Daily Quiz Streak Card */}
+        <DailyQuizStreakCard
+          certificationId={PMP_CERTIFICATION_ID}
+          onStartQuiz={() => {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DashboardScreen.tsx:54',message:'Start Daily Quiz button pressed',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
+            // #endregion
+            if (dailyQuizStatus?.hasTakenToday && !dailyQuizStatus?.completedAt && dailyQuizStatus?.examId) {
+              (navigation as any).navigate('Exam', { 
+                screen: 'DailyQuiz', 
+                params: { examId: dailyQuizStatus.examId } 
+              });
+            } else {
+              (navigation as any).navigate('Exam', { 
+                screen: 'DailyQuiz' 
+              });
+            }
+          }}
+        />
 
         {/* Quick Actions */}
         <SectionHeader title="Quick Actions" icon="lightning-bolt" />
@@ -261,6 +267,28 @@ export default function DashboardScreen() {
         <View style={styles.quickActions}>
           <View style={styles.quickActionCard}>
             <Card
+              style={[styles.actionCard, { backgroundColor: `${colors.secondary}10` }]}
+              onPress={() => {
+                (navigation as any).navigate('Practice', {
+                  screen: 'FlashcardFilter',
+                });
+              }}
+            >
+              <Card.Content style={styles.actionCardContent}>
+                <View style={[styles.actionIconCircle, { backgroundColor: colors.secondary }]}>
+                  <Icon name="cards" size={28} color="#ffffff" />
+                </View>
+                <Text variant="titleMedium" style={styles.actionTitle}>
+                  Flashcards
+                </Text>
+                <Text variant="bodySmall" style={styles.actionSubtitle}>
+                  Study terms
+                </Text>
+              </Card.Content>
+            </Card>
+          </View>
+          <View style={styles.quickActionCard}>
+            <Card
               style={[styles.actionCard, { backgroundColor: `${colors.warning}10` }]}
               onPress={() => {
                 navigation.navigate('BookmarkedQuestions' as never);
@@ -279,6 +307,9 @@ export default function DashboardScreen() {
               </Card.Content>
             </Card>
           </View>
+        </View>
+
+        <View style={styles.quickActions}>
           <View style={styles.quickActionCard}>
             <Card
               style={[styles.actionCard, { backgroundColor: `${colors.info}10` }]}
@@ -301,6 +332,42 @@ export default function DashboardScreen() {
           </View>
         </View>
 
+        {/* Marked Flashcards Section (only show if there are marked cards) */}
+        {markedFlashcards && markedFlashcards.length > 0 && (
+          <>
+            <SectionHeader
+              title="Marked Flashcards"
+              subtitle={`${markedFlashcards.length} cards to review`}
+              icon="bookmark"
+            />
+            <Card
+              style={styles.card}
+              onPress={() => {
+                (navigation as any).navigate('Practice', {
+                  screen: 'MarkedFlashcards',
+                });
+              }}
+            >
+              <Card.Content style={styles.cardContent}>
+                <View style={styles.markedFlashcardsContent}>
+                  <View style={styles.markedFlashcardsLeft}>
+                    <Icon name="cards" size={32} color={colors.primary} />
+                    <View style={styles.markedFlashcardsText}>
+                      <Text variant="titleMedium" style={styles.markedFlashcardsTitle}>
+                        Review Marked Cards
+                      </Text>
+                      <Text variant="bodySmall" style={styles.markedFlashcardsSubtitle}>
+                        {markedFlashcards.length} flashcards saved for review
+                      </Text>
+                    </View>
+                  </View>
+                  <Icon name="chevron-right" size={24} color={colors.textSecondary} />
+                </View>
+              </Card.Content>
+            </Card>
+          </>
+        )}
+
         {/* Knowledge Area Performance Preview */}
         <SectionHeader
           title="Performance by Domain"
@@ -308,36 +375,68 @@ export default function DashboardScreen() {
           icon="chart-box"
         />
         <View style={styles.domainStats}>
-          <Card style={[styles.domainCard, { borderLeftColor: colors.domain.people }]}>
-            <Card.Content style={styles.domainContent}>
-              <Text variant="titleMedium" style={styles.domainTitle}>
-                People
-              </Text>
-              <Text variant="headlineSmall" style={[styles.domainValue, { color: colors.domain.people }]}>
-                {accuracy.toFixed(0)}%
-              </Text>
-            </Card.Content>
-          </Card>
-          <Card style={[styles.domainCard, { borderLeftColor: colors.domain.process }]}>
-            <Card.Content style={styles.domainContent}>
-              <Text variant="titleMedium" style={styles.domainTitle}>
-                Process
-              </Text>
-              <Text variant="headlineSmall" style={[styles.domainValue, { color: colors.domain.process }]}>
-                {accuracy.toFixed(0)}%
-              </Text>
-            </Card.Content>
-          </Card>
-          <Card style={[styles.domainCard, { borderLeftColor: colors.domain.business }]}>
-            <Card.Content style={styles.domainContent}>
-              <Text variant="titleMedium" style={styles.domainTitle}>
-                Business
-              </Text>
-              <Text variant="headlineSmall" style={[styles.domainValue, { color: colors.domain.business }]}>
-                {accuracy.toFixed(0)}%
-              </Text>
-            </Card.Content>
-          </Card>
+          {(() => {
+            // Get domain performance data
+            const peopleDomain = performanceByDomain.find((d: any) => d.domain === 'People');
+            const processDomain = performanceByDomain.find((d: any) => d.domain === 'Process');
+            const businessDomain = performanceByDomain.find((d: any) => d.domain === 'Business');
+            
+            const peopleAccuracy = peopleDomain?.accuracy || 0;
+            const processAccuracy = processDomain?.accuracy || 0;
+            const businessAccuracy = businessDomain?.accuracy || 0;
+            
+            // Ensure accuracy is a number and handle decimal conversion
+            const getDomainAccuracy = (acc: any) => {
+              let accValue = 0;
+              if (acc !== null && acc !== undefined) {
+                if (typeof acc === 'number') {
+                  accValue = !isNaN(acc) ? acc : 0;
+                } else if (typeof acc === 'string') {
+                  accValue = parseFloat(acc) || 0;
+                }
+                // If accuracy is less than 1, it's a decimal (0.0-1.0), convert to percentage
+                if (accValue > 0 && accValue <= 1) {
+                  accValue = accValue * 100;
+                }
+              }
+              return accValue;
+            };
+            
+            return (
+              <>
+                <Card style={[styles.domainCard, { borderLeftColor: colors.domain.people }]}>
+                  <Card.Content style={styles.domainContent}>
+                    <Text variant="titleMedium" style={styles.domainTitle}>
+                      People
+                    </Text>
+                    <Text variant="headlineSmall" style={[styles.domainValue, { color: colors.domain.people }]}>
+                      {getDomainAccuracy(peopleAccuracy).toFixed(0)}%
+                    </Text>
+                  </Card.Content>
+                </Card>
+                <Card style={[styles.domainCard, { borderLeftColor: colors.domain.process }]}>
+                  <Card.Content style={styles.domainContent}>
+                    <Text variant="titleMedium" style={styles.domainTitle}>
+                      Process
+                    </Text>
+                    <Text variant="headlineSmall" style={[styles.domainValue, { color: colors.domain.process }]}>
+                      {getDomainAccuracy(processAccuracy).toFixed(0)}%
+                    </Text>
+                  </Card.Content>
+                </Card>
+                <Card style={[styles.domainCard, { borderLeftColor: colors.domain.business }]}>
+                  <Card.Content style={styles.domainContent}>
+                    <Text variant="titleMedium" style={styles.domainTitle}>
+                      Business
+                    </Text>
+                    <Text variant="headlineSmall" style={[styles.domainValue, { color: colors.domain.business }]}>
+                      {getDomainAccuracy(businessAccuracy).toFixed(0)}%
+                    </Text>
+                  </Card.Content>
+                </Card>
+              </>
+            );
+          })()}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -541,5 +640,27 @@ const styles = StyleSheet.create({
   },
   domainValue: {
     fontWeight: '700',
+  },
+  markedFlashcardsContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  markedFlashcardsLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  markedFlashcardsText: {
+    marginLeft: spacing.base,
+    flex: 1,
+  },
+  markedFlashcardsTitle: {
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  markedFlashcardsSubtitle: {
+    color: colors.textSecondary,
   },
 });

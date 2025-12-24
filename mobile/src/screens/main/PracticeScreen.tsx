@@ -32,6 +32,7 @@ export default function PracticeScreen() {
   const loadQuestions = () => {
     const filters: any = {
       certificationId: PMP_CERTIFICATION_ID,
+      limit: 1000, // Fetch all questions
     };
     
     if (selectedDifficulty) {

@@ -160,6 +160,10 @@ const questionSlice = createSlice({
           pmApproach: question.pmApproach || question.pm_approach,
           pm_approach: question.pm_approach,
           questionMetadata: parsedMetadata,
+          questionImages: question.questionImages || question.question_images,
+          question_images: question.question_images,
+          explanationImages: question.explanationImages || question.explanation_images,
+          explanation_images: question.explanation_images,
           knowledgeAreaName: question.knowledgeAreaName || question.knowledge_area_name,
           knowledge_area_name: question.knowledge_area_name,
           answers: (question.answers || []).map((ans: any) => ({

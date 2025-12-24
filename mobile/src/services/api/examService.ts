@@ -30,6 +30,16 @@ export const examService = {
     const response = await client.delete(`/api/exams/${examId}`);
     return response.data;
   },
+
+  async startDailyQuiz(certificationId: string) {
+    const response = await client.post('/api/exams/daily-quiz/start', { certificationId });
+    return response.data;
+  },
+
+  async getDailyQuizStatus(certificationId: string) {
+    const response = await client.get(`/api/exams/daily-quiz/status?certificationId=${certificationId}`);
+    return response.data;
+  },
 };
 
 

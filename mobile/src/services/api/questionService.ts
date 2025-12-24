@@ -31,6 +31,12 @@ export const questionService = {
     return response.data;
   },
 
+  async getQuestionsByIds(ids: string[]) {
+    const idsParam = ids.join(',');
+    const response = await client.get(`/api/questions/by-ids?ids=${idsParam}`);
+    return response.data;
+  },
+
   async getQuestionsByKnowledgeArea(knowledgeAreaId: string) {
     const response = await client.get(`/api/questions/knowledge-area/${knowledgeAreaId}`);
     return response.data;

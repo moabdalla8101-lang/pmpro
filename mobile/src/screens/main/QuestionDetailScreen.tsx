@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Image } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useSelector, useDispatch } from 'react-redux';
@@ -11,6 +11,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { CategoryBadge, ActionButton, DragAndMatch } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
+import { getApiUrl } from '../../utils/getApiUrl';
 
 export default function QuestionDetailScreen() {
   const route = useRoute();
@@ -51,6 +52,38 @@ export default function QuestionDetailScreen() {
   const leftItems = dragMetadata?.leftItems || dragMetadata?.left_items || [];
   const rightItems = dragMetadata?.rightItems || dragMetadata?.right_items || [];
   const correctMatches = dragMetadata?.matches || {};
+  
+  // Get question and explanation images
+  const questionImages = currentQuestion?.questionImages || currentQuestion?.question_images || null;
+  const explanationImages = currentQuestion?.explanationImages || currentQuestion?.explanation_images || null;
+  
+  // Helper to get full image URL
+  const getImageUrl = (imagePath: string) => {
+    if (!imagePath) return null;
+    // If already a full URL, return as is
+    if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+      return imagePath;
+    }
+    // Otherwise, construct URL from API base URL
+    const apiUrl = getApiUrl();
+    // Remove trailing slash from apiUrl if present
+    const baseUrl = apiUrl.replace(/\/$/, '');
+    // Ensure imagePath starts with /
+    const path = imagePath.startsWith('/') ? imagePath : `/${imagePath}`;
+    return `${baseUrl}${path}`;
+  };
+  
+  // Helper to get image src from image object or string
+  const getImageSrc = (image: any): string | null => {
+    if (!image) return null;
+    if (typeof image === 'string') {
+      return getImageUrl(image);
+    }
+    if (image.src) {
+      return getImageUrl(image.src);
+    }
+    return null;
+  };
   
   // Debug logging
   React.useEffect(() => {
@@ -375,6 +408,29 @@ export default function QuestionDetailScreen() {
           <Text variant="headlineSmall" style={styles.questionText}>
             {currentQuestion.questionText || currentQuestion.question_text}
           </Text>
+          
+          {/* Question Images */}
+          {questionImages && Array.isArray(questionImages) && questionImages.length > 0 && (
+            <View style={styles.imagesContainer}>
+              {questionImages.map((img: any, index: number) => {
+                const imageSrc = getImageSrc(img);
+                if (!imageSrc) return null;
+                
+                return (
+                  <View key={index} style={styles.imageWrapper}>
+                    <Image
+                      source={{ uri: imageSrc }}
+                      style={styles.questionImage}
+                      resizeMode="contain"
+                    />
+                    {img && typeof img === 'object' && img.alt && (
+                      <Text style={styles.imageCaption}>{img.alt}</Text>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          )}
         </View>
 
         {/* Drag and Match Component */}
@@ -555,6 +611,29 @@ export default function QuestionDetailScreen() {
                 <Text variant="bodyMedium" style={styles.explanationText}>
                   {currentQuestion.explanation}
                 </Text>
+                
+                {/* Explanation Images */}
+                {explanationImages && Array.isArray(explanationImages) && explanationImages.length > 0 && (
+                  <View style={styles.imagesContainer}>
+                    {explanationImages.map((img: any, index: number) => {
+                      const imageSrc = getImageSrc(img);
+                      if (!imageSrc) return null;
+                      
+                      return (
+                        <View key={index} style={styles.imageWrapper}>
+                          <Image
+                            source={{ uri: imageSrc }}
+                            style={styles.questionImage}
+                            resizeMode="contain"
+                          />
+                          {img && typeof img === 'object' && img.alt && (
+                            <Text style={styles.imageCaption}>{img.alt}</Text>
+                          )}
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
               </View>
             )}
           </View>
@@ -640,6 +719,26 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.textPrimary,
     lineHeight: 28,
+    marginBottom: spacing.sm,
+  },
+  imagesContainer: {
+    marginTop: spacing.md,
+    gap: spacing.md,
+  },
+  imageWrapper: {
+    marginBottom: spacing.sm,
+  },
+  questionImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.gray100,
+  },
+  imageCaption: {
+    marginTop: spacing.xs,
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
   },
   answersContainer: {
     marginBottom: spacing.lg,

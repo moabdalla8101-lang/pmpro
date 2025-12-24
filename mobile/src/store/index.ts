@@ -5,6 +5,7 @@ import progressReducer from './slices/progressSlice';
 import examReducer from './slices/examSlice';
 import bookmarkReducer from './slices/bookmarkSlice';
 import missedQuestionsReducer from './slices/missedQuestionsSlice';
+import flashcardReducer from './slices/flashcardSlice';
 
 export const store = configureStore({
   reducer: {
@@ -14,6 +15,7 @@ export const store = configureStore({
     exams: examReducer,
     bookmarks: bookmarkReducer,
     missedQuestions: missedQuestionsReducer,
+    flashcards: flashcardReducer,
   },
 });
 

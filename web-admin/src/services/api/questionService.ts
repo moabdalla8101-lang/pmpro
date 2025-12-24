@@ -5,6 +5,10 @@ export const questionService = {
     const params = new URLSearchParams();
     if (filters?.certificationId) params.append('certificationId', filters.certificationId);
     if (filters?.knowledgeAreaId) params.append('knowledgeAreaId', filters.knowledgeAreaId);
+    if (filters?.limit) params.append('limit', String(filters.limit));
+    if (filters?.offset) params.append('offset', String(filters.offset));
+    // Default to fetching all questions if no limit specified
+    if (!filters?.limit) params.append('limit', '1000');
     const response = await client.get(`/api/questions?${params.toString()}`);
     return response.data;
   },
