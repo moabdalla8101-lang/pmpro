@@ -19,11 +19,15 @@ import MissedQuestionsScreen from '../screens/main/MissedQuestionsScreen';
 import FlashcardFilterScreen from '../screens/main/FlashcardFilterScreen';
 import FlashcardStudyScreen from '../screens/main/FlashcardStudyScreen';
 import MarkedFlashcardsScreen from '../screens/main/MarkedFlashcardsScreen';
+import LearnScreen from '../screens/main/LearnScreen';
+import FormulasScreen from '../screens/main/FormulasScreen';
+import KnowledgeAreaFilterScreen from '../screens/main/KnowledgeAreaFilterScreen';
+import DomainFilterScreen from '../screens/main/DomainFilterScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
-function PracticeStack() {
+function PracticeTabStack() {
   return (
     <Stack.Navigator
       screenOptions={{
@@ -40,9 +44,14 @@ function PracticeStack() {
       }}
     >
       <Stack.Screen
+        name="PracticeDashboard"
+        component={DashboardScreen}
+        options={{ title: 'Practice', headerShown: false }}
+      />
+      <Stack.Screen
         name="PracticeList"
         component={PracticeScreen}
-        options={{ title: 'Practice Questions', headerShown: false }}
+        options={{ title: 'Practice Questions', headerBackTitleVisible: false }}
       />
       <Stack.Screen
         name="QuestionDetail"
@@ -69,6 +78,47 @@ function PracticeStack() {
         }}
       />
       <Stack.Screen
+        name="KnowledgeAreaFilter"
+        component={KnowledgeAreaFilterScreen}
+        options={{
+          title: 'Select Knowledge Area',
+          headerBackTitleVisible: false,
+        }}
+      />
+      <Stack.Screen
+        name="DomainFilter"
+        component={DomainFilterScreen}
+        options={{
+          title: 'Select Domain',
+          headerBackTitleVisible: false,
+        }}
+      />
+    </Stack.Navigator>
+  );
+}
+
+function LearnStack() {
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerStyle: {
+          backgroundColor: '#ffffff',
+          elevation: 0,
+          shadowOpacity: 0,
+        },
+        headerTintColor: colors.textPrimary,
+        headerTitleStyle: {
+          fontWeight: '700',
+          fontSize: 18,
+        },
+      }}
+    >
+      <Stack.Screen
+        name="LearnDashboard"
+        component={LearnScreen}
+        options={{ title: 'Learn', headerShown: false }}
+      />
+      <Stack.Screen
         name="FlashcardFilter"
         component={FlashcardFilterScreen}
         options={{
@@ -92,10 +142,10 @@ function PracticeStack() {
         }}
       />
       <Stack.Screen
-        name="PracticeTest"
-        component={PracticeTestScreen}
+        name="Formulas"
+        component={FormulasScreen}
         options={{
-          title: 'Practice Test',
+          title: 'Formulas',
           headerBackTitleVisible: false,
         }}
       />
@@ -159,10 +209,10 @@ export default function MainNavigator() {
         tabBarIcon: ({ focused, color, size }) => {
           let iconName: string;
 
-          if (route.name === 'Dashboard') {
-            iconName = focused ? 'view-dashboard' : 'view-dashboard-outline';
-          } else if (route.name === 'Practice') {
+          if (route.name === 'Practice') {
             iconName = focused ? 'book-open-variant' : 'book-open-variant-outline';
+          } else if (route.name === 'Learn') {
+            iconName = focused ? 'school' : 'school-outline';
           } else if (route.name === 'Exam') {
             iconName = focused ? 'file-document-edit' : 'file-document-edit-outline';
           } else if (route.name === 'Progress') {
@@ -197,17 +247,17 @@ export default function MainNavigator() {
       })}
     >
       <Tab.Screen
-        name="Dashboard"
-        component={DashboardScreen}
+        name="Practice"
+        component={PracticeTabStack}
         options={{
-          tabBarLabel: 'Home',
+          tabBarLabel: 'Practice',
         }}
       />
       <Tab.Screen
-        name="Practice"
-        component={PracticeStack}
+        name="Learn"
+        component={LearnStack}
         options={{
-          tabBarLabel: 'Practice',
+          tabBarLabel: 'Learn',
         }}
       />
       <Tab.Screen

@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { View, StyleSheet, FlatList, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
 import { Card, Text, ActivityIndicator } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchQuestions, clearQuestions } from '../../store/slices/questionSlice';
 import { RootState, AppDispatch } from '../../store';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, useRoute } from '@react-navigation/native';
 import { dailyActivityService } from '../../services/dailyActivityService';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { CategoryBadge, SectionHeader, EmptyState } from '../../components';
@@ -18,10 +18,23 @@ const DIFFICULTIES = ['easy', 'medium', 'hard'];
 export default function PracticeScreen() {
   const dispatch = useDispatch<AppDispatch>();
   const navigation = useNavigation();
+  const route = useRoute();
   const { questions, isLoading } = useSelector((state: RootState) => state.questions);
   
   const [selectedDifficulty, setSelectedDifficulty] = useState<string | null>(null);
   const [selectedKnowledgeArea, setSelectedKnowledgeArea] = useState<string | null>(null);
+  const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
+
+  // Get initial filters from route params
+  useEffect(() => {
+    const params = route.params as any;
+    if (params?.knowledgeAreaId) {
+      setSelectedKnowledgeArea(params.knowledgeAreaId);
+    }
+    if (params?.domain) {
+      setSelectedDomain(params.domain);
+    }
+  }, [route.params]);
 
   const loadQuestions = () => {
     const filters: any = {
@@ -36,11 +49,27 @@ export default function PracticeScreen() {
     if (selectedKnowledgeArea) {
       filters.knowledgeAreaId = selectedKnowledgeArea;
     }
+    
+    // Domain filtering will be done client-side after fetching
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'PracticeScreen.tsx:37',message:'Dispatching fetchQuestions',data:{filters},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H3'})}).catch(()=>{});
     // #endregion
     dispatch(fetchQuestions(filters));
   };
+  
+  // Filter questions by domain client-side
+  const filteredQuestions = React.useMemo(() => {
+    if (!selectedDomain) return questions;
+    
+    return questions.filter((q: any) => {
+      const questionDomain = q.domain || q.Domain;
+      if (!questionDomain) return false;
+      
+      // Normalize domain value (handle prefixes like "1. People")
+      const normalizedDomain = questionDomain.replace(/^\d+\.\s*/, '').trim();
+      return normalizedDomain === selectedDomain || normalizedDomain === `${selectedDomain} Environment`;
+    });
+  }, [questions, selectedDomain]);
 
   // Clear questions and reload when screen is focused (to avoid showing exam questions)
   useFocusEffect(
@@ -124,7 +153,7 @@ export default function PracticeScreen() {
   }, [isLoading, questions.length]);
   // #endregion
 
-  if (isLoading && questions.length === 0) {
+  if (isLoading && filteredQuestions.length === 0) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary} />
@@ -139,7 +168,7 @@ export default function PracticeScreen() {
       <View style={styles.headerContainer}>
         <SectionHeader
           title="Practice Questions"
-          subtitle={`${questions.length} questions available`}
+          subtitle={`${filteredQuestions.length} questions available`}
           icon="book-open-variant"
         />
       </View>
@@ -198,7 +227,7 @@ export default function PracticeScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={[
           styles.list,
-          questions.length === 0 && styles.emptyList,
+          filteredQuestions.length === 0 && styles.emptyList,
         ]}
         refreshing={isLoading}
         onRefresh={loadQuestions}

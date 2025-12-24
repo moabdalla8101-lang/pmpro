@@ -5,7 +5,6 @@ import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { fetchProgress, fetchPerformanceByDomain } from '../../store/slices/progressSlice';
-import { fetchMarkedFlashcards } from '../../store/slices/flashcardSlice';
 import { loadSettings } from '../../store/slices/settingsSlice';
 import { examService } from '../../services/api/examService';
 import { dailyActivityService } from '../../services/dailyActivityService';
@@ -36,7 +35,6 @@ export default function DashboardScreen() {
       });
     }
   }, [performanceByDomain]);
-  const { markedFlashcards } = useSelector((state: RootState) => state.flashcards);
   const { dailyQuestionsGoal, dailyMinutesGoal } = useSelector((state: RootState) => state.settings);
   const [todayActivity, setTodayActivity] = useState({ questionsAnswered: 0, practiceMinutes: 0 });
   const [currentStreak, setCurrentStreak] = useState(0);
@@ -59,7 +57,6 @@ export default function DashboardScreen() {
     dispatch(loadSettings() as any);
     dispatch(fetchProgress(PMP_CERTIFICATION_ID));
     dispatch(fetchPerformanceByDomain(PMP_CERTIFICATION_ID));
-    dispatch(fetchMarkedFlashcards() as any);
     fetchTodayActivity();
     fetchStreak();
     fetchWeeklyCompletions();
@@ -203,70 +200,58 @@ export default function DashboardScreen() {
           />
         )}
 
-        {/* Quick Actions Grid - Reorganized */}
+        {/* Quick Actions Grid */}
+        <SectionHeader title="Quick Actions" icon="lightning-bolt" />
         <View style={styles.quickActionsGrid}>
+          {/* Knowledge Area Practice */}
           <View style={styles.quickActionCard}>
             <Card
               style={[styles.actionCard, { backgroundColor: `${colors.primary}10` }]}
               onPress={() => {
-                navigation.navigate('Practice' as never);
+                (navigation as any).navigate('Practice', {
+                  screen: 'KnowledgeAreaFilter',
+                });
               }}
             >
               <Card.Content style={styles.actionCardContent}>
                 <View style={[styles.actionIconCircle, { backgroundColor: colors.primary }]}>
-                  <Text style={styles.actionIcon}>📚</Text>
+                  <Icon name="book-open-variant" size={28} color="#ffffff" />
                 </View>
                 <Text variant="titleMedium" style={styles.actionTitle}>
-                  Practice
+                  Knowledge Area
                 </Text>
                 <Text variant="bodySmall" style={styles.actionSubtitle}>
-                  Study questions
+                  Practice by area
                 </Text>
               </Card.Content>
             </Card>
           </View>
-          <View style={styles.quickActionCard}>
-            <Card
-              style={[styles.actionCard, { backgroundColor: `${colors.error}10` }]}
-              onPress={() => {
-                navigation.navigate('Exam' as never);
-              }}
-            >
-              <Card.Content style={styles.actionCardContent}>
-                <View style={[styles.actionIconCircle, { backgroundColor: colors.error }]}>
-                  <Text style={styles.actionIcon}>📝</Text>
-                </View>
-                <Text variant="titleMedium" style={styles.actionTitle}>
-                  Mock Exam
-                </Text>
-                <Text variant="bodySmall" style={styles.actionSubtitle}>
-                  Full simulation
-                </Text>
-              </Card.Content>
-            </Card>
-          </View>
+
+          {/* Domain Practice */}
           <View style={styles.quickActionCard}>
             <Card
               style={[styles.actionCard, { backgroundColor: `${colors.secondary}10` }]}
               onPress={() => {
                 (navigation as any).navigate('Practice', {
-                  screen: 'FlashcardFilter',
+                  screen: 'DomainFilter',
                 });
               }}
             >
               <Card.Content style={styles.actionCardContent}>
                 <View style={[styles.actionIconCircle, { backgroundColor: colors.secondary }]}>
-                  <Icon name="cards" size={28} color="#ffffff" />
+                  <Icon name="view-grid" size={28} color="#ffffff" />
                 </View>
                 <Text variant="titleMedium" style={styles.actionTitle}>
-                  Flashcards
+                  Domain Practice
                 </Text>
                 <Text variant="bodySmall" style={styles.actionSubtitle}>
-                  Study terms
+                  Practice by domain
                 </Text>
               </Card.Content>
             </Card>
           </View>
+
+          {/* Bookmarked Questions */}
           <View style={styles.quickActionCard}>
             <Card
               style={[styles.actionCard, { backgroundColor: `${colors.warning}10` }]}
@@ -289,6 +274,8 @@ export default function DashboardScreen() {
               </Card.Content>
             </Card>
           </View>
+
+          {/* Missed Questions */}
           <View style={styles.quickActionCard}>
             <Card
               style={[styles.actionCard, { backgroundColor: `${colors.info}10` }]}
@@ -311,30 +298,6 @@ export default function DashboardScreen() {
               </Card.Content>
             </Card>
           </View>
-          {markedFlashcards && markedFlashcards.length > 0 && (
-            <View style={styles.quickActionCard}>
-              <Card
-                style={[styles.actionCard, { backgroundColor: `${colors.primaryLight}10` }]}
-                onPress={() => {
-                  (navigation as any).navigate('Practice', {
-                    screen: 'MarkedFlashcards',
-                  });
-                }}
-              >
-                <Card.Content style={styles.actionCardContent}>
-                  <View style={[styles.actionIconCircle, { backgroundColor: colors.primaryLight }]}>
-                    <Icon name="cards" size={28} color="#ffffff" />
-                  </View>
-                  <Text variant="titleMedium" style={styles.actionTitle}>
-                    Marked Cards
-                  </Text>
-                  <Text variant="bodySmall" style={styles.actionSubtitle}>
-                    {markedFlashcards.length} cards
-                  </Text>
-                </Card.Content>
-              </Card>
-            </View>
-          )}
         </View>
 
         {/* Performance by Domain (People, Process, Business) */}

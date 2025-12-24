@@ -1,8 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Alert } from 'react-native';
 import { Card, Text, ActivityIndicator } from 'react-native-paper';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useSelector, useDispatch } from 'react-redux';
+import { LinearGradient } from 'expo-linear-gradient';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { ActionButton, SectionHeader, EmptyState } from '../../components';
 import { colors } from '../../theme';
@@ -14,6 +15,11 @@ export default function ExamScreen() {
   const navigation = useNavigation();
   const dispatch = useDispatch<AppDispatch>();
   const { exams, isLoading } = useSelector((state: RootState) => state.exams);
+  const [examStats, setExamStats] = useState({
+    totalExams: 0,
+    bestScore: 0,
+    averageScore: 0,
+  });
 
   // Fetch exams when screen comes into focus
   useFocusEffect(
@@ -27,12 +33,56 @@ export default function ExamScreen() {
     dispatch(fetchUserExams());
   }, [dispatch]);
 
+  // Calculate exam stats
+  useEffect(() => {
+    const completedExams = exams.filter((exam) => {
+      const hasCompletedAt = exam.completedAt && exam.completedAt !== null;
+      const hasScore = exam.score !== null && exam.score !== undefined;
+      return hasCompletedAt && hasScore;
+    });
+
+    if (completedExams.length > 0) {
+      const scores = completedExams
+        .map((exam) => {
+          const score = typeof exam.score === 'number' ? exam.score : parseFloat(exam.score || '0');
+          return !isNaN(score) ? score : 0;
+        })
+        .filter((score) => score > 0);
+
+      const bestScore = scores.length > 0 ? Math.max(...scores) : 0;
+      const averageScore =
+        scores.length > 0 ? scores.reduce((sum, score) => sum + score, 0) / scores.length : 0;
+
+      setExamStats({
+        totalExams: completedExams.length,
+        bestScore,
+        averageScore,
+      });
+    } else {
+      setExamStats({ totalExams: 0, bestScore: 0, averageScore: 0 });
+    }
+  }, [exams]);
+
   // Filter only completed exams - must have both completedAt and a valid score
   const previousExams = exams.filter((exam) => {
     const hasCompletedAt = exam.completedAt && exam.completedAt !== null;
     const hasScore = exam.score !== null && exam.score !== undefined;
     return hasCompletedAt && hasScore;
   });
+
+  const handleStartMockExam = () => {
+    (navigation as any).navigate('Exam', {
+      screen: 'ExamStart',
+      params: { examType: 'mock' },
+    });
+  };
+
+  const handleStartMiniPMP = () => {
+    (navigation as any).navigate('Exam', {
+      screen: 'ExamStart',
+      params: { examType: 'mini' },
+    });
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -41,6 +91,48 @@ export default function ExamScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
+        {/* Hero Banner - Exam Stats */}
+        <Card style={styles.heroCard}>
+          <LinearGradient
+            colors={[colors.primary, colors.primaryLight]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.heroGradient}
+          >
+            <Card.Content style={styles.heroContent}>
+              <View style={styles.heroHeader}>
+                <Icon name="file-document-edit" size={32} color="#FFFFFF" style={styles.heroIcon} />
+                <Text variant="titleLarge" style={styles.heroTitle}>
+                  Exam Readiness
+                </Text>
+              </View>
+
+              <View style={styles.statsContainer}>
+                <View style={styles.statItem}>
+                  <Text variant="headlineMedium" style={styles.statValue}>
+                    {examStats.totalExams}
+                  </Text>
+                  <Text variant="bodyMedium" style={styles.statLabel}>
+                    Exams Taken
+                  </Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statItem}>
+                  <Text variant="headlineMedium" style={styles.statValue}>
+                    {examStats.bestScore > 0 ? `${examStats.bestScore.toFixed(0)}%` : 'N/A'}
+                  </Text>
+                  <Text variant="bodyMedium" style={styles.statLabel}>
+                    Best Score
+                  </Text>
+                </View>
+              </View>
+            </Card.Content>
+          </LinearGradient>
+        </Card>
+
+        {/* Exam Options */}
+        <SectionHeader title="Exam Types" icon="school" />
+        
         {/* Mock Exam Card */}
         <Card style={styles.examCard}>
           <Card.Content style={styles.examCardContent}>
@@ -101,7 +193,7 @@ export default function ExamScreen() {
 
             <ActionButton
               label="Start Mock Exam"
-              onPress={() => navigation.navigate('ExamStart' as never)}
+              onPress={handleStartMockExam}
               icon="rocket-launch"
               variant="primary"
               size="large"
@@ -110,9 +202,58 @@ export default function ExamScreen() {
           </Card.Content>
         </Card>
 
-        {/* Previous Exams */}
+        {/* Mini PMP Exam Card */}
+        <Card style={styles.examCard}>
+          <Card.Content style={styles.examCardContent}>
+            <View style={styles.examHeader}>
+              <View style={styles.examIconContainer}>
+                <Icon name="timer" size={48} color={colors.secondary} />
+              </View>
+              <View style={styles.examInfo}>
+                <Text variant="headlineSmall" style={styles.examTitle}>
+                  Mini PMP
+                </Text>
+                <Text variant="bodyMedium" style={styles.examSubtitle}>
+                  Quick Practice Test
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.examDetails}>
+              <View style={styles.examDetailItem}>
+                <Icon name="help-circle" size={20} color={colors.textSecondary} />
+                <Text variant="bodyMedium" style={styles.examDetailText}>
+                  25 questions
+                </Text>
+              </View>
+              <View style={styles.examDetailItem}>
+                <Icon name="clock-outline" size={20} color={colors.textSecondary} />
+                <Text variant="bodyMedium" style={styles.examDetailText}>
+                  15 minutes
+                </Text>
+              </View>
+              <View style={styles.examDetailItem}>
+                <Icon name="check-circle" size={20} color={colors.textSecondary} />
+                <Text variant="bodyMedium" style={styles.examDetailText}>
+                  Timed exam
+                </Text>
+              </View>
+            </View>
+
+            <ActionButton
+              label="Start Mini PMP"
+              onPress={handleStartMiniPMP}
+              icon="play-circle"
+              variant="secondary"
+              size="large"
+              fullWidth
+            />
+          </Card.Content>
+        </Card>
+
+        {/* Exam History Section */}
         <SectionHeader
-          title="Previous Exams"
+          title="Exam History"
           subtitle={`${previousExams.length} completed`}
           icon="history"
         />
@@ -303,6 +444,54 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: spacing.base,
     color: colors.textSecondary,
+  },
+  heroCard: {
+    marginBottom: spacing.lg,
+    borderRadius: borderRadius.lg,
+    overflow: 'hidden',
+    ...shadows.md,
+  },
+  heroGradient: {
+    borderRadius: borderRadius.lg,
+  },
+  heroContent: {
+    padding: spacing.lg,
+  },
+  heroHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.base,
+  },
+  heroIcon: {
+    marginRight: spacing.sm,
+  },
+  heroTitle: {
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    marginTop: spacing.base,
+  },
+  statItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statValue: {
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: spacing.xs,
+  },
+  statLabel: {
+    color: '#FFFFFF',
+    opacity: 0.9,
+  },
+  statDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
   },
   examCard: {
     marginBottom: spacing.lg,

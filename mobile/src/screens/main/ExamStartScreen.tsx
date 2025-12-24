@@ -14,8 +14,10 @@ import { ActionButton } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 
-const TOTAL_QUESTIONS = 180;
-const EXAM_DURATION_MINUTES = 230;
+const MOCK_EXAM_QUESTIONS = 180;
+const MOCK_EXAM_DURATION_MINUTES = 230;
+const MINI_PMP_QUESTIONS = 25;
+const MINI_PMP_DURATION_MINUTES = 15;
 
 export default function ExamStartScreen() {
   const navigation = useNavigation();
@@ -23,6 +25,11 @@ export default function ExamStartScreen() {
   const dispatch = useDispatch<AppDispatch>();
   const { questions } = useSelector((state: RootState) => state.questions);
   const { bookmarkedQuestionIds } = useSelector((state: RootState) => state.bookmarks);
+  
+  // Get exam type from route params (defaults to 'mock')
+  const examType = (route.params as any)?.examType || 'mock';
+  const TOTAL_QUESTIONS = examType === 'mini' ? MINI_PMP_QUESTIONS : MOCK_EXAM_QUESTIONS;
+  const EXAM_DURATION_MINUTES = examType === 'mini' ? MINI_PMP_DURATION_MINUTES : MOCK_EXAM_DURATION_MINUTES;
   
   const [examId, setExamId] = useState<string | null>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -33,6 +40,11 @@ export default function ExamStartScreen() {
 
   const currentQuestion = questions[currentQuestionIndex];
   const progress = (currentQuestionIndex + 1) / TOTAL_QUESTIONS;
+  
+  // Update time remaining when exam type changes
+  useEffect(() => {
+    setTimeRemaining(EXAM_DURATION_MINUTES * 60);
+  }, [examType]);
 
   useEffect(() => {
     if (isExamStarted && timeRemaining > 0) {
