@@ -66,13 +66,14 @@ export default function DailyGoalsHero({
 
   return (
     <Card style={styles.card}>
-      <LinearGradient
-        colors={[colors.primary, colors.primaryLight]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.gradient}
-      >
-        <Card.Content style={styles.content}>
+      <View style={styles.gradientWrapper}>
+        <LinearGradient
+          colors={[colors.primary, colors.primaryLight]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.gradient}
+        >
+          <Card.Content style={styles.content}>
           {/* Optional Countdown */}
           {examCountdown !== undefined && examCountdown > 0 && (
             <View style={styles.countdownContainer}>
@@ -212,8 +213,9 @@ export default function DailyGoalsHero({
             fullWidth
             style={styles.actionButton}
           />
-        </Card.Content>
-      </LinearGradient>
+          </Card.Content>
+        </LinearGradient>
+      </View>
     </Card>
   );
 }
@@ -222,8 +224,11 @@ const styles = StyleSheet.create({
   card: {
     marginBottom: spacing.lg,
     borderRadius: borderRadius.lg,
-    overflow: 'hidden',
     ...shadows.md,
+  },
+  gradientWrapper: {
+    borderRadius: borderRadius.lg,
+    overflow: 'hidden',
   },
   gradient: {
     borderRadius: borderRadius.lg,

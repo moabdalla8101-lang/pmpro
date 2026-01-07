@@ -77,9 +77,35 @@ const progressSlice = createSlice({
         state.isLoading = false;
       })
       .addCase(fetchPerformanceByDomain.rejected, (state, action) => {
-        console.error('fetchPerformanceByDomain rejected:', action.error);
+        const errorMessage = action.error.message || '';
+        const errorCode = (action.error as any)?.response?.status;
+        
+        // Handle rate limiting gracefully - don't set error state for 429
+        if (errorCode === 429 || errorMessage.includes('429') || errorMessage.includes('rate limit')) {
+          console.warn('Rate limited on fetchPerformanceByDomain, will retry later');
+          state.isLoading = false;
+          // Keep existing performanceByDomain data
+          return;
+        }
+        
+        // Handle network errors gracefully - don't log as errors if it's just a network issue
+        if (errorCode === 0 || errorMessage.includes('Network Error') || errorMessage.includes('timeout')) {
+          console.warn('Network issue fetching performance by domain, will retry later');
+          state.isLoading = false;
+          // Keep existing performanceByDomain data
+          return;
+        }
+        
+        // Only log actual errors (not network issues or rate limits)
+        if (errorCode && errorCode >= 500) {
+          console.error('Server error fetching performance by domain:', errorCode);
+        } else if (errorCode && errorCode >= 400 && errorCode < 500) {
+          console.warn('Client error fetching performance by domain:', errorCode);
+        }
+        
         state.isLoading = false;
-        state.error = action.error.message || 'Failed to fetch performance by domain';
+        // Don't set error state for non-critical failures - keep existing data
+        // state.error = errorMessage || 'Failed to fetch performance by domain';
       });
   },
 });
