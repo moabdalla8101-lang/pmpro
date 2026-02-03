@@ -13,7 +13,7 @@ docker-compose up
 
 # Or use the setup script
 ./scripts/setup.sh
-./scripts/db-setup.sh
+./scripts/db-setup.sh  # Can be run from any directory
 ```
 
 See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.

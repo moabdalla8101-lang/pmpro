@@ -35,8 +35,14 @@ This will:
 
 ### 2. Set Up Database
 
+The database setup script can be run from any directory:
+
 ```bash
+# From project root
 ./scripts/db-setup.sh
+
+# Or from anywhere (script will find project root automatically)
+/path/to/pmpro/scripts/db-setup.sh
 ```
 
 Or manually:
