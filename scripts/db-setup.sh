@@ -18,6 +18,44 @@ DB_USER="${DB_USER:-postgres}"
 
 echo "🗄️  Setting up database..."
 echo "Project root: $PROJECT_ROOT"
+echo ""
+
+# Check if PostgreSQL client tools are installed
+if ! command -v psql &> /dev/null; then
+    echo "❌ Error: psql command not found"
+    echo ""
+    echo "PostgreSQL client tools are not installed or not in your PATH."
+    echo ""
+    echo "To install PostgreSQL client tools:"
+    echo ""
+    echo "  macOS:"
+    echo "    brew install postgresql@15"
+    echo "    # Or: brew install postgresql"
+    echo "    # Then add to PATH: export PATH=\"/opt/homebrew/opt/postgresql@15/bin:\$PATH\""
+    echo ""
+    echo "  Linux (Ubuntu/Debian):"
+    echo "    sudo apt-get install postgresql-client"
+    echo ""
+    echo "  Linux (Fedora/RHEL):"
+    echo "    sudo dnf install postgresql"
+    echo ""
+    echo "  Windows:"
+    echo "    Download from: https://www.postgresql.org/download/windows/"
+    echo ""
+    exit 1
+fi
+
+if ! command -v createdb &> /dev/null; then
+    echo "❌ Error: createdb command not found"
+    echo ""
+    echo "PostgreSQL client tools are not installed or not in your PATH."
+    echo "Please install PostgreSQL (see instructions above)."
+    echo ""
+    exit 1
+fi
+
+echo "✓ PostgreSQL tools found"
+echo ""
 
 # Check if database exists
 if psql -U "$DB_USER" -lqt | cut -d \| -f 1 | grep -qw "$DB_NAME"; then
