@@ -147,9 +147,12 @@ if [ $? -eq 0 ]; then
     # Count exported questions (parse JSON array)
     if command -v jq &> /dev/null; then
         QUESTION_COUNT=$(jq 'length' "$OUTPUT_FILE" 2>/dev/null || echo "0")
+    elif command -v python3 &> /dev/null; then
+        # Use Python to count array length
+        QUESTION_COUNT=$(python3 -c "import json; print(len(json.load(open('$OUTPUT_FILE'))))" 2>/dev/null || echo "0")
     else
-        # Fallback: count JSON objects manually
-        QUESTION_COUNT=$(grep -o '"id"' "$OUTPUT_FILE" | wc -l | tr -d ' ')
+        # Fallback: count top-level question objects (look for question_id field which only questions have)
+        QUESTION_COUNT=$(grep -o '"question_id"' "$OUTPUT_FILE" | wc -l | tr -d ' ')
     fi
     
     echo ""
