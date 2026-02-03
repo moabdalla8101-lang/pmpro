@@ -84,3 +84,5 @@ const settingsSlice = createSlice({
 export const { setDailyQuestionsGoal, setDailyMinutesGoal } = settingsSlice.actions;
 export default settingsSlice.reducer;
 
+
+

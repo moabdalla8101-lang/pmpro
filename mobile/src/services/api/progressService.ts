@@ -54,6 +54,15 @@ export const progressService = {
     const response = await client.post('/api/progress/missed-questions/reviewed', { questionId });
     return response.data;
   },
+
+  async getAnsweredQuestionIds(certificationId?: string) {
+    const params = new URLSearchParams();
+    if (certificationId) {
+      params.append('certificationId', certificationId);
+    }
+    const response = await client.get(`/api/progress/answered-questions?${params.toString()}`);
+    return response.data;
+  },
 };
 
 

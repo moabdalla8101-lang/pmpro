@@ -115,3 +115,5 @@ echo "   2. Open Android Emulator: Press 'a' in the Expo terminal"
 echo "   3. Test all screens and functionality manually"
 echo ""
 
+
+

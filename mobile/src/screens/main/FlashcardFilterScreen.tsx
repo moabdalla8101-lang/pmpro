@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, ScrollView, SafeAreaView } from 'react-native';
-import { Card, Text, ActivityIndicator, Checkbox } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity } from 'react-native';
+import { Card, Text, ActivityIndicator } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
 import { useNavigation } from '@react-navigation/native';
@@ -8,13 +8,29 @@ import { fetchKnowledgeAreas } from '../../store/slices/flashcardSlice';
 import { ActionButton, SectionHeader } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
+
+// Icon mapping for knowledge areas
+const KNOWLEDGE_AREA_ICONS: { [key: string]: string } = {
+  'Project Integration Management': 'link-variant',
+  'Project Scope Management': 'target',
+  'Project Schedule Management': 'calendar-clock',
+  'Project Cost Management': 'currency-usd',
+  'Project Quality Management': 'quality-high',
+  'Project Resource Management': 'account-group',
+  'Project Communications Management': 'message-text',
+  'Project Risk Management': 'alert-circle',
+  'Project Procurement Management': 'cart',
+  'Project Stakeholder Management': 'account-multiple',
+};
 
 export default function FlashcardFilterScreen() {
   const dispatch = useDispatch<AppDispatch>();
   const navigation = useNavigation();
   const { knowledgeAreas, isLoading, error } = useSelector((state: RootState) => state.flashcards);
   
-  const [selectedAreas, setSelectedAreas] = useState<string[]>([]);
+  const [selectedAreas, setSelectedAreas] = useState<string[]>([]); // Store knowledge area IDs
 
   useEffect(() => {
     dispatch(fetchKnowledgeAreas() as any);
@@ -29,12 +45,12 @@ export default function FlashcardFilterScreen() {
     }
   }, [error, knowledgeAreas]);
 
-  const toggleKnowledgeArea = (area: string) => {
+  const toggleKnowledgeArea = (areaId: string) => {
     setSelectedAreas((prev) => {
-      if (prev.includes(area)) {
-        return prev.filter((a) => a !== area);
+      if (prev.includes(areaId)) {
+        return prev.filter((a) => a !== areaId);
       } else {
-        return [...prev, area];
+        return [...prev, areaId];
       }
     });
   };
@@ -77,33 +93,66 @@ export default function FlashcardFilterScreen() {
 
         <View style={styles.knowledgeAreasContainer}>
           {knowledgeAreas && knowledgeAreas.length > 0 ? (
-            knowledgeAreas.map((area) => (
-              <Card
-                key={area}
-                style={[
-                  styles.areaCard,
-                  selectedAreas.includes(area) && styles.areaCardSelected,
-                ]}
-                onPress={() => toggleKnowledgeArea(area)}
-              >
-                <Card.Content style={styles.areaCardContent}>
-                  <Checkbox
-                    status={selectedAreas.includes(area) ? 'checked' : 'unchecked'}
-                    onPress={() => toggleKnowledgeArea(area)}
-                    color={colors.primary}
-                  />
-                  <Text
-                    variant="titleMedium"
-                    style={[
-                      styles.areaText,
-                      selectedAreas.includes(area) && styles.areaTextSelected,
-                    ]}
+            // Sort knowledge areas by id (as requested by user)
+            [...knowledgeAreas]
+              .sort((a: any, b: any) => {
+                const aId = (a.id || a || '').toString();
+                const bId = (b.id || b || '').toString();
+                return aId.localeCompare(bId);
+              })
+              .map((area: any) => {
+                const areaId = area.id || area;
+                const rawAreaName = area.name || area;
+                const areaName = typeof rawAreaName === 'string' ? removeProjectPrefix(rawAreaName) : String(rawAreaName);
+                const isSelected = selectedAreas.includes(areaId);
+                const iconName = KNOWLEDGE_AREA_ICONS[rawAreaName] || 'book-open-variant';
+                const areaColor = colors.primary;
+                
+                return (
+                  <TouchableOpacity
+                    key={areaId}
+                    onPress={() => toggleKnowledgeArea(areaId)}
+                    activeOpacity={0.7}
                   >
-                    {area}
-                  </Text>
-                </Card.Content>
-              </Card>
-            ))
+                    <Card
+                      style={[
+                        styles.areaCard,
+                        isSelected && { borderColor: areaColor, borderWidth: 2 },
+                      ]}
+                    >
+                      <Card.Content style={styles.areaCardContent}>
+                        <View style={styles.areaContent}>
+                          <View style={styles.areaLeft}>
+                            <View
+                              style={[
+                                styles.areaIconCircle,
+                                { backgroundColor: isSelected ? areaColor : `${areaColor}20` },
+                              ]}
+                            >
+                              <Icon
+                                name={iconName}
+                                size={24}
+                                color={isSelected ? '#FFFFFF' : areaColor}
+                              />
+                            </View>
+                            <View style={styles.areaTextContainer}>
+                              <Text variant="titleLarge" style={styles.areaName}>
+                                {areaName}
+                              </Text>
+                              <Text variant="bodySmall" style={styles.areaSubtitle}>
+                                Knowledge Area
+                              </Text>
+                            </View>
+                          </View>
+                          {isSelected && (
+                            <Icon name="check-circle" size={28} color={areaColor} />
+                          )}
+                        </View>
+                      </Card.Content>
+                    </Card>
+                  </TouchableOpacity>
+                );
+              })
           ) : (
             <Card style={styles.infoCard}>
               <Card.Content>
@@ -167,25 +216,39 @@ const styles = StyleSheet.create({
   areaCard: {
     borderRadius: borderRadius.lg,
     ...shadows.sm,
-  },
-  areaCardSelected: {
-    borderWidth: 2,
-    borderColor: colors.primary,
-    backgroundColor: `${colors.primary}10`,
+    marginBottom: spacing.base,
   },
   areaCardContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
     padding: spacing.base,
   },
-  areaText: {
-    flex: 1,
-    marginLeft: spacing.sm,
-    color: colors.textPrimary,
+  areaContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  areaTextSelected: {
-    fontWeight: '600',
-    color: colors.primary,
+  areaLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  areaIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: borderRadius.round,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.base,
+  },
+  areaTextContainer: {
+    flex: 1,
+  },
+  areaName: {
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs / 2,
+  },
+  areaSubtitle: {
+    color: colors.textSecondary,
   },
   startButton: {
     marginTop: spacing.base,

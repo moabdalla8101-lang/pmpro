@@ -24,3 +24,5 @@ INSERT INTO users (id, email, password_hash, first_name, last_name, role, subscr
 ON CONFLICT (email) DO NOTHING;
 
 
+
+

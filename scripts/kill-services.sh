@@ -30,3 +30,5 @@ echo "  Terminal 2: cd backend/content-service && npm run dev"
 echo "  Terminal 3: cd backend/analytics-service && npm run dev"
 echo "  Terminal 4: cd mobile && npm start"
 
+
+

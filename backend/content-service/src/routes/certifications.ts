@@ -46,3 +46,5 @@ router.delete('/:id', authenticate, requireAdmin, deleteCertification);
 export default router;
 
 
+
+

@@ -56,3 +56,5 @@ echo "   export PATH=\$PATH:\$ANDROID_HOME/platform-tools"
 echo "   export PATH=\$PATH:\$ANDROID_HOME/tools"
 echo "   export PATH=\$PATH:\$ANDROID_HOME/tools/bin"
 
+
+

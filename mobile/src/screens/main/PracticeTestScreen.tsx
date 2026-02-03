@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, Alert, SafeAreaView, TouchableOpacity } from 'react-native';
 import { Text, ProgressBar, ActivityIndicator } from 'react-native-paper';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, CommonActions } from '@react-navigation/native';
 import { useSelector, useDispatch } from 'react-redux';
 import { examService } from '../../services/api/examService';
 import { RootState, AppDispatch } from '../../store';
@@ -44,10 +44,12 @@ export default function PracticeTestScreen() {
       setIsTestStarted(true);
       dailyActivityService.startSession();
 
-      // Fetch random questions
+      // Fetch random questions distributed across all knowledge areas
       const questionsData = await questionService.getQuestions({
         certificationId: PMP_CERTIFICATION_ID,
         limit: TOTAL_QUESTIONS.toString(),
+        random: 'true',
+        distributeByKnowledgeArea: 'true',
       });
       
       if (questionsData.questions && questionsData.questions.length > 0) {
@@ -100,13 +102,24 @@ export default function PracticeTestScreen() {
       // End session and track time
       await dailyActivityService.endSession();
       
-      // Award streak badge if not already awarded today
+      // Update streak for today's activity
       try {
         await client.post('/api/badges/streak');
-      } catch (error) {
-        // Ignore if already awarded or other error
-        console.log('Streak badge may already be awarded:', error);
+        console.log('Streak updated successfully');
+      } catch (error: any) {
+        // Log error but don't block navigation
+        console.error('Failed to update streak:', error?.response?.data || error?.message);
       }
+      
+      // Reset Practice stack to dashboard before navigating away
+      // This ensures when user clicks Practice tab, they see dashboard not the test screen
+      // Reset the current Practice stack navigator
+      (navigation as any).dispatch(
+        CommonActions.reset({
+          index: 0,
+          routes: [{ name: 'PracticeDashboard' }],
+        })
+      );
       
       // Navigate to review - ExamReview is in the Exam stack
       (navigation as any).navigate('Exam', {

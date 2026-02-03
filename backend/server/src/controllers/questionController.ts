@@ -5,10 +5,144 @@ import { v4 as uuidv4 } from 'uuid';
 
 export async function getQuestions(req: Request, res: Response, next: NextFunction) {
   try {
-    const { certificationId, knowledgeAreaId, difficulty, limit, offset = 0 } = req.query;
+    const { certificationId, knowledgeAreaId, difficulty, limit, offset = 0, random, distributeByKnowledgeArea } = req.query;
     // Default to a high limit if not specified, or use the provided limit
     const queryLimit = limit ? parseInt(limit as string, 10) : 1000;
+    const isRandom = random === 'true' || random === true || random === '1';
+    const shouldDistribute = distributeByKnowledgeArea === 'true' || distributeByKnowledgeArea === true || distributeByKnowledgeArea === '1';
 
+    // If distributing by knowledge area, get questions from each area
+    if (shouldDistribute && certificationId && !knowledgeAreaId) {
+      // Get all knowledge areas for this certification
+      const knowledgeAreasResult = await pool.query(
+        'SELECT id FROM knowledge_areas WHERE certification_id = $1 ORDER BY "order"',
+        [certificationId]
+      );
+      
+      const knowledgeAreaIds = knowledgeAreasResult.rows.map((row: any) => row.id);
+      const questionsPerArea = Math.ceil(queryLimit / knowledgeAreaIds.length);
+      const allQuestions: any[] = [];
+
+      // Get questions from each knowledge area
+      for (const kaId of knowledgeAreaIds) {
+        let areaQuery = 'SELECT * FROM questions WHERE is_active = true AND certification_id = $1 AND knowledge_area_id = $2';
+        const areaParams: any[] = [certificationId, kaId];
+        let areaParamCount = 3;
+
+        if (difficulty) {
+          areaQuery += ` AND difficulty = $${areaParamCount++}`;
+          areaParams.push(difficulty);
+        }
+
+        // Use random order for practice tests, otherwise use created_at
+        areaQuery += isRandom 
+          ? ` ORDER BY RANDOM() LIMIT $${areaParamCount++}`
+          : ` ORDER BY created_at DESC LIMIT $${areaParamCount++} OFFSET $${areaParamCount++}`;
+        
+        if (isRandom) {
+          areaParams.push(questionsPerArea);
+        } else {
+          areaParams.push(questionsPerArea, offset);
+        }
+
+        const areaResult = await pool.query(areaQuery, areaParams);
+        allQuestions.push(...areaResult.rows);
+      }
+
+      // If we need more questions to reach the limit, fill with random questions from all areas
+      if (allQuestions.length < queryLimit) {
+        const remaining = queryLimit - allQuestions.length;
+        let fillQuery = 'SELECT * FROM questions WHERE is_active = true AND certification_id = $1';
+        const fillParams: any[] = [certificationId];
+        let fillParamCount = 2;
+
+        // Exclude already selected questions
+        if (allQuestions.length > 0) {
+          const excludeIds = allQuestions.map((q: any) => q.id);
+          fillQuery += ` AND id NOT IN (${excludeIds.map((_, i) => `$${fillParamCount + i}`).join(', ')})`;
+          fillParams.push(...excludeIds);
+          fillParamCount += excludeIds.length;
+        }
+
+        if (difficulty) {
+          fillQuery += ` AND difficulty = $${fillParamCount++}`;
+          fillParams.push(difficulty);
+        }
+
+        fillQuery += ` ORDER BY RANDOM() LIMIT $${fillParamCount++}`;
+        fillParams.push(remaining);
+
+        const fillResult = await pool.query(fillQuery, fillParams);
+        allQuestions.push(...fillResult.rows);
+      }
+
+      // Shuffle all questions if random is requested, otherwise just limit
+      let finalQuestions = allQuestions;
+      if (isRandom && allQuestions.length > 1) {
+        // PostgreSQL RANDOM() already shuffled within each area, but we want to shuffle the combined result
+        finalQuestions = allQuestions.sort(() => Math.random() - 0.5);
+      }
+      
+      const result = { rows: finalQuestions.slice(0, queryLimit) };
+      
+      // Continue with the rest of the function to get answers and transform
+      const questions = await Promise.all(
+        result.rows.map(async (question) => {
+            const answersResult = await pool.query(
+              'SELECT * FROM answers WHERE question_id = $1 ORDER BY "order"',
+              [question.id]
+            );
+            // Get knowledge area name
+            let knowledgeAreaName = null;
+            if (question.knowledge_area_id) {
+              const kaResult = await pool.query(
+                'SELECT name FROM knowledge_areas WHERE id = $1',
+                [question.knowledge_area_id]
+              );
+              if (kaResult.rows.length > 0) {
+                knowledgeAreaName = kaResult.rows[0].name;
+              }
+            }
+            return {
+              id: question.id,
+              questionId: question.question_id,
+              certificationId: question.certification_id,
+              knowledgeAreaId: question.knowledge_area_id,
+              knowledgeAreaName: knowledgeAreaName,
+              questionText: question.question_text,
+              explanation: question.explanation,
+              difficulty: question.difficulty,
+              questionType: question.question_type,
+              question_type: question.question_type,
+              domain: question.domain,
+              task: question.task,
+              pmApproach: question.pm_approach,
+              pm_approach: question.pm_approach,
+              questionMetadata: question.question_metadata,
+              questionImages: question.question_images,
+              question_images: question.question_images,
+              explanationImages: question.explanation_images,
+              explanation_images: question.explanation_images,
+              isActive: question.is_active,
+              createdAt: question.created_at,
+              updatedAt: question.updated_at,
+              answers: answersResult.rows.map((answer: any) => ({
+                id: answer.id,
+                questionId: answer.question_id,
+                answerText: answer.answer_text,
+                isCorrect: answer.is_correct,
+                order: answer.order,
+                createdAt: answer.created_at
+              }))
+            };
+          })
+        );
+
+        res.json({ questions, total: questions.length });
+        return;
+    }
+
+    // Standard query (non-distributed)
     let query = 'SELECT * FROM questions WHERE is_active = true';
     const params: any[] = [];
     let paramCount = 1;
@@ -28,8 +162,14 @@ export async function getQuestions(req: Request, res: Response, next: NextFuncti
       params.push(difficulty);
     }
 
-    query += ` ORDER BY created_at DESC LIMIT $${paramCount++} OFFSET $${paramCount++}`;
-    params.push(queryLimit, offset);
+    // Use random order for practice tests, otherwise use created_at
+    if (isRandom) {
+      query += ` ORDER BY RANDOM() LIMIT $${paramCount++}`;
+      params.push(queryLimit);
+    } else {
+      query += ` ORDER BY created_at DESC LIMIT $${paramCount++} OFFSET $${paramCount++}`;
+      params.push(queryLimit, offset);
+    }
 
     const result = await pool.query(query, params);
 
@@ -105,7 +245,7 @@ export async function getQuestionsByIds(req: Request, res: Response, next: NextF
     if (typeof ids === 'string') {
       questionIds = ids.split(',').map(id => id.trim());
     } else if (Array.isArray(ids)) {
-      questionIds = ids;
+      questionIds = ids.map(id => String(id));
     } else {
       return res.status(400).json({ error: 'ids must be a comma-separated string or array' });
     }
@@ -128,7 +268,7 @@ export async function getQuestionsByIds(req: Request, res: Response, next: NextF
 
     // Get answers for each question and transform to camelCase
     const questions = await Promise.all(
-      sortedQuestions.map(async (question) => {
+      sortedQuestions.map(async (question: any) => {
         const answersResult = await pool.query(
           'SELECT * FROM answers WHERE question_id = $1 ORDER BY "order"',
           [question.id]

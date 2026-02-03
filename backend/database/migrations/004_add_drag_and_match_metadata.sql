@@ -7,3 +7,5 @@ ADD COLUMN IF NOT EXISTS question_metadata JSONB;
 -- Create index for faster queries on question_metadata
 CREATE INDEX IF NOT EXISTS idx_questions_metadata ON questions USING GIN (question_metadata);
 
+
+

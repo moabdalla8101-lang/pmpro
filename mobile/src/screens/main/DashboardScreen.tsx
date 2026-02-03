@@ -56,10 +56,20 @@ export default function DashboardScreen() {
   const loadDashboardData = async () => {
     dispatch(loadSettings() as any);
     dispatch(fetchProgress(PMP_CERTIFICATION_ID));
-    dispatch(fetchPerformanceByDomain(PMP_CERTIFICATION_ID));
+    
+    // Stagger API calls to avoid rate limiting
+    // Start with the most important ones first
     fetchTodayActivity();
     fetchStreak();
-    fetchWeeklyCompletions();
+    
+    // Add small delays for less critical requests
+    setTimeout(() => {
+      dispatch(fetchPerformanceByDomain(PMP_CERTIFICATION_ID));
+    }, 100);
+    
+    setTimeout(() => {
+      fetchWeeklyCompletions();
+    }, 200);
   };
 
   const fetchTodayActivity = async () => {
@@ -75,10 +85,28 @@ export default function DashboardScreen() {
   };
 
   const fetchStreak = async () => {
+    // Only fetch streak if user is authenticated
+    if (!user || !user.id) {
+      setCurrentStreak(0);
+      return;
+    }
+
     try {
       const response = await client.get('/api/badges/streak');
       setCurrentStreak(response.data.currentStreak || 0);
-    } catch (error) {
+    } catch (error: any) {
+      // Handle rate limiting gracefully
+      if (error?.response?.status === 429) {
+        console.warn('Rate limited on streak fetch, will retry later');
+        // Don't set to 0, keep previous value
+        return;
+      }
+      // Handle 401 (unauthorized) gracefully - user not logged in
+      if (error?.response?.status === 401) {
+        console.warn('User not authenticated, skipping streak fetch');
+        setCurrentStreak(0);
+        return;
+      }
       console.error('Failed to fetch streak:', error);
       setCurrentStreak(0);
     }
@@ -193,9 +221,7 @@ export default function DashboardScreen() {
             currentStreak={currentStreak}
             weeklyCompletions={weeklyCompletions}
             onStartPracticeTest={() => {
-              (navigation as any).navigate('Practice', {
-                screen: 'PracticeTest',
-              });
+              (navigation as any).navigate('PracticeTest');
             }}
           />
         )}

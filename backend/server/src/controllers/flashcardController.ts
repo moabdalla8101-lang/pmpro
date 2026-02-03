@@ -17,10 +17,32 @@ export async function getFlashcards(req: AuthRequest, res: Response, next: NextF
         : (knowledgeAreaIds as string).split(',');
       
       if (areaIds.length > 0) {
-        const placeholders = areaIds.map((_, i) => `$${paramIndex + i}`).join(',');
-        query += ` AND knowledge_area IN (${placeholders})`;
-        params.push(...areaIds);
-        paramIndex += areaIds.length;
+        // Get knowledge area names from IDs
+        const placeholders = areaIds.map((_, i) => `$${i + 1}`).join(',');
+        const kaResult = await pool.query(
+          `SELECT name FROM knowledge_areas WHERE id IN (${placeholders})`,
+          areaIds
+        );
+        
+        // Convert knowledge area names to match flashcard format (remove "Project" prefix)
+        // Flashcards store names like "Schedule Management" but knowledge_areas has "Project Schedule Management"
+        const kaNames = kaResult.rows.map((row: any) => {
+          const name = row.name;
+          // Remove "Project " prefix if present
+          return name.replace(/^Project\s+/i, '').trim();
+        });
+        
+        if (kaNames.length > 0) {
+          const namePlaceholders = kaNames.map((_, i) => `$${paramIndex + i}`).join(',');
+          query += ` AND knowledge_area IN (${namePlaceholders})`;
+          params.push(...kaNames);
+          paramIndex += kaNames.length;
+        } else {
+          // No matching knowledge areas found, return empty result
+          console.log(`No knowledge areas found for IDs: ${areaIds.join(', ')}`);
+          res.json({ flashcards: [] });
+          return;
+        }
       }
     }
 

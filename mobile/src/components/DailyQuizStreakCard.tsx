@@ -86,6 +86,16 @@ export default function DailyQuizStreakCard({ certificationId, onStartQuiz }: Da
       // Handle streak data
       if (streakResponse.status === 'fulfilled') {
         setStreak(streakResponse.value.data);
+      } else if (streakResponse.status === 'rejected') {
+        // Handle 401 (unauthorized) gracefully - user not logged in
+        const error = streakResponse.reason;
+        if (error?.response?.status === 401) {
+          console.warn('User not authenticated, skipping streak fetch');
+          setStreak({ currentStreak: 0, longestStreak: 0, lastActivityDate: null });
+        } else {
+          console.warn('Failed to fetch streak:', error);
+          // Keep previous streak value on other errors
+        }
       }
 
       // Handle daily quiz status

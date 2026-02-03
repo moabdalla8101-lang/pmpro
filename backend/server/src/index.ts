@@ -26,6 +26,7 @@ import examRoutes from './routes/exams';
 import badgeRoutes from './routes/badges';
 import bookmarkRoutes from './routes/bookmarks';
 import flashcardRoutes from './routes/flashcards';
+import webhookRoutes from './routes/webhooks';
 
 dotenv.config();
 
@@ -75,6 +76,9 @@ app.use('/api/exams', apiRateLimiter, examRoutes);
 app.use('/api/badges', apiRateLimiter, badgeRoutes);
 app.use('/api/bookmarks', apiRateLimiter, bookmarkRoutes);
 app.use('/api/flashcards', apiRateLimiter, flashcardRoutes);
+
+// Webhook routes (no rate limiting, but should be protected by signature verification)
+app.use('/api/webhooks', webhookRoutes);
 
 // Root route - API information
 app.get('/', (req, res) => {

@@ -144,27 +144,49 @@ export async function getWeeklyDailyQuizCompletions(req: AuthRequest, res: Respo
     const end = new Date();
     end.setHours(23, 59, 59, 999);
 
-    const result = await pool.query(
-      `SELECT DATE(completed_at) as date
-       FROM mock_exams 
-       WHERE user_id = $1 
-       AND certification_id = $2 
-       AND exam_type = 'daily_quiz'
-       AND completed_at IS NOT NULL
-       AND completed_at >= $3 
-       AND completed_at <= $4
-       GROUP BY DATE(completed_at)
-       ORDER BY date ASC`,
-      [req.user!.userId, certificationId, start, end]
-    );
+    // Get completions from multiple sources:
+    // 1. Completed exams (daily quiz, practice tests, mock exams)
+    // 2. Days with user answers (any practice activity)
+    const [examCompletions, answerCompletions] = await Promise.all([
+      pool.query(
+        `SELECT DATE(completed_at) as date
+         FROM mock_exams 
+         WHERE user_id = $1 
+         AND certification_id = $2 
+         AND completed_at IS NOT NULL
+         AND completed_at >= $3 
+         AND completed_at <= $4
+         GROUP BY DATE(completed_at)`,
+        [req.user!.userId, certificationId, start, end]
+      ),
+      pool.query(
+        `SELECT DATE(ua.answered_at) as date
+         FROM user_answers ua
+         JOIN questions q ON ua.question_id = q.id
+         WHERE ua.user_id = $1 
+         AND q.certification_id = $2
+         AND ua.answered_at >= $3 
+         AND ua.answered_at <= $4
+         GROUP BY DATE(ua.answered_at)`,
+        [req.user!.userId, certificationId, start, end]
+      )
+    ]);
+
+    // Combine and deduplicate dates
+    const allDates = new Set<string>();
+    
+    examCompletions.rows.forEach((row: any) => {
+      const date = row.date instanceof Date ? row.date : new Date(row.date);
+      allDates.add(date.toISOString().split('T')[0]);
+    });
+    
+    answerCompletions.rows.forEach((row: any) => {
+      const date = row.date instanceof Date ? row.date : new Date(row.date);
+      allDates.add(date.toISOString().split('T')[0]);
+    });
 
     res.json({
-      completions: result.rows.map((row: any) => {
-        const date = row.date instanceof Date ? row.date : new Date(row.date);
-        return {
-          date: date.toISOString().split('T')[0],
-        };
-      }),
+      completions: Array.from(allDates).map(date => ({ date })).sort(),
     });
   } catch (error) {
     next(error);

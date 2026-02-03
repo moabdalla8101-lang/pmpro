@@ -28,3 +28,5 @@ CREATE INDEX IF NOT EXISTS idx_flashcards_knowledge_area ON flashcards(knowledge
 CREATE INDEX IF NOT EXISTS idx_user_flashcard_progress_user ON user_flashcard_progress(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_flashcard_progress_marked ON user_flashcard_progress(user_id, is_marked) WHERE is_marked = true;
 
+
+

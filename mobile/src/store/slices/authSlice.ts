@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { authService } from '../../services/api/authService';
+import { subscriptionService } from '../../services/api/subscriptionService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface User {
@@ -59,12 +60,48 @@ export const loadUser = createAsyncThunk('auth/loadUser', async () => {
   return null;
 });
 
+/**
+ * Sync subscription from RevenueCat and update user
+ */
+export const syncSubscription = createAsyncThunk(
+  'auth/syncSubscription',
+  async (_, { getState }) => {
+    try {
+      // Get subscription status from backend
+      const subscription = await subscriptionService.getSubscription();
+      
+      // Update stored user data
+      const userStr = await AsyncStorage.getItem('user');
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        user.subscriptionTier = subscription.tier;
+        await AsyncStorage.setItem('user', JSON.stringify(user));
+        
+        return {
+          subscriptionTier: subscription.tier,
+          subscriptionExpiresAt: subscription.expiresAt,
+        };
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Failed to sync subscription:', error);
+      throw error;
+    }
+  }
+);
+
 const authSlice = createSlice({
   name: 'auth',
   initialState,
   reducers: {
     clearError: (state) => {
       // Handle error clearing if needed
+    },
+    updateSubscriptionTier: (state, action: PayloadAction<{ tier: string; expiresAt?: string | null }>) => {
+      if (state.user) {
+        state.user.subscriptionTier = action.payload.tier;
+      }
     },
   },
   extraReducers: (builder) => {
@@ -106,11 +143,16 @@ const authSlice = createSlice({
           state.token = action.payload.token;
           state.isAuthenticated = true;
         }
+      })
+      .addCase(syncSubscription.fulfilled, (state, action) => {
+        if (action.payload && state.user) {
+          state.user.subscriptionTier = action.payload.subscriptionTier;
+        }
       });
   },
 });
 
-export const { clearError } = authSlice.actions;
+export const { clearError, updateSubscriptionTier } = authSlice.actions;
 export default authSlice.reducer;
 
 

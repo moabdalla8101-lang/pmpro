@@ -9,6 +9,23 @@ import { SectionHeader, ActionButton } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
+
+// Icon mapping for knowledge areas
+const getKnowledgeAreaIcon = (name: string): string => {
+  const normalizedName = name.toLowerCase();
+  if (normalizedName.includes('integration')) return 'link-variant';
+  if (normalizedName.includes('scope')) return 'target';
+  if (normalizedName.includes('schedule')) return 'calendar-clock';
+  if (normalizedName.includes('cost')) return 'currency-usd';
+  if (normalizedName.includes('quality')) return 'quality-high';
+  if (normalizedName.includes('resource')) return 'account-group';
+  if (normalizedName.includes('communication')) return 'message-text';
+  if (normalizedName.includes('risk')) return 'alert-circle';
+  if (normalizedName.includes('procurement')) return 'cart';
+  if (normalizedName.includes('stakeholder')) return 'account-multiple';
+  return 'book-open-variant'; // Default icon
+};
 
 export default function KnowledgeAreaFilterScreen() {
   const dispatch = useDispatch<AppDispatch>();
@@ -59,10 +76,20 @@ export default function KnowledgeAreaFilterScreen() {
 
         <View style={styles.areasContainer}>
           {knowledgeAreas && knowledgeAreas.length > 0 ? (
-            knowledgeAreas.map((area: any) => {
+            // Sort knowledge areas by id (as requested by user)
+            [...knowledgeAreas]
+              .sort((a: any, b: any) => {
+                // Sort by id field
+                const aId = (a.id || a || '').toString();
+                const bId = (b.id || b || '').toString();
+                return aId.localeCompare(bId);
+              })
+              .map((area: any) => {
               const areaId = area.id || area;
               const areaName = area.name || area;
+              const displayName = removeProjectPrefix(areaName);
               const isSelected = selectedArea === areaId;
+              const iconName = getKnowledgeAreaIcon(areaName);
 
               return (
                 <TouchableOpacity
@@ -82,21 +109,26 @@ export default function KnowledgeAreaFilterScreen() {
                           <View
                             style={[
                               styles.areaIconCircle,
-                              { backgroundColor: isSelected ? colors.primary : colors.gray200 },
+                              { backgroundColor: isSelected ? colors.primary : `${colors.primary}20` },
                             ]}
                           >
                             <Icon
-                              name={isSelected ? 'check-circle' : 'circle-outline'}
+                              name={iconName}
                               size={24}
-                              color={isSelected ? '#FFFFFF' : colors.gray500}
+                              color={isSelected ? '#FFFFFF' : colors.primary}
                             />
                           </View>
-                          <Text variant="titleMedium" style={styles.areaName}>
-                            {areaName}
-                          </Text>
+                          <View style={styles.areaTextContainer}>
+                            <Text variant="titleLarge" style={styles.areaName}>
+                              {displayName}
+                            </Text>
+                            <Text variant="bodySmall" style={styles.areaSubtitle}>
+                              Knowledge Area
+                            </Text>
+                          </View>
                         </View>
                         {isSelected && (
-                          <Icon name="chevron-right" size={24} color={colors.primary} />
+                          <Icon name="check-circle" size={28} color={colors.primary} />
                         )}
                       </View>
                     </Card.Content>
@@ -152,7 +184,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
   },
   areasContainer: {
-    gap: spacing.sm,
+    gap: spacing.base,
     marginBottom: spacing.lg,
   },
   areaCard: {
@@ -175,17 +207,23 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   areaIconCircle: {
-    width: 32,
-    height: 32,
+    width: 48,
+    height: 48,
     borderRadius: borderRadius.round,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: spacing.sm,
+    marginRight: spacing.base,
+  },
+  areaTextContainer: {
+    flex: 1,
   },
   areaName: {
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.textPrimary,
-    flex: 1,
+    marginBottom: spacing.xs / 2,
+  },
+  areaSubtitle: {
+    color: colors.textSecondary,
   },
   emptyCard: {
     borderRadius: borderRadius.lg,

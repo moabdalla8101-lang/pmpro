@@ -199,3 +199,5 @@ If you're still having issues, check:
 - Browser console for JavaScript errors
 - Network tab for failed API calls
 
+
+

@@ -70,10 +70,12 @@ export async function updateStreak(req: AuthRequest, res: Response, next: NextFu
         // Streak broken
         newStreak = 1;
       }
-      // If daysDiff === 0, same day, don't update
+      // If daysDiff === 0, same day - keep current streak but update last_activity_date
+      // This ensures the streak is maintained for today
 
       const longestStreak = Math.max(newStreak, streak.longest_streak);
 
+      // Always update last_activity_date to today, even if streak count doesn't change
       await pool.query(
         `UPDATE streaks 
          SET current_streak = $1,

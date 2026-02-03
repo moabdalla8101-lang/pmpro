@@ -29,6 +29,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "expo-dev-client",
       [
         "expo-notifications",
         {
@@ -36,6 +37,12 @@
           "color": "#ffffff"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "revenueCatTestApiKey": "test_GBuMzfOYeDJtjKhPcqBSwReJhZx",
+      "eas": {
+        "projectId": "ad18936d-b103-4852-91e8-3ec714a462e0"
+      }
+    }
   }
 }

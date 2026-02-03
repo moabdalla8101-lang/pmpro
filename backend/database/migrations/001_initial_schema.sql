@@ -145,3 +145,5 @@ CREATE INDEX idx_badges_user ON badges(user_id);
 CREATE INDEX idx_user_progress_user ON user_progress(user_id);
 
 
+
+

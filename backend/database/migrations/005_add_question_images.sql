@@ -9,3 +9,5 @@ ADD COLUMN IF NOT EXISTS explanation_images JSONB;
 CREATE INDEX IF NOT EXISTS idx_questions_question_images ON questions USING GIN (question_images);
 CREATE INDEX IF NOT EXISTS idx_questions_explanation_images ON questions USING GIN (explanation_images);
 
+
+

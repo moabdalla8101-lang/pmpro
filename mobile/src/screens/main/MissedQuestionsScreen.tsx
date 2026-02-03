@@ -9,6 +9,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { CategoryBadge, SectionHeader, EmptyState, ActionButton } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
+import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
 
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
 
@@ -82,6 +83,7 @@ export default function MissedQuestionsScreen() {
     if (!question) return null;
 
     const knowledgeArea = question.knowledgeAreaName || question.knowledge_area_name;
+    const displayKnowledgeArea = knowledgeArea ? removeProjectPrefix(knowledgeArea) : null;
     const difficulty = question.difficulty || 'medium';
 
     return (
@@ -93,9 +95,9 @@ export default function MissedQuestionsScreen() {
           <Card.Content style={styles.cardContent}>
             <View style={styles.questionHeader}>
               <View style={styles.questionHeaderLeft}>
-                {knowledgeArea && (
+                {displayKnowledgeArea && (
                   <CategoryBadge
-                    label={knowledgeArea}
+                    label={displayKnowledgeArea}
                     variant="outlined"
                   />
                 )}
@@ -182,9 +184,10 @@ export default function MissedQuestionsScreen() {
           />
           {knowledgeAreas.map((area) => {
             const missedQ = missedQuestions.find(
-              (mq) =>
-                mq.question?.knowledgeAreaName === area ||
-                mq.question?.knowledge_area_name === area
+              (mq) => {
+                const name = mq.question?.knowledgeAreaName || mq.question?.knowledge_area_name;
+                return name ? removeProjectPrefix(name) === area : false;
+              }
             );
             const areaId =
               missedQ?.question?.knowledgeAreaId ||

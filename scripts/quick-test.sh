@@ -81,3 +81,5 @@ echo "   2. Press 'i' for iOS Simulator or 'a' for Android"
 echo "   3. Use the app to register/login and test features"
 echo ""
 
+
+

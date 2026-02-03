@@ -7,6 +7,7 @@ import bookmarkReducer from './slices/bookmarkSlice';
 import missedQuestionsReducer from './slices/missedQuestionsSlice';
 import flashcardReducer from './slices/flashcardSlice';
 import settingsReducer from './slices/settingsSlice';
+import subscriptionReducer from './slices/subscriptionSlice';
 
 export const store = configureStore({
   reducer: {
@@ -18,6 +19,7 @@ export const store = configureStore({
     missedQuestions: missedQuestionsReducer,
     flashcards: flashcardReducer,
     settings: settingsReducer,
+    subscription: subscriptionReducer,
   },
 });
 

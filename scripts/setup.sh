@@ -93,3 +93,5 @@ echo "   Web Admin: cd web-admin && npm run dev"
 echo ""
 echo -e "${GREEN}✨ Setup complete!${NC}"
 
+
+

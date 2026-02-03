@@ -1,7 +1,7 @@
 import client from './client';
 
 export const questionService = {
-  async getQuestions(filters: { certificationId?: string; knowledgeAreaId?: string; difficulty?: string; limit?: string | number; offset?: string | number }) {
+  async getQuestions(filters: { certificationId?: string; knowledgeAreaId?: string; difficulty?: string; limit?: string | number; offset?: string | number; random?: string | boolean; distributeByKnowledgeArea?: string | boolean }) {
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'questionService.ts:5',message:'getQuestions called',data:{filters},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H3'})}).catch(()=>{});
     // #endregion
@@ -11,6 +11,8 @@ export const questionService = {
     if (filters.difficulty) params.append('difficulty', filters.difficulty);
     if (filters.limit) params.append('limit', String(filters.limit));
     if (filters.offset) params.append('offset', String(filters.offset));
+    if (filters.random !== undefined) params.append('random', String(filters.random));
+    if (filters.distributeByKnowledgeArea !== undefined) params.append('distributeByKnowledgeArea', String(filters.distributeByKnowledgeArea));
     
     try {
       const response = await client.get(`/api/questions?${params.toString()}`);

@@ -49,3 +49,5 @@ router.delete('/:id', authenticate, requireAdmin, deleteKnowledgeArea);
 export default router;
 
 
+
+

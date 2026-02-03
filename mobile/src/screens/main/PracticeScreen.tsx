@@ -6,14 +6,14 @@ import { fetchQuestions, clearQuestions } from '../../store/slices/questionSlice
 import { RootState, AppDispatch } from '../../store';
 import { useNavigation, useFocusEffect, useRoute } from '@react-navigation/native';
 import { dailyActivityService } from '../../services/dailyActivityService';
+import { progressService } from '../../services/api/progressService';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { CategoryBadge, SectionHeader, EmptyState } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
+import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
 
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
-
-const DIFFICULTIES = ['easy', 'medium', 'hard'];
 
 export default function PracticeScreen() {
   const dispatch = useDispatch<AppDispatch>();
@@ -21,9 +21,10 @@ export default function PracticeScreen() {
   const route = useRoute();
   const { questions, isLoading } = useSelector((state: RootState) => state.questions);
   
-  const [selectedDifficulty, setSelectedDifficulty] = useState<string | null>(null);
+  const [selectedQuestionFilter, setSelectedQuestionFilter] = useState<'all' | 'unanswered'>('all');
   const [selectedKnowledgeArea, setSelectedKnowledgeArea] = useState<string | null>(null);
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
+  const [answeredQuestionIds, setAnsweredQuestionIds] = useState<Set<string>>(new Set());
 
   // Get initial filters from route params
   useEffect(() => {
@@ -36,76 +37,122 @@ export default function PracticeScreen() {
     }
   }, [route.params]);
 
-  const loadQuestions = () => {
+  const loadQuestions = async () => {
+    const params = route.params as any;
+    // Use route params if state hasn't been set yet, otherwise use state
+    const knowledgeAreaId = selectedKnowledgeArea || params?.knowledgeAreaId;
+    const domain = selectedDomain || params?.domain;
+    
     const filters: any = {
       certificationId: PMP_CERTIFICATION_ID,
       limit: 1000, // Fetch all questions
     };
     
-    if (selectedDifficulty) {
-      filters.difficulty = selectedDifficulty;
+    if (knowledgeAreaId) {
+      filters.knowledgeAreaId = knowledgeAreaId;
     }
     
-    if (selectedKnowledgeArea) {
-      filters.knowledgeAreaId = selectedKnowledgeArea;
+    // Fetch answered question IDs
+    try {
+      const answeredData = await progressService.getAnsweredQuestionIds(PMP_CERTIFICATION_ID);
+      const answeredIds = new Set(answeredData.questionIds || []);
+      setAnsweredQuestionIds(answeredIds);
+    } catch (error) {
+      console.error('Failed to fetch answered question IDs:', error);
+      // Continue without filtering if this fails
     }
     
     // Domain filtering will be done client-side after fetching
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'PracticeScreen.tsx:37',message:'Dispatching fetchQuestions',data:{filters},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H3'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'PracticeScreen.tsx:37',message:'Dispatching fetchQuestions',data:{filters, knowledgeAreaId, selectedKnowledgeArea},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H3'})}).catch(()=>{});
     // #endregion
     dispatch(fetchQuestions(filters));
   };
   
-  // Filter questions by domain client-side
+  // Filter questions by domain, knowledge area, and answered status
   const filteredQuestions = React.useMemo(() => {
-    if (!selectedDomain) return questions;
+    let filtered = questions;
     
-    return questions.filter((q: any) => {
-      const questionDomain = q.domain || q.Domain;
-      if (!questionDomain) return false;
-      
-      // Normalize domain value (handle prefixes like "1. People")
-      const normalizedDomain = questionDomain.replace(/^\d+\.\s*/, '').trim();
-      return normalizedDomain === selectedDomain || normalizedDomain === `${selectedDomain} Environment`;
-    });
-  }, [questions, selectedDomain]);
+    // Filter by knowledge area if selected (fallback if API didn't filter)
+    const params = route.params as any;
+    const knowledgeAreaId = selectedKnowledgeArea || params?.knowledgeAreaId;
+    
+    if (knowledgeAreaId) {
+      filtered = filtered.filter((q: any) => {
+        // Check both camelCase and snake_case fields
+        const qKnowledgeAreaId = q.knowledgeAreaId || q.knowledge_area_id;
+        return qKnowledgeAreaId === knowledgeAreaId;
+      });
+    }
+    
+    // Filter by domain if selected
+    if (selectedDomain) {
+      filtered = filtered.filter((q: any) => {
+        const questionDomain = q.domain || q.Domain;
+        if (!questionDomain) return false;
+        
+        // Normalize domain value (handle prefixes like "1. People")
+        const normalizedDomain = questionDomain.replace(/^\d+\.\s*/, '').trim();
+        return normalizedDomain === selectedDomain || normalizedDomain === `${selectedDomain} Environment`;
+      });
+    }
+    
+    // Filter by answered status
+    if (selectedQuestionFilter === 'unanswered') {
+      filtered = filtered.filter((q: any) => {
+        const questionId = q.id || q.question_id;
+        return !answeredQuestionIds.has(questionId);
+      });
+    }
+    
+    return filtered;
+  }, [questions, selectedDomain, selectedKnowledgeArea, selectedQuestionFilter, answeredQuestionIds, route.params]);
 
   // Clear questions and reload when screen is focused (to avoid showing exam questions)
   useFocusEffect(
     React.useCallback(() => {
       dispatch(clearQuestions());
+      // Read route params directly to ensure we have the latest filter
+      const params = route.params as any;
+      if (params?.knowledgeAreaId && !selectedKnowledgeArea) {
+        setSelectedKnowledgeArea(params.knowledgeAreaId);
+      }
+      if (params?.domain && !selectedDomain) {
+        setSelectedDomain(params.domain);
+      }
       loadQuestions();
       dailyActivityService.startSession();
       return () => {
         dailyActivityService.endSession();
       };
-    }, [dispatch, selectedDifficulty, selectedKnowledgeArea])
+    }, [dispatch, selectedKnowledgeArea, route.params])
   );
 
   useEffect(() => {
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'PracticeScreen.tsx:20',message:'PracticeScreen useEffect triggered',data:{selectedDifficulty,selectedKnowledgeArea},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'PracticeScreen.tsx:20',message:'PracticeScreen useEffect triggered',data:{selectedQuestionFilter,selectedKnowledgeArea},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
     // #endregion
     loadQuestions();
-  }, [selectedDifficulty, selectedKnowledgeArea]);
+  }, [selectedKnowledgeArea]);
 
   const handleQuestionPress = (questionId: string) => {
     navigation.navigate('QuestionDetail' as never, { questionId } as never);
   };
 
-  const toggleDifficulty = (difficulty: string) => {
-    setSelectedDifficulty(selectedDifficulty === difficulty ? null : difficulty);
+  const toggleQuestionFilter = (filter: 'all' | 'unanswered') => {
+    setSelectedQuestionFilter(filter);
   };
 
-  const hasActiveFilters = selectedDifficulty || selectedKnowledgeArea;
+  const hasActiveFilters = selectedQuestionFilter !== 'all' || selectedKnowledgeArea;
 
   const renderQuestion = ({ item }: any) => {
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'PracticeScreen.tsx:44',message:'Rendering question item',data:{itemId:item.id,hasQuestionText:!!item.questionText,hasQuestion_text:!!item.question_text,hasAnswers:!!item.answers,answersLength:item.answers?.length||0,itemKeys:Object.keys(item)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H4'})}).catch(()=>{});
     // #endregion
     const knowledgeArea = item.knowledgeAreaName || item.knowledge_area_name;
-    const difficulty = item.difficulty || 'medium';
+    const displayKnowledgeArea = knowledgeArea ? removeProjectPrefix(knowledgeArea) : null;
+    const questionId = item.id || item.question_id;
+    const isAnswered = answeredQuestionIds.has(questionId);
     
     return (
       <TouchableOpacity
@@ -115,14 +162,16 @@ export default function PracticeScreen() {
         <Card style={styles.card}>
           <Card.Content style={styles.cardContent}>
             <View style={styles.questionHeader}>
-              <CategoryBadge
-                label={difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}
-                color={difficulty === 'easy' ? colors.success : difficulty === 'medium' ? colors.warning : colors.error}
-                variant="pill"
-              />
-              {knowledgeArea && (
+              {isAnswered && (
                 <CategoryBadge
-                  label={knowledgeArea}
+                  label="Answered"
+                  color={colors.success}
+                  variant="pill"
+                />
+              )}
+              {displayKnowledgeArea && (
+                <CategoryBadge
+                  label={displayKnowledgeArea}
                   variant="outlined"
                 />
               )}
@@ -183,32 +232,21 @@ export default function PracticeScreen() {
         >
           <CategoryBadge
             label="All"
-            onPress={() => {
-              setSelectedDifficulty(null);
-              setSelectedKnowledgeArea(null);
-            }}
-            selected={!hasActiveFilters}
+            onPress={() => toggleQuestionFilter('all')}
+            selected={selectedQuestionFilter === 'all'}
             variant="pill"
           />
-          {DIFFICULTIES.map((difficulty) => (
-            <CategoryBadge
-              key={difficulty}
-              label={difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}
-              onPress={() => toggleDifficulty(difficulty)}
-              selected={selectedDifficulty === difficulty}
-              color={
-                difficulty === 'easy' ? colors.success :
-                difficulty === 'medium' ? colors.warning :
-                colors.error
-              }
-              variant="pill"
-            />
-          ))}
+          <CategoryBadge
+            label="Unanswered"
+            onPress={() => toggleQuestionFilter('unanswered')}
+            selected={selectedQuestionFilter === 'unanswered'}
+            variant="pill"
+          />
           {hasActiveFilters && (
             <TouchableOpacity
               style={styles.clearButton}
               onPress={() => {
-                setSelectedDifficulty(null);
+                setSelectedQuestionFilter('all');
                 setSelectedKnowledgeArea(null);
               }}
             >
@@ -222,7 +260,7 @@ export default function PracticeScreen() {
       </View>
 
       <FlatList
-        data={questions}
+        data={filteredQuestions}
         renderItem={renderQuestion}
         keyExtractor={(item) => item.id}
         contentContainerStyle={[
@@ -239,7 +277,7 @@ export default function PracticeScreen() {
             message="Try adjusting your filters to see more questions"
             actionLabel="Clear Filters"
             onActionPress={() => {
-              setSelectedDifficulty(null);
+              setSelectedQuestionFilter('all');
               setSelectedKnowledgeArea(null);
             }}
           />

@@ -11,3 +11,5 @@ UPDATE mock_exams SET exam_type = 'mock_exam' WHERE exam_type IS NULL;
 CREATE INDEX IF NOT EXISTS idx_mock_exams_exam_type ON mock_exams(exam_type);
 CREATE INDEX IF NOT EXISTS idx_mock_exams_user_type_date ON mock_exams(user_id, exam_type, started_at);
 
+
+

@@ -9,6 +9,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { CategoryBadge, SectionHeader, EmptyState } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
+import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
 
 export default function BookmarkedQuestionsScreen() {
   const dispatch = useDispatch<AppDispatch>();
@@ -35,7 +36,10 @@ export default function BookmarkedQuestionsScreen() {
   const knowledgeAreas = Array.from(
     new Set(
       bookmarks
-        .map((b) => b.question?.knowledgeAreaName || b.question?.knowledge_area_name)
+        .map((b) => {
+          const name = b.question?.knowledgeAreaName || b.question?.knowledge_area_name;
+          return name ? removeProjectPrefix(name) : null;
+        })
         .filter(Boolean)
     )
   );
@@ -53,6 +57,7 @@ export default function BookmarkedQuestionsScreen() {
     if (!question) return null;
 
     const knowledgeArea = question.knowledgeAreaName || question.knowledge_area_name;
+    const displayKnowledgeArea = knowledgeArea ? removeProjectPrefix(knowledgeArea) : null;
     const difficulty = question.difficulty || 'medium';
 
     return (
@@ -64,9 +69,9 @@ export default function BookmarkedQuestionsScreen() {
           <Card.Content style={styles.cardContent}>
             <View style={styles.questionHeader}>
               <View style={styles.questionHeaderLeft}>
-                {knowledgeArea && (
+                {displayKnowledgeArea && (
                   <CategoryBadge
-                    label={knowledgeArea}
+                    label={displayKnowledgeArea}
                     variant="outlined"
                   />
                 )}
@@ -148,9 +153,10 @@ export default function BookmarkedQuestionsScreen() {
             />
             {knowledgeAreas.map((area) => {
               const bookmark = bookmarks.find(
-                (b) =>
-                  b.question?.knowledgeAreaName === area ||
-                  b.question?.knowledge_area_name === area
+                (b) => {
+                  const name = b.question?.knowledgeAreaName || b.question?.knowledge_area_name;
+                  return name ? removeProjectPrefix(name) === area : false;
+                }
               );
               const areaId =
                 bookmark?.question?.knowledgeAreaId ||

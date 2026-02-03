@@ -21,7 +21,6 @@ Module._resolveFilename = function(request, parent) {
   }
 };
 
-const { parse } = require('csv-parse');
 const { Pool } = require('pg');
 require('dotenv').config({ path: path.join(__dirname, '../backend/server/.env') });
 
@@ -91,58 +90,52 @@ function normalizePMApproach(pmApproach) {
 }
 
 /**
- * Parse images JSON array
- * Handles both empty arrays and arrays with image objects
+ * Map question_type from JSON to database format
  */
-function parseImages(imagesJson) {
-  if (!imagesJson || imagesJson.trim() === '' || imagesJson.trim() === '[]') {
-    return [];
+function mapQuestionType(questionType) {
+  if (!questionType) return 'select_one';
+  
+  const type = questionType.toLowerCase().trim();
+  
+  if (type === 'multiple_choice') {
+    return 'select_one';
+  } else if (type === 'drag_drop' || type === 'drag_and_match') {
+    return 'drag_and_match';
   }
   
-  try {
-    const parsed = JSON.parse(imagesJson);
-    if (Array.isArray(parsed)) {
-      return parsed;
-    }
-    return [];
-  } catch (e) {
-    console.warn(`Warning: Could not parse images JSON: ${imagesJson}`);
-    return [];
-  }
+  return 'select_one';
 }
 
 async function main() {
-  const csvPath = path.join(__dirname, '../Communication_Management_Questions.csv');
+  const jsonPath = '/Users/mohamed/Downloads/pmp/pmp_extractions/extraction_20260116_182727_coomuni/extracted_questions.json';
   
-  if (!fs.existsSync(csvPath)) {
-    console.error(`Error: CSV file not found at ${csvPath}`);
+  if (!fs.existsSync(jsonPath)) {
+    console.error(`Error: JSON file not found at ${jsonPath}`);
     process.exit(1);
   }
 
-  console.log('📖 Reading CSV file...');
-  const csvContent = fs.readFileSync(csvPath, 'utf-8');
+  console.log('📖 Reading JSON file...');
+  const jsonContent = fs.readFileSync(jsonPath, 'utf-8');
+  const questions = JSON.parse(jsonContent);
 
-  // Parse CSV
-  const records = await new Promise((resolve, reject) => {
-    parse(csvContent, {
-      columns: true,
-      skip_empty_lines: true,
-      trim: true,
-    }, (err, data) => {
-      if (err) reject(err);
-      else resolve(data);
-    });
-  });
+  console.log(`📊 Found ${questions.length} questions in JSON`);
 
-  console.log(`📊 Found ${records.length} records in CSV`);
+  // Count questions with images
+  const questionsWithImages = questions.filter(q => 
+    q.extracted_data?.images && 
+    Array.isArray(q.extracted_data.images) && 
+    q.extracted_data.images.length > 0
+  );
+  
+  console.log(`🖼️  Questions with images: ${questionsWithImages.length}`);
 
-  // Filter out empty rows
-  const validRecords = records.filter(record => {
-    const questionText = record['Question Text'] || record['Question ID'];
+  // Filter out invalid questions
+  const validQuestions = questions.filter(q => {
+    const questionText = q.extracted_data?.question_text;
     return questionText && questionText.trim() !== '';
   });
 
-  console.log(`✅ ${validRecords.length} valid records after filtering`);
+  console.log(`✅ ${validQuestions.length} valid questions after filtering`);
 
   // Get PMP certification ID
   const certResult = await pool.query(
@@ -175,147 +168,72 @@ async function main() {
 
   let imported = 0;
   let updated = 0;
-  const errors = [];
+  const skipped = [];
 
   console.log('\n🔄 Processing questions...\n');
 
-  for (let i = 0; i < validRecords.length; i++) {
-    const record = validRecords[i];
+  for (let i = 0; i < validQuestions.length; i++) {
+    const q = validQuestions[i];
+    const data = q.extracted_data;
     
     try {
-      // Get question ID - use "Question ID" column, fallback to "ID" column
-      const questionId = record['Question ID'] || record['ID'] || `COMM-${i + 1}`;
+      // Generate question ID
+      const questionId = `COMM-${q.number || i + 1}`;
       
-      if (!questionId || questionId.trim() === '') {
-        throw new Error('Question ID is required');
+      if (!data.question_text || data.question_text.trim() === '') {
+        throw new Error('Question text is required');
       }
 
       // Get question type
-      const questionType = (record['Question Type'] || 'select_one').toLowerCase().trim();
+      const questionType = mapQuestionType(data.question_type || 'multiple_choice');
       
-      if (!['select_one', 'select_multiple', 'drag_and_match'].includes(questionType)) {
-        throw new Error(`Unknown question type: ${questionType}`);
-      }
-
-      // Parse options JSON
+      // Parse options
       let options = [];
-      try {
-        const optionsJson = record['Options (JSON)'] || '[]';
-        const parsedOptions = JSON.parse(optionsJson);
-        
-        // Handle different question types
-        if (questionType === 'drag_and_match') {
-          // For drag_and_match, we need to handle left and right items
-          const leftItems = parsedOptions.left || parsedOptions.left_items || [];
-          const rightItems = parsedOptions.right || parsedOptions.right_items || [];
-          
-          // For drag_and_match, we'll create options from the right items (targets)
-          // The left items will be stored in metadata
-          options = rightItems.map((item, idx) => {
-            // Handle both object format {index: 1, text: "..."} and string format
-            if (typeof item === 'object' && item.text) {
-              return {
-                letter: String.fromCharCode(65 + idx),
-                text: item.text,
-                index: item.index || idx + 1
-              };
-            } else if (typeof item === 'string') {
-              return {
-                letter: String.fromCharCode(65 + idx),
-                text: item,
-                index: idx + 1
-              };
-            } else {
-              return {
-                letter: String.fromCharCode(65 + idx),
-                text: String(item),
-                index: idx + 1
-              };
-            }
-          });
-          
-          // If no right items, use left items as fallback
-          if (options.length === 0 && leftItems.length > 0) {
-            options = leftItems.map((item, idx) => {
-              if (typeof item === 'object' && item.text) {
-                return {
-                  letter: item.letter || String.fromCharCode(65 + idx),
-                  text: item.text
-                };
-              } else if (typeof item === 'string') {
-                return {
-                  letter: String.fromCharCode(65 + idx),
-                  text: item
-                };
-              } else {
-                return {
-                  letter: String.fromCharCode(65 + idx),
-                  text: String(item)
-                };
-              }
-            });
-          }
-        } else if (Array.isArray(parsedOptions)) {
-          options = parsedOptions;
-        } else {
-          throw new Error('Options must be an array or drag_and_match format');
-        }
-      } catch (e) {
-        throw new Error(`Invalid options JSON: ${e.message}`);
+      if (data.options && Array.isArray(data.options)) {
+        options = data.options.map((opt, idx) => ({
+          letter: opt.letter || String.fromCharCode(65 + idx),
+          text: opt.text || ''
+        }));
       }
 
-      if (options.length === 0) {
-        throw new Error('No options found');
-      }
-
-      // Parse correct options JSON
-      let correctOptions = {};
-      try {
-        const correctJson = record['Correct Options (JSON)'] || '{}';
-        correctOptions = JSON.parse(correctJson);
-      } catch (e) {
-        throw new Error(`Invalid correct options JSON: ${e.message}`);
-      }
-
-      // Determine correct answer(s) - handle both single and multiple choice
-      let correctAnswersArray = [];
+      // Get correct answer - handle both single letter and comma-separated multiple answers
+      let correctAnswer = (data.correct_answer || '').trim().toUpperCase();
+      const correctAnswersArray = correctAnswer ? correctAnswer.split(',').map(a => a.trim()) : [];
       
-      // Check for multiple choice (answers array) or single choice (answer string)
-      if (correctOptions.answers && Array.isArray(correctOptions.answers)) {
-        // Multi-choice question
-        correctAnswersArray = correctOptions.answers;
-      } else if (correctOptions.answer) {
-        // Single choice question
-        if (Array.isArray(correctOptions.answer)) {
-          correctAnswersArray = correctOptions.answer;
-        } else {
-          correctAnswersArray = [correctOptions.answer];
-        }
+      // Validate question before processing
+      const issues = [];
+      if (options.length === 0) {
+        issues.push('No options found');
+      }
+      if (correctAnswersArray.length === 0 && questionType !== 'drag_and_match') {
+        issues.push('No correct answer specified');
+      }
+      
+      // Skip questions with issues - just report them
+      if (issues.length > 0) {
+        skipped.push({
+          questionNumber: q.number || i + 1,
+          questionId: questionId,
+          issues: issues,
+          questionText: data.question_text?.substring(0, 100) + '...' || 'N/A'
+        });
+        continue; // Skip this question
       }
 
       // Normalize fields
-      const normalizedDomain = normalizeDomain(record['Domain']);
-      const normalizedTask = normalizeTask(record['Task']);
-      const normalizedPMApproach = normalizePMApproach(record['PM Approach']);
+      const normalizedDomain = normalizeDomain(data.domain);
+      const normalizedTask = normalizeTask(data.task);
+      const normalizedPMApproach = normalizePMApproach(data.approach);
 
       // Parse images
-      const questionImagesJson = record['Question Images (JSON)'] || '[]';
-      const explanationImagesJson = record['Explanation Images (JSON)'] || '[]';
-      const questionImages = parseImages(questionImagesJson);
-      const explanationImages = parseImages(explanationImagesJson);
+      const questionImages = data.images || [];
+      const explanationImages = []; // No separate explanation images in this JSON structure
 
       // Prepare question metadata for drag_and_match questions
       let questionMetadata = null;
-      if (questionType === 'drag_and_match') {
-        const parsedOptions = JSON.parse(record['Options (JSON)'] || '[]');
-        const leftItems = parsedOptions.left || parsedOptions.left_items || [];
-        const rightItems = parsedOptions.right || parsedOptions.right_items || [];
-        const matches = correctOptions.matches || {};
-        
+      if (questionType === 'drag_and_match' && data.drag_drop_pairs && Array.isArray(data.drag_drop_pairs)) {
         questionMetadata = {
-          leftItems,
-          rightItems,
-          matches
+          drag_drop_pairs: data.drag_drop_pairs
         };
       }
 
@@ -346,8 +264,8 @@ async function main() {
                updated_at = NOW()
            WHERE id = $11`,
           [
-            record['Question Text'] || '',
-            record['Explanation'] || null,
+            data.question_text || '',
+            data.explanation || null,
             'medium', // Default difficulty
             questionType,
             normalizedDomain,
@@ -377,8 +295,8 @@ async function main() {
             questionId,
             pmpCertId,
             communicationKnowledgeAreaId,
-            record['Question Text'] || '',
-            record['Explanation'] || null,
+            data.question_text || '',
+            data.explanation || null,
             'medium', // Default difficulty
             questionType,
             normalizedDomain,
@@ -420,10 +338,8 @@ async function main() {
           
           // Check if this answer is correct
           // For multi-choice, check if the letter is in the correctAnswersArray
-          // For single choice, check if it matches the single answer
           const isCorrect = correctAnswersArray.includes(answerLetter) || 
-                           correctAnswersArray.includes(option.letter) ||
-                           (correctAnswersArray.length === 0 && j === 0); // Fallback to first if no correct answer specified
+                           correctAnswersArray.includes(option.letter);
 
           await pool.query(
             `INSERT INTO answers (question_id, answer_text, is_correct, "order", created_at)
@@ -434,12 +350,14 @@ async function main() {
       }
 
       if ((imported + updated) % 10 === 0) {
-        process.stdout.write(`\rProcessed ${imported + updated}/${validRecords.length} questions... (${imported} new, ${updated} updated)`);
+        process.stdout.write(`\rProcessed ${imported + updated}/${validQuestions.length} questions... (${imported} new, ${updated} updated)`);
       }
     } catch (error) {
-      errors.push({
-        questionId: record['Question ID'] || record['ID'] || `ROW-${i + 1}`,
-        error: error.message
+      skipped.push({
+        questionNumber: q.number || i + 1,
+        questionId: `COMM-${q.number || i + 1}`,
+        issues: [error.message],
+        questionText: data.question_text?.substring(0, 100) + '...' || 'N/A'
       });
       console.error(`\nError processing question ${i + 1}:`, error.message);
     }
@@ -452,7 +370,7 @@ async function main() {
   console.log(`   New questions imported: ${imported}`);
   console.log(`   Existing questions updated: ${updated}`);
   console.log(`   Total processed: ${imported + updated}`);
-  console.log(`   Errors: ${errors.length}`);
+  console.log(`   Skipped (with issues): ${skipped.length}`);
   
   // Show normalization summary
   const domainStats = await pool.query(
@@ -499,15 +417,20 @@ async function main() {
     console.log(`      ${row.pm_approach}: ${row.count}`);
   });
 
-  if (errors.length > 0) {
-    console.log('\n❌ Errors encountered:');
-    errors.forEach(err => {
-      console.log(`   Question ${err.questionId}: ${err.error}`);
+  if (skipped.length > 0) {
+    console.log('\n⚠️  Skipped Questions (with issues):');
+    skipped.forEach(skip => {
+      console.log(`   Question #${skip.questionNumber} (${skip.questionId}):`);
+      skip.issues.forEach(issue => {
+        console.log(`      - ${issue}`);
+      });
+      console.log(`      Question: ${skip.questionText}`);
+      console.log('');
     });
   }
 
   await pool.end();
-  process.exit(errors.length > 0 ? 1 : 0);
+  process.exit(0);
 }
 
 main().catch(error => {

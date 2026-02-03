@@ -405,3 +405,5 @@ Get a token by logging in via `/api/auth/login`.
 - Rate limiting is applied to all endpoints
 - Admin endpoints require admin role in JWT token
 
+
+

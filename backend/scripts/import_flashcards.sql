@@ -31,3 +31,5 @@ DROP TABLE temp_flashcards;
 SELECT COUNT(*) as total_flashcards FROM flashcards;
 SELECT COUNT(DISTINCT knowledge_area) as knowledge_areas FROM flashcards WHERE knowledge_area IS NOT NULL;
 
+
+

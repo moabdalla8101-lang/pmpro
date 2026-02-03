@@ -197,3 +197,5 @@ kubectl get endpoints
 kubectl logs -f deployment/user-service
 ```
 
+
+

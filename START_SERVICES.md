@@ -78,3 +78,5 @@ lsof -ti:3003 | xargs kill  # Analytics Service
 - Reinstall dependencies: `rm -rf node_modules && npm install`
 - Check logs in terminal output
 
+
+

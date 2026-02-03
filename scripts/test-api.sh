@@ -119,3 +119,5 @@ echo "  - Test mobile app: cd mobile && npm start"
 echo "  - Test web admin: cd web-admin && npm run dev"
 echo "  - See TESTING.md for more detailed tests"
 
+
+

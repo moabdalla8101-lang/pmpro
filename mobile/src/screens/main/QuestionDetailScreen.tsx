@@ -13,6 +13,7 @@ import { CategoryBadge, ActionButton, DragAndMatch } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { getApiUrl } from '../../utils/getApiUrl';
+import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
 
 export default function QuestionDetailScreen() {
   const route = useRoute();
@@ -50,9 +51,58 @@ export default function QuestionDetailScreen() {
   
   // Get drag_and_match metadata
   const dragMetadata = currentQuestion?.questionMetadata || currentQuestion?.question_metadata || null;
-  const leftItems = dragMetadata?.leftItems || dragMetadata?.left_items || [];
-  const rightItems = dragMetadata?.rightItems || dragMetadata?.right_items || [];
-  const correctMatches = dragMetadata?.matches || {};
+  
+  // Normalize leftItems and rightItems - extract text if they're objects
+  const rawLeftItems = dragMetadata?.leftItems || dragMetadata?.left_items || [];
+  const rawRightItems = dragMetadata?.rightItems || dragMetadata?.right_items || [];
+  
+  const leftItems = rawLeftItems.map((item: any) => {
+    if (typeof item === 'string') return item;
+    if (item && typeof item === 'object') return item.text || item.letter || String(item);
+    return String(item);
+  });
+  
+  const rightItems = rawRightItems.map((item: any) => {
+    if (typeof item === 'string') return item;
+    if (item && typeof item === 'object') return item.text || String(item.index) || String(item);
+    return String(item);
+  });
+  
+  // Normalize correctMatches - convert keys (letters) and values (indices) to text
+  const rawMatches = dragMetadata?.matches || {};
+  const correctMatches: { [key: string]: string } = {};
+  
+  if (Object.keys(rawMatches).length > 0) {
+    Object.entries(rawMatches).forEach(([leftKey, rightValue]: [string, any]) => {
+      // Find the left item by letter (leftKey is typically a letter like "A", "B", etc.)
+      const leftItem = rawLeftItems.find((item: any) => {
+        if (typeof item === 'object') {
+          return item.letter === leftKey || String(item.letter) === String(leftKey);
+        }
+        return false;
+      });
+      const leftItemText = leftItem && typeof leftItem === 'object' 
+        ? (leftItem.text || leftItem.letter || String(leftItem)) 
+        : leftKey;
+      
+      // Find the right item by index (rightValue is typically an index like 1, 2, 3, etc.)
+      const rightItem = rawRightItems.find((item: any) => {
+        if (typeof item === 'object') {
+          return item.index === rightValue || 
+                 String(item.index) === String(rightValue) ||
+                 Number(item.index) === Number(rightValue);
+        }
+        return false;
+      });
+      const rightItemText = rightItem && typeof rightItem === 'object' 
+        ? (rightItem.text || String(rightItem.index) || String(rightItem)) 
+        : String(rightValue);
+      
+      if (leftItemText && rightItemText) {
+        correctMatches[leftItemText] = rightItemText;
+      }
+    });
+  }
   
   // Get question and explanation images
   const questionImages = currentQuestion?.questionImages || currentQuestion?.question_images || null;
@@ -367,6 +417,7 @@ export default function QuestionDetailScreen() {
 
   const difficulty = currentQuestion.difficulty || 'medium';
   const knowledgeArea = currentQuestion.knowledgeAreaName || currentQuestion.knowledge_area_name;
+  const displayKnowledgeArea = knowledgeArea ? removeProjectPrefix(knowledgeArea) : null;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -378,9 +429,9 @@ export default function QuestionDetailScreen() {
         {/* Question Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            {knowledgeArea && (
+            {displayKnowledgeArea && (
               <CategoryBadge
-                label={knowledgeArea}
+                label={displayKnowledgeArea}
                 variant="outlined"
               />
             )}

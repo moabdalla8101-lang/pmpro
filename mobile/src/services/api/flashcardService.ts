@@ -14,7 +14,8 @@ export const flashcardService = {
   },
 
   async getKnowledgeAreas() {
-    const response = await client.get('/api/flashcards/knowledge-areas');
+    // Use the knowledge-areas endpoint which returns full objects with id, name, and order
+    const response = await client.get('/api/knowledge-areas');
     return response.data;
   },
 

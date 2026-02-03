@@ -7,6 +7,7 @@ import { LineChart, PieChart } from 'react-native-chart-kit';
 import { SectionHeader, StatCard, ProgressRing } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
+import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
 import { useDispatch } from 'react-redux';
 import { AppDispatch } from '../../store';
 import { fetchProgress, fetchPerformanceByKnowledgeArea, fetchPerformanceByDomain } from '../../store/slices/progressSlice';
@@ -79,7 +80,7 @@ export default function ProgressScreen() {
           areaAccuracy = areaAccuracy * 100;
         }
         return {
-          name: (area.knowledgeAreaName || area.knowledge_area_name || `Area ${index + 1}`).substring(0, 10),
+          name: removeProjectPrefix(area.knowledgeAreaName || area.knowledge_area_name || `Area ${index + 1}`).substring(0, 10),
           accuracy: areaAccuracy,
           color: Object.values(colors.knowledgeArea)[index % Object.keys(colors.knowledgeArea).length],
           legendFontColor: colors.textSecondary,
@@ -222,7 +223,7 @@ export default function ProgressScreen() {
                 areaAccuracy = areaAccuracy * 100;
               }
               
-              const areaName = area.knowledgeAreaName || area.knowledge_area_name || 'Unknown';
+              const areaName = removeProjectPrefix(area.knowledgeAreaName || area.knowledge_area_name || 'Unknown');
               const totalAnswered = area.totalAnswered || area.total_answered || 0;
               const correctAnswers = area.correctAnswers || area.correct_answers || 0;
               

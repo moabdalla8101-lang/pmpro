@@ -8,6 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { ActionButton, CategoryBadge, SectionHeader } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
+import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
 
 export default function ExamReviewScreen() {
   const route = useRoute();
@@ -92,7 +93,7 @@ export default function ExamReviewScreen() {
   const knowledgeAreaStats: { [key: string]: { correct: number; total: number } } = {};
   answers?.forEach((item: any) => {
     // Get knowledge area name, fallback to 'Other' if not available
-    const area = item.knowledgeAreaName || item.knowledge_area_name || 'Other';
+    const area = removeProjectPrefix(item.knowledgeAreaName || item.knowledge_area_name || 'Other');
     if (!knowledgeAreaStats[area]) {
       knowledgeAreaStats[area] = { correct: 0, total: 0 };
     }
@@ -241,6 +242,7 @@ export default function ExamReviewScreen() {
           const isCorrect = item.isCorrect || item.is_correct;
           const isExpanded = expandedQuestions.has(index);
           const knowledgeArea = item.knowledgeAreaName || item.knowledge_area_name;
+          const displayKnowledgeArea = knowledgeArea ? removeProjectPrefix(knowledgeArea) : null;
           const difficulty = item.difficulty || 'medium';
 
           return (
@@ -270,9 +272,9 @@ export default function ExamReviewScreen() {
                         Question {index + 1}
                       </Text>
                       <View style={styles.questionBadges}>
-                        {knowledgeArea && (
+                        {displayKnowledgeArea && (
                           <CategoryBadge
-                            label={knowledgeArea}
+                            label={displayKnowledgeArea}
                             variant="outlined"
                           />
                         )}

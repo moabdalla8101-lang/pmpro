@@ -46,3 +46,5 @@ echo "  Password: admin123"
 echo ""
 echo "⚠️  Please change the admin password in production!"
 
+
+

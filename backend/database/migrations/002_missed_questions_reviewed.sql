@@ -11,3 +11,5 @@ CREATE TABLE IF NOT EXISTS missed_questions_reviewed (
 CREATE INDEX IF NOT EXISTS idx_missed_questions_reviewed_user ON missed_questions_reviewed(user_id);
 CREATE INDEX IF NOT EXISTS idx_missed_questions_reviewed_question ON missed_questions_reviewed(question_id);
 
+
+

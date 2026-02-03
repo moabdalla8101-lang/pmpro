@@ -134,3 +134,5 @@ export async function getKnowledgeAreasByCertification(req: Request, res: Respon
 }
 
 
+
+

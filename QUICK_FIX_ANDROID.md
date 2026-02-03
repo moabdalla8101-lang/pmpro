@@ -101,3 +101,5 @@ emulator -avd <emulator-name> &
 - Use physical device with Expo Go app
 - Scan QR code from Expo terminal
 
+
+

@@ -119,6 +119,34 @@ export async function recordAnswer(req: AuthRequest, res: Response, next: NextFu
   }
 }
 
+export async function getAnsweredQuestionIds(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const { certificationId } = req.query;
+
+    let query = `
+      SELECT DISTINCT question_id 
+      FROM user_answers 
+      WHERE user_id = $1
+    `;
+    const params: any[] = [req.user!.userId];
+
+    if (certificationId) {
+      query += ` AND question_id IN (
+        SELECT id FROM questions WHERE certification_id = $2
+      )`;
+      params.push(certificationId);
+    }
+
+    const result = await pool.query(query, params);
+
+    res.json({
+      questionIds: result.rows.map((row: any) => row.question_id),
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function getMissedQuestions(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const { knowledgeAreaId, reviewed, certificationId } = req.query;
@@ -359,6 +387,14 @@ export async function getPerformanceByDomain(req: AuthRequest, res: Response, ne
   try {
     const { certificationId } = req.query;
 
+    if (!certificationId) {
+      return res.status(400).json({ error: 'certificationId is required' });
+    }
+
+    if (!req.user || !req.user.userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
     // First, check if questions have domain values
     const domainCheck = await pool.query(
       `SELECT domain, COUNT(*) as count 
@@ -377,80 +413,93 @@ export async function getPerformanceByDomain(req: AuthRequest, res: Response, ne
     // People: Resource Management, Communications Management, Stakeholder Management
     // Process: Integration, Scope, Schedule, Cost, Quality, Risk, Procurement
     // Business: (newer domain)
-    const result = await pool.query(
-      `WITH normalized_domains AS (
+    let result;
+    try {
+      result = await pool.query(
+        `WITH normalized_domains AS (
+          SELECT 
+            q.id,
+            q.certification_id,
+            COALESCE(
+              CASE 
+                -- Normalize domain values with prefixes (e.g., "1. People" -> "People", "3. Business Environment" -> "Business")
+                WHEN TRIM(COALESCE(q.domain, '')) ~ '^[0-9]+\.\s*People' OR TRIM(COALESCE(q.domain, '')) = 'People' THEN 'People'
+                WHEN TRIM(COALESCE(q.domain, '')) ~ '^[0-9]+\.\s*Process' OR TRIM(COALESCE(q.domain, '')) = 'Process' THEN 'Process'
+                WHEN TRIM(COALESCE(q.domain, '')) ~ '^[0-9]+\.\s*Business' OR TRIM(COALESCE(q.domain, '')) IN ('Business', 'Business Environment') THEN 'Business'
+                WHEN q.domain IS NOT NULL AND TRIM(q.domain) IN ('People', 'Process', 'Business') THEN TRIM(q.domain)
+                ELSE NULL
+              END,
+              CASE 
+                WHEN ka.name LIKE '%Resource Management%' OR 
+                     ka.name LIKE '%Communications Management%' OR 
+                     ka.name LIKE '%Stakeholder Management%' 
+                THEN 'People'
+                WHEN ka.name LIKE '%Integration%' OR 
+                     ka.name LIKE '%Scope%' OR 
+                     ka.name LIKE '%Schedule%' OR 
+                     ka.name LIKE '%Cost%' OR 
+                     ka.name LIKE '%Quality%' OR 
+                     ka.name LIKE '%Risk%' OR 
+                     ka.name LIKE '%Procurement%'
+                THEN 'Process'
+                ELSE NULL
+              END
+            ) as domain
+          FROM questions q
+          LEFT JOIN knowledge_areas ka ON q.knowledge_area_id = ka.id
+          WHERE q.certification_id = $2
+            AND q.is_active = true
+            AND COALESCE(
+              CASE 
+                WHEN TRIM(COALESCE(q.domain, '')) ~ '^[0-9]+\.\s*People' OR TRIM(COALESCE(q.domain, '')) = 'People' THEN 'People'
+                WHEN TRIM(COALESCE(q.domain, '')) ~ '^[0-9]+\.\s*Process' OR TRIM(COALESCE(q.domain, '')) = 'Process' THEN 'Process'
+                WHEN TRIM(COALESCE(q.domain, '')) ~ '^[0-9]+\.\s*Business' OR TRIM(COALESCE(q.domain, '')) IN ('Business', 'Business Environment') THEN 'Business'
+                WHEN q.domain IS NOT NULL AND TRIM(q.domain) IN ('People', 'Process', 'Business') THEN TRIM(q.domain)
+                ELSE NULL
+              END,
+              CASE 
+                WHEN ka.name LIKE '%Resource Management%' OR 
+                     ka.name LIKE '%Communications Management%' OR 
+                     ka.name LIKE '%Stakeholder Management%' 
+                THEN 'People'
+                WHEN ka.name LIKE '%Integration%' OR 
+                     ka.name LIKE '%Scope%' OR 
+                     ka.name LIKE '%Schedule%' OR 
+                     ka.name LIKE '%Cost%' OR 
+                     ka.name LIKE '%Quality%' OR 
+                     ka.name LIKE '%Risk%' OR 
+                     ka.name LIKE '%Procurement%'
+                THEN 'Process'
+                ELSE NULL
+              END
+            ) IN ('People', 'Process', 'Business')
+        )
         SELECT 
-          q.id,
-          q.certification_id,
-          COALESCE(
-            CASE 
-              -- Normalize domain values with prefixes (e.g., "1. People" -> "People", "3. Business Environment" -> "Business")
-              WHEN TRIM(q.domain) ~ '^[0-9]+\.\s*People' OR TRIM(q.domain) = 'People' THEN 'People'
-              WHEN TRIM(q.domain) ~ '^[0-9]+\.\s*Process' OR TRIM(q.domain) = 'Process' THEN 'Process'
-              WHEN TRIM(q.domain) ~ '^[0-9]+\.\s*Business' OR TRIM(q.domain) IN ('Business', 'Business Environment') THEN 'Business'
-              WHEN q.domain IS NOT NULL AND TRIM(q.domain) IN ('People', 'Process', 'Business') THEN TRIM(q.domain)
-              ELSE NULL
-            END,
-            CASE 
-              WHEN ka.name LIKE '%Resource Management%' OR 
-                   ka.name LIKE '%Communications Management%' OR 
-                   ka.name LIKE '%Stakeholder Management%' 
-              THEN 'People'
-              WHEN ka.name LIKE '%Integration%' OR 
-                   ka.name LIKE '%Scope%' OR 
-                   ka.name LIKE '%Schedule%' OR 
-                   ka.name LIKE '%Cost%' OR 
-                   ka.name LIKE '%Quality%' OR 
-                   ka.name LIKE '%Risk%' OR 
-                   ka.name LIKE '%Procurement%'
-              THEN 'Process'
-              ELSE NULL
-            END
-          ) as domain
-        FROM questions q
-        LEFT JOIN knowledge_areas ka ON q.knowledge_area_id = ka.id
-        WHERE q.certification_id = $2
-          AND COALESCE(
-            CASE 
-              WHEN TRIM(q.domain) ~ '^[0-9]+\.\s*People' OR TRIM(q.domain) = 'People' THEN 'People'
-              WHEN TRIM(q.domain) ~ '^[0-9]+\.\s*Process' OR TRIM(q.domain) = 'Process' THEN 'Process'
-              WHEN TRIM(q.domain) ~ '^[0-9]+\.\s*Business' OR TRIM(q.domain) IN ('Business', 'Business Environment') THEN 'Business'
-              WHEN q.domain IS NOT NULL AND TRIM(q.domain) IN ('People', 'Process', 'Business') THEN TRIM(q.domain)
-              ELSE NULL
-            END,
-            CASE 
-              WHEN ka.name LIKE '%Resource Management%' OR 
-                   ka.name LIKE '%Communications Management%' OR 
-                   ka.name LIKE '%Stakeholder Management%' 
-              THEN 'People'
-              WHEN ka.name LIKE '%Integration%' OR 
-                   ka.name LIKE '%Scope%' OR 
-                   ka.name LIKE '%Schedule%' OR 
-                   ka.name LIKE '%Cost%' OR 
-                   ka.name LIKE '%Quality%' OR 
-                   ka.name LIKE '%Risk%' OR 
-                   ka.name LIKE '%Procurement%'
-              THEN 'Process'
-              ELSE NULL
-            END
-          ) IN ('People', 'Process', 'Business')
-      )
-      SELECT 
-        nd.domain,
-        COUNT(DISTINCT nd.id) as total_questions,
-        COUNT(DISTINCT ua.id) as total_answered,
-        SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END) as correct_answers,
-        CASE 
-          WHEN COUNT(DISTINCT ua.id) > 0 
-          THEN (SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END)::float / COUNT(DISTINCT ua.id)::float * 100)
-          ELSE 0 
-        END as accuracy
-      FROM normalized_domains nd
-      LEFT JOIN user_answers ua ON nd.id = ua.question_id AND ua.user_id = $1
-      GROUP BY nd.domain
-      ORDER BY nd.domain`,
-      [req.user!.userId, certificationId]
-    );
+          nd.domain,
+          COUNT(DISTINCT nd.id) as total_questions,
+          COUNT(DISTINCT ua.id) as total_answered,
+          SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END) as correct_answers,
+          CASE 
+            WHEN COUNT(DISTINCT ua.id) > 0 
+            THEN (SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END)::float / COUNT(DISTINCT ua.id)::float * 100)
+            ELSE 0 
+          END as accuracy
+        FROM normalized_domains nd
+        LEFT JOIN user_answers ua ON nd.id = ua.question_id AND ua.user_id = $1
+        GROUP BY nd.domain
+        ORDER BY nd.domain`,
+        [req.user!.userId, certificationId]
+      );
+    } catch (queryError: any) {
+      console.error('SQL Query Error in getPerformanceByDomain:', queryError);
+      console.error('Query Error Details:', {
+        message: queryError.message,
+        code: queryError.code,
+        detail: queryError.detail,
+        hint: queryError.hint
+      });
+      throw queryError;
+    }
 
     // Debug logging
     console.log('Domain Performance Query Result:', {
@@ -549,8 +598,15 @@ export async function getPerformanceByDomain(req: AuthRequest, res: Response, ne
     console.log('Final Performance before response:', finalPerformance);
 
     res.json({ performance: finalPerformance });
-  } catch (error) {
-    next(error);
+  } catch (error: any) {
+    console.error('Error in getPerformanceByDomain:', error);
+    console.error('Error stack:', error.stack);
+    // Return a more detailed error response
+    res.status(500).json({ 
+      error: 'Failed to fetch performance by domain',
+      message: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 }
 

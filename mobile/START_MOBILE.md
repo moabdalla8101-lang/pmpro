@@ -47,3 +47,5 @@ After running the command, you should see:
 
 Then press `i` for iOS Simulator or `a` for Android Emulator.
 
+
+

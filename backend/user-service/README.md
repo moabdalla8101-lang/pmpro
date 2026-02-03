@@ -48,3 +48,5 @@ npm run dev
 - `DELETE /api/subscriptions` - Cancel subscription (authenticated)
 
 
+
+

@@ -1,6 +1,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
+import { CommonActions } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { colors } from '../theme';
 
@@ -90,6 +91,14 @@ function PracticeTabStack() {
         component={DomainFilterScreen}
         options={{
           title: 'Select Domain',
+          headerBackTitleVisible: false,
+        }}
+      />
+      <Stack.Screen
+        name="PracticeTest"
+        component={PracticeTestScreen}
+        options={{
+          title: "Today's Practice",
           headerBackTitleVisible: false,
         }}
       />
@@ -252,6 +261,36 @@ export default function MainNavigator() {
         options={{
           tabBarLabel: 'Practice',
         }}
+        listeners={({ navigation }) => ({
+          tabPress: (e) => {
+            // Get the Practice stack navigator state
+            const state = navigation.getState();
+            const practiceRoute = state?.routes?.find((r: any) => r.name === 'Practice');
+            const practiceState = practiceRoute?.state;
+            
+            // If current screen in Practice stack is PracticeTest, reset to dashboard
+            if (practiceState?.routes?.[practiceState.index]?.name === 'PracticeTest') {
+              // Reset the Practice stack to show dashboard
+              const practiceNavigator = navigation.getParent();
+              if (practiceNavigator) {
+                practiceNavigator.dispatch(
+                  CommonActions.reset({
+                    index: 0,
+                    routes: [
+                      {
+                        name: 'Practice',
+                        state: {
+                          routes: [{ name: 'PracticeDashboard' }],
+                          index: 0,
+                        },
+                      },
+                    ],
+                  })
+                );
+              }
+            }
+          },
+        })}
       />
       <Tab.Screen
         name="Learn"
