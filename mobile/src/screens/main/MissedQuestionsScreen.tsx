@@ -5,11 +5,12 @@ import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
 import { useNavigation } from '@react-navigation/native';
 import { fetchMissedQuestions, markAsReviewed } from '../../store/slices/missedQuestionsSlice';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { CategoryBadge, SectionHeader, EmptyState, ActionButton } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
+import { hasPremiumAccess } from '../../utils/subscriptionUtils';
 
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
 
@@ -17,6 +18,7 @@ export default function MissedQuestionsScreen() {
   const dispatch = useDispatch<AppDispatch>();
   const navigation = useNavigation();
   const { missedQuestions, isLoading } = useSelector((state: RootState) => state.missedQuestions);
+  const { user } = useSelector((state: RootState) => state.auth);
   
   const [selectedKnowledgeArea, setSelectedKnowledgeArea] = useState<string | null>(null);
   const [showReviewed, setShowReviewed] = useState(false);
@@ -35,7 +37,7 @@ export default function MissedQuestionsScreen() {
   }, [selectedKnowledgeArea, showReviewed, dispatch]);
 
   const handleQuestionPress = (questionId: string) => {
-    navigation.navigate('QuestionDetail' as never, { questionId } as never);
+    (navigation as any).navigate('QuestionDetail', { questionId });
   };
 
   const handleMarkAsReviewed = async (questionId: string) => {
@@ -66,17 +68,6 @@ export default function MissedQuestionsScreen() {
           mq.question?.knowledge_area_id === selectedKnowledgeArea
       )
     : missedQuestions;
-
-  // Debug logging
-  React.useEffect(() => {
-    console.log('Missed Questions Screen State:', {
-      missedQuestionsCount: missedQuestions.length,
-      filteredQuestionsCount: filteredQuestions.length,
-      selectedKnowledgeArea,
-      showReviewed,
-      isLoading
-    });
-  }, [missedQuestions.length, filteredQuestions.length, selectedKnowledgeArea, showReviewed, isLoading]);
 
   const renderQuestion = ({ item }: any) => {
     const question = item.question;
@@ -148,6 +139,24 @@ export default function MissedQuestionsScreen() {
       </TouchableOpacity>
     );
   };
+
+  if (!hasPremiumAccess(user?.subscriptionTier)) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <EmptyState
+          icon="alert-circle-outline"
+          title="Premium Missed-Question Review"
+          message="Upgrade to Premium to revisit missed questions and track improvements."
+          actionLabel="View Premium Plans"
+          onActionPress={() =>
+            (navigation as any).navigate('Paywall', {
+              feature: 'missed_questions',
+            })
+          }
+        />
+      </SafeAreaView>
+    );
+  }
 
   if (isLoading && missedQuestions.length === 0) {
     return (

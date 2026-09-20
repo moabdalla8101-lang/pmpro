@@ -9,13 +9,14 @@ import { loadSettings } from '../../store/slices/settingsSlice';
 import { examService } from '../../services/api/examService';
 import { dailyActivityService } from '../../services/dailyActivityService';
 import client from '../../services/api/client';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import {
   SectionHeader,
   DailyGoalsHero,
 } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
+import { hasPremiumAccess } from '../../utils/subscriptionUtils';
 
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
 
@@ -24,22 +25,12 @@ export default function DashboardScreen() {
   const dispatch = useDispatch<AppDispatch>();
   const { user } = useSelector((state: RootState) => state.auth);
   const { overallProgress, performanceByDomain, isLoading } = useSelector((state: RootState) => state.progress);
-  
-  // Debug: Log performanceByDomain to see what we're getting
-  useEffect(() => {
-    console.log('Performance by Domain:', performanceByDomain);
-    console.log('Performance by Domain length:', performanceByDomain?.length);
-    if (performanceByDomain && performanceByDomain.length > 0) {
-      performanceByDomain.forEach((domain: any, index: number) => {
-        console.log(`Domain ${index}:`, domain);
-      });
-    }
-  }, [performanceByDomain]);
   const { dailyQuestionsGoal, dailyMinutesGoal } = useSelector((state: RootState) => state.settings);
   const [todayActivity, setTodayActivity] = useState({ questionsAnswered: 0, practiceMinutes: 0 });
   const [currentStreak, setCurrentStreak] = useState(0);
   const [loadingActivity, setLoadingActivity] = useState(true);
   const [weeklyCompletions, setWeeklyCompletions] = useState<Array<{ date: string; completed: boolean }>>([]);
+  const isPremium = hasPremiumAccess(user?.subscriptionTier);
 
   // Fetch data when screen comes into focus
   useFocusEffect(
@@ -152,12 +143,6 @@ export default function DashboardScreen() {
     }
   };
 
-  // #region agent log
-  React.useEffect(() => {
-    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DashboardScreen.tsx:32',message:'Progress state check',data:{hasOverallProgress:!!overallProgress,accuracy:overallProgress?.accuracy,totalAnswered:overallProgress?.total_questions_answered,correctAnswers:overallProgress?.correct_answers,isLoading},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'progress-refresh'})}).catch(()=>{});
-  }, [overallProgress, isLoading]);
-  // #endregion
-
   // Ensure accuracy is always a number (0-100 percentage)
   const accuracyValue = overallProgress?.accuracy;
   let accuracy = 0;
@@ -173,17 +158,7 @@ export default function DashboardScreen() {
     }
   }
   const totalAnswered = overallProgress?.totalQuestionsAnswered || overallProgress?.total_questions_answered || 0;
-  const correctAnswers = overallProgress?.correctAnswers || overallProgress?.correct_answers || 0;
   
-  // Debug log
-  console.log('Dashboard - Progress Data:', {
-    accuracyValue,
-    accuracy,
-    totalAnswered,
-    correctAnswers,
-    overallProgress,
-  });
-
   if (isLoading && !overallProgress) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
@@ -234,9 +209,7 @@ export default function DashboardScreen() {
             <Card
               style={[styles.actionCard, { backgroundColor: `${colors.primary}10` }]}
               onPress={() => {
-                (navigation as any).navigate('Practice', {
-                  screen: 'KnowledgeAreaFilter',
-                });
+                (navigation as any).navigate('KnowledgeAreaFilter');
               }}
             >
               <Card.Content style={styles.actionCardContent}>
@@ -258,9 +231,7 @@ export default function DashboardScreen() {
             <Card
               style={[styles.actionCard, { backgroundColor: `${colors.secondary}10` }]}
               onPress={() => {
-                (navigation as any).navigate('Practice', {
-                  screen: 'DomainFilter',
-                });
+                (navigation as any).navigate('DomainFilter');
               }}
             >
               <Card.Content style={styles.actionCardContent}>
@@ -282,9 +253,10 @@ export default function DashboardScreen() {
             <Card
               style={[styles.actionCard, { backgroundColor: `${colors.warning}10` }]}
               onPress={() => {
-                (navigation as any).navigate('Practice', {
-                  screen: 'BookmarkedQuestions',
-                });
+                (navigation as any).navigate(
+                  isPremium ? 'BookmarkedQuestions' : 'Paywall',
+                  isPremium ? undefined : { feature: 'bookmarks' }
+                );
               }}
             >
               <Card.Content style={styles.actionCardContent}>
@@ -306,9 +278,10 @@ export default function DashboardScreen() {
             <Card
               style={[styles.actionCard, { backgroundColor: `${colors.info}10` }]}
               onPress={() => {
-                (navigation as any).navigate('Practice', {
-                  screen: 'MissedQuestions',
-                });
+                (navigation as any).navigate(
+                  isPremium ? 'MissedQuestions' : 'Paywall',
+                  isPremium ? undefined : { feature: 'missed_questions' }
+                );
               }}
             >
               <Card.Content style={styles.actionCardContent}>

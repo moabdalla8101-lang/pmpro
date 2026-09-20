@@ -5,7 +5,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { fetchMarkedFlashcards } from '../../store/slices/flashcardSlice';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { SectionHeader } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
@@ -31,21 +31,23 @@ export default function LearnScreen() {
     }, [dispatch])
   );
 
-  useEffect(() => {
-    loadLearnData();
-  }, [dispatch]);
-
   const loadLearnData = async () => {
     setIsLoading(true);
-    dispatch(fetchMarkedFlashcards() as any);
-    // TODO: Fetch flashcard progress stats when API is available
-    // For now, use marked flashcards count as a proxy
+    try {
+      await dispatch(fetchMarkedFlashcards() as any).unwrap();
+    } catch (error) {
+      console.error('Failed to load learn data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
     setFlashcardStats({
       totalStudied: markedFlashcards?.length || 0,
-      formulasMastered: 0, // Placeholder for future implementation
+      formulasMastered: 0,
     });
-    setIsLoading(false);
-  };
+  }, [markedFlashcards]);
 
   if (isLoading) {
     return (
@@ -114,7 +116,7 @@ export default function LearnScreen() {
             <Card
               style={[styles.actionCard, { backgroundColor: `${colors.primary}10` }]}
               onPress={() => {
-                (navigation as any).navigate('Learn', { screen: 'FlashcardFilter' });
+                (navigation as any).navigate('FlashcardFilter');
               }}
             >
               <Card.Content style={styles.actionCardContent}>
@@ -137,7 +139,7 @@ export default function LearnScreen() {
               <Card
                 style={[styles.actionCard, { backgroundColor: `${colors.warning}10` }]}
                 onPress={() => {
-                  (navigation as any).navigate('Learn', { screen: 'MarkedFlashcards' });
+                  (navigation as any).navigate('MarkedFlashcards');
                 }}
               >
                 <Card.Content style={styles.actionCardContent}>
@@ -160,7 +162,7 @@ export default function LearnScreen() {
             <Card
               style={[styles.actionCard, { backgroundColor: `${colors.secondary}10` }]}
               onPress={() => {
-                (navigation as any).navigate('Learn', { screen: 'Formulas' });
+                (navigation as any).navigate('Formulas');
               }}
             >
               <Card.Content style={styles.actionCardContent}>

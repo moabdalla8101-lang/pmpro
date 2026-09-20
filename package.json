@@ -16,7 +16,11 @@
     "install:web-admin": "cd web-admin && npm install",
     "dev:backend": "docker-compose up",
     "dev:mobile": "cd mobile && npm start",
-    "dev:web-admin": "cd web-admin && npm run dev"
+    "dev:web-admin": "cd web-admin && npm run dev",
+    "build:production": "npm run build --workspace=@pmp-app/shared && npm run build --workspace=@pmp-app/server",
+    "migrate:production": "node scripts/migrate-database.js",
+    "seed:production": "node scripts/seed-production.js",
+    "start:production": "node backend/server/dist/index.js"
   },
   "keywords": [
     "pmp",
@@ -28,7 +32,12 @@
   "license": "UNLICENSED",
   "dependencies": {
     "csv-parse": "^6.1.0"
+  },
+  "allowScripts": {
+    "bcrypt@5.1.1": true,
+    "esbuild@0.21.5": true
+  },
+  "devDependencies": {
+    "react": "^19.2.3"
   }
 }
-
-

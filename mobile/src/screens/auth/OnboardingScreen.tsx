@@ -4,7 +4,7 @@ import { Text, SegmentedButtons, Checkbox, Card } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { ActionButton } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
@@ -141,7 +141,7 @@ export default function OnboardingScreen() {
                             isSelected && { backgroundColor: `${colors.primary}15` },
                           ]}>
                             <Icon
-                              name={goal.icon}
+                              name={goal.icon as any}
                               size={24}
                               color={isSelected ? colors.primary : colors.textSecondary}
                             />

@@ -1,8 +1,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
-import { CommonActions } from '@react-navigation/native';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { colors } from '../theme';
 
 import DashboardScreen from '../screens/main/DashboardScreen';
@@ -232,7 +231,7 @@ export default function MainNavigator() {
             iconName = 'help-circle';
           }
 
-          return <Icon name={iconName} size={size} color={color} />;
+          return <Icon name={iconName as any} size={size} color={color} />;
         },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.gray500,
@@ -270,24 +269,9 @@ export default function MainNavigator() {
             
             // If current screen in Practice stack is PracticeTest, reset to dashboard
             if (practiceState?.routes?.[practiceState.index]?.name === 'PracticeTest') {
-              // Reset the Practice stack to show dashboard
-              const practiceNavigator = navigation.getParent();
-              if (practiceNavigator) {
-                practiceNavigator.dispatch(
-                  CommonActions.reset({
-                    index: 0,
-                    routes: [
-                      {
-                        name: 'Practice',
-                        state: {
-                          routes: [{ name: 'PracticeDashboard' }],
-                          index: 0,
-                        },
-                      },
-                    ],
-                  })
-                );
-              }
+              (navigation as any).navigate('Practice', {
+                screen: 'PracticeDashboard',
+              });
             }
           },
         })}

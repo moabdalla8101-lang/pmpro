@@ -2,7 +2,7 @@ import React from 'react';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Card, Text, ProgressBar } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { colors } from '../theme';
 import { spacing, borderRadius, shadows } from '../utils/styles';
 import ActionButton from './ActionButton';
@@ -372,9 +372,6 @@ const styles = StyleSheet.create({
   },
   todayLabel: {
     color: colors.textPrimary,
-  },
-  checkIcon: {
-    // Icon styling handled inline
   },
   connectorLine: {
     width: 8,

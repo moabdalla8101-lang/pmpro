@@ -31,7 +31,7 @@ export default function RegisterScreen() {
 
     try {
       await dispatch(register({ email, password, firstName, lastName }) as any).unwrap();
-      navigation.navigate('Onboarding' as never);
+      // AppNavigator switches to the authenticated stack when registration succeeds.
     } catch (err: any) {
       setError(err.message || 'Registration failed');
     } finally {

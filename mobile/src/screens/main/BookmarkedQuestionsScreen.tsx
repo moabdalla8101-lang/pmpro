@@ -5,16 +5,18 @@ import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
 import { useNavigation } from '@react-navigation/native';
 import { fetchBookmarks, removeBookmark } from '../../store/slices/bookmarkSlice';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { CategoryBadge, SectionHeader, EmptyState } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
+import { hasPremiumAccess } from '../../utils/subscriptionUtils';
 
 export default function BookmarkedQuestionsScreen() {
   const dispatch = useDispatch<AppDispatch>();
   const navigation = useNavigation();
   const { bookmarks, isLoading } = useSelector((state: RootState) => state.bookmarks);
+  const { user } = useSelector((state: RootState) => state.auth);
   
   const [selectedKnowledgeArea, setSelectedKnowledgeArea] = useState<string | null>(null);
 
@@ -23,7 +25,7 @@ export default function BookmarkedQuestionsScreen() {
   }, [selectedKnowledgeArea, dispatch]);
 
   const handleQuestionPress = (questionId: string) => {
-    navigation.navigate('QuestionDetail' as never, { questionId } as never);
+    (navigation as any).navigate('QuestionDetail', { questionId });
   };
 
   const handleToggleBookmark = async (questionId: string) => {
@@ -40,7 +42,7 @@ export default function BookmarkedQuestionsScreen() {
           const name = b.question?.knowledgeAreaName || b.question?.knowledge_area_name;
           return name ? removeProjectPrefix(name) : null;
         })
-        .filter(Boolean)
+        .filter((name): name is string => Boolean(name))
     )
   );
 
@@ -116,6 +118,22 @@ export default function BookmarkedQuestionsScreen() {
       </TouchableOpacity>
     );
   };
+
+  if (!hasPremiumAccess(user?.subscriptionTier)) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <EmptyState
+          icon="bookmark-outline"
+          title="Premium Bookmarks"
+          message="Upgrade to Premium to save and review questions."
+          actionLabel="View Premium Plans"
+          onActionPress={() =>
+            (navigation as any).navigate('Paywall', { feature: 'bookmarks' })
+          }
+        />
+      </SafeAreaView>
+    );
+  }
 
   if (isLoading && bookmarks.length === 0) {
     return (

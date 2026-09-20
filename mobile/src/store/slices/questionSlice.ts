@@ -14,6 +14,12 @@ interface Question {
   task?: string;
   pmApproach?: string;
   pm_approach?: string; // Fallback for snake_case
+  questionMetadata?: any;
+  question_metadata?: any;
+  questionImages?: any;
+  question_images?: any;
+  explanationImages?: any;
+  explanation_images?: any;
   answers: Answer[];
   knowledgeAreaName?: string; // Added for consistency
   knowledge_area_name?: string; // Fallback for snake_case

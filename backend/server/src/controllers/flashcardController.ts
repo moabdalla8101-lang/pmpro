@@ -33,7 +33,9 @@ export async function getFlashcards(req: AuthRequest, res: Response, next: NextF
         });
         
         if (kaNames.length > 0) {
-          const namePlaceholders = kaNames.map((_, i) => `$${paramIndex + i}`).join(',');
+          const namePlaceholders = kaNames
+            .map((_: string, i: number) => `$${paramIndex + i}`)
+            .join(',');
           query += ` AND knowledge_area IN (${namePlaceholders})`;
           params.push(...kaNames);
           paramIndex += kaNames.length;

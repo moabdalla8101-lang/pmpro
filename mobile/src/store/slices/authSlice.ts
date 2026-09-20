@@ -22,7 +22,7 @@ interface AuthState {
 const initialState: AuthState = {
   user: null,
   token: null,
-  isLoading: false,
+  isLoading: true,
   isAuthenticated: false,
 };
 
@@ -59,6 +59,19 @@ export const loadUser = createAsyncThunk('auth/loadUser', async () => {
   }
   return null;
 });
+
+export const applySubscriptionTier = createAsyncThunk(
+  'auth/applySubscriptionTier',
+  async (subscription: { tier: string; expiresAt?: string | null }) => {
+    const userStr = await AsyncStorage.getItem('user');
+    if (userStr) {
+      const user = JSON.parse(userStr);
+      user.subscriptionTier = subscription.tier;
+      await AsyncStorage.setItem('user', JSON.stringify(user));
+    }
+    return subscription;
+  }
+);
 
 /**
  * Sync subscription from RevenueCat and update user
@@ -137,11 +150,30 @@ const authSlice = createSlice({
         state.token = null;
         state.isAuthenticated = false;
       })
+      .addCase(loadUser.pending, (state) => {
+        state.isLoading = true;
+      })
       .addCase(loadUser.fulfilled, (state, action) => {
+        state.isLoading = false;
         if (action.payload) {
           state.user = action.payload.user;
           state.token = action.payload.token;
           state.isAuthenticated = true;
+        } else {
+          state.user = null;
+          state.token = null;
+          state.isAuthenticated = false;
+        }
+      })
+      .addCase(loadUser.rejected, (state) => {
+        state.isLoading = false;
+        state.user = null;
+        state.token = null;
+        state.isAuthenticated = false;
+      })
+      .addCase(applySubscriptionTier.fulfilled, (state, action) => {
+        if (state.user) {
+          state.user.subscriptionTier = action.payload.tier;
         }
       })
       .addCase(syncSubscription.fulfilled, (state, action) => {

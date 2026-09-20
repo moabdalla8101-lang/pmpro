@@ -18,24 +18,25 @@ interface RevenueCatWebhookEvent {
 }
 
 /**
- * Verify RevenueCat webhook signature
+ * Verify the static Authorization value configured in RevenueCat.
  */
-function verifyWebhookSignature(
-  body: string,
-  signature: string,
-  secret: string
+function verifyWebhookAuthorization(
+  authorization: string,
+  expectedAuthorization: string
 ): boolean {
-  if (!signature || !secret) {
+  if (!authorization || !expectedAuthorization) {
     return false;
   }
 
-  const hmac = crypto.createHmac('sha256', secret);
-  hmac.update(body);
-  const expectedSignature = hmac.digest('hex');
-  
+  const provided = Buffer.from(authorization);
+  const expected = Buffer.from(expectedAuthorization);
+  if (provided.length !== expected.length) {
+    return false;
+  }
+
   return crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(expectedSignature)
+    provided,
+    expected
   );
 }
 
@@ -105,15 +106,14 @@ export async function handleRevenueCatWebhook(
       }
     }
 
-    // Verify webhook signature if secret is configured
-    const signature = req.headers['authorization'] as string;
-    const rawBody = JSON.stringify(req.body);
+    // Verify the Authorization header if a value is configured.
+    const authorization = req.headers['authorization'] as string;
     
-    if (webhookSecret && signature) {
-      const isValid = verifyWebhookSignature(rawBody, signature, webhookSecret);
+    if (webhookSecret) {
+      const isValid = verifyWebhookAuthorization(authorization, webhookSecret);
       if (!isValid) {
-        console.error('Invalid webhook signature');
-        return res.status(401).json({ error: 'Invalid signature' });
+        console.error('Invalid RevenueCat webhook authorization');
+        return res.status(401).json({ error: 'Invalid authorization' });
       }
     }
 

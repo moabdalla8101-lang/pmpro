@@ -8,30 +8,26 @@ import { progressService } from '../../services/api/progressService';
 import { addBookmark, removeBookmark, checkBookmark } from '../../store/slices/bookmarkSlice';
 import { dailyActivityService } from '../../services/dailyActivityService';
 import { RootState, AppDispatch } from '../../store';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { CategoryBadge, ActionButton, DragAndMatch } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { getApiUrl } from '../../utils/getApiUrl';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
+import {
+  hasPremiumAccess,
+  hasReachedFreeLimit,
+} from '../../utils/subscriptionUtils';
 
 export default function QuestionDetailScreen() {
   const route = useRoute();
   const navigation = useNavigation();
-  const { questionId } = (route.params as { questionId?: string }) || {};
-  
-  // Safety check - if questionId is missing, return early
-  if (!questionId) {
-    return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading question...</Text>
-      </SafeAreaView>
-    );
-  }
+  const questionId = ((route.params as { questionId?: string }) || {}).questionId || '';
   const dispatch = useDispatch<AppDispatch>();
-  const { currentQuestion, questions, isLoading } = useSelector((state: RootState) => state.questions);
+  const { currentQuestion, questions, isLoading, error } = useSelector((state: RootState) => state.questions);
   const { bookmarkedQuestionIds } = useSelector((state: RootState) => state.bookmarks);
+  const { user } = useSelector((state: RootState) => state.auth);
+  const { overallProgress } = useSelector((state: RootState) => state.progress);
   
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [selectedAnswers, setSelectedAnswers] = useState<string[]>([]); // For multiple selection
@@ -136,23 +132,6 @@ export default function QuestionDetailScreen() {
     return null;
   };
   
-  // Debug logging
-  React.useEffect(() => {
-    if (currentQuestion) {
-      console.log('Question Detail Debug:', {
-        questionId: currentQuestion.id,
-        questionType: currentQuestion.questionType || currentQuestion.question_type,
-        isDragAndMatch,
-        hasDragMetadata: !!dragMetadata,
-        dragMetadata,
-        hasAnswers: !!currentQuestion.answers,
-        answersCount: currentQuestion.answers?.length || 0,
-        leftItemsCount: leftItems.length,
-        rightItemsCount: rightItems.length,
-      });
-    }
-  }, [currentQuestion, isDragAndMatch, dragMetadata, leftItems.length, rightItems.length]);
-
   // Track previous questionId to detect when it actually changes
   const prevQuestionIdRef = React.useRef<string | undefined>(questionId);
 
@@ -198,6 +177,11 @@ export default function QuestionDetailScreen() {
   }, [bookmarkedQuestionIds, questionId]);
 
   const handleToggleBookmark = async () => {
+    if (!hasPremiumAccess(user?.subscriptionTier)) {
+      (navigation as any).navigate('Paywall', { feature: 'bookmarks' });
+      return;
+    }
+
     if (isBookmarked) {
       await dispatch(removeBookmark(questionId) as any);
     } else {
@@ -207,10 +191,27 @@ export default function QuestionDetailScreen() {
 
   const handleSubmit = async () => {
     if (!currentQuestion) return;
+
+    const questionsAnswered =
+      overallProgress?.totalQuestionsAnswered ||
+      overallProgress?.total_questions_answered ||
+      0;
+    if (
+      hasReachedFreeLimit(
+        'MAX_PRACTICE_QUESTIONS',
+        questionsAnswered,
+        user?.subscriptionTier
+      )
+    ) {
+      (navigation as any).navigate('Paywall', {
+        feature: 'unlimited_questions',
+      });
+      return;
+    }
     
     // For drag_and_match, check if all left items are matched
     if (isDragAndMatch) {
-      const allMatched = leftItems.every(leftItem => dragMatches[leftItem]);
+      const allMatched = leftItems.every((leftItem: string) => dragMatches[leftItem]);
       if (!allMatched) {
         return;
       }
@@ -401,6 +402,30 @@ export default function QuestionDetailScreen() {
     }
     return colors.gray400;
   };
+
+  if (!questionId) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <Icon name="alert-circle-outline" size={48} color={colors.error} />
+        <Text style={styles.loadingText}>Question not found.</Text>
+        <ActionButton label="Go Back" onPress={() => navigation.goBack()} variant="outlined" />
+      </SafeAreaView>
+    );
+  }
+
+  if (error && !isLoading && (!currentQuestion || currentQuestion.id !== questionId)) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <Icon name="alert-circle-outline" size={48} color={colors.error} />
+        <Text style={styles.loadingText}>{error}</Text>
+        <ActionButton
+          label="Try Again"
+          onPress={() => dispatch(fetchQuestion(questionId))}
+          variant="outlined"
+        />
+      </SafeAreaView>
+    );
+  }
 
   // Show loading if fetching or if current question doesn't match route questionId
   if (isLoading || !currentQuestion || currentQuestion.id !== questionId) {
@@ -629,7 +654,7 @@ export default function QuestionDetailScreen() {
               variant="primary"
               size="large"
               loading={submitting}
-              disabled={(isDragAndMatch ? !leftItems.every(leftItem => dragMatches[leftItem]) : 
+              disabled={(isDragAndMatch ? !leftItems.every((leftItem: string) => dragMatches[leftItem]) :
                         isMultipleSelection ? selectedAnswers.length === 0 : !selectedAnswer) || submitting}
               fullWidth
             />
@@ -707,7 +732,7 @@ export default function QuestionDetailScreen() {
                 if (nextIndex < questions.length) {
                   // Navigate to next question
                   const nextQuestion = questions[nextIndex];
-                  navigation.navigate('QuestionDetail' as never, { questionId: nextQuestion.id } as never);
+                  (navigation as any).navigate('QuestionDetail', { questionId: nextQuestion.id });
                 } else {
                   // No more questions, go back to practice screen
                   navigation.goBack();

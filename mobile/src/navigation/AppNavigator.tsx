@@ -7,6 +7,7 @@ import { RootState } from '../store';
 import AuthNavigator from './AuthNavigator';
 import MainNavigator from './MainNavigator';
 import SplashScreen from '../screens/SplashScreen';
+import PaywallScreen from '../components/PaywallScreen';
 
 const Stack = createStackNavigator();
 
@@ -25,7 +26,14 @@ export default function AppNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       {isAuthenticated ? (
-        <Stack.Screen name="Main" component={MainNavigator} />
+        <>
+          <Stack.Screen name="Main" component={MainNavigator} />
+          <Stack.Screen
+            name="Paywall"
+            component={PaywallScreen}
+            options={{ presentation: 'modal' }}
+          />
+        </>
       ) : (
         <Stack.Screen name="Auth" component={AuthNavigator} />
       )}

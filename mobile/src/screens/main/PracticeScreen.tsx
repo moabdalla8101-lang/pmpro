@@ -7,7 +7,7 @@ import { RootState, AppDispatch } from '../../store';
 import { useNavigation, useFocusEffect, useRoute } from '@react-navigation/native';
 import { dailyActivityService } from '../../services/dailyActivityService';
 import { progressService } from '../../services/api/progressService';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { CategoryBadge, SectionHeader, EmptyState } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
@@ -51,11 +51,15 @@ export default function PracticeScreen() {
     if (knowledgeAreaId) {
       filters.knowledgeAreaId = knowledgeAreaId;
     }
+
+    // Start loading questions immediately so the empty state does not flash
+    // while the answered-question filter is being fetched.
+    dispatch(fetchQuestions(filters));
     
     // Fetch answered question IDs
     try {
       const answeredData = await progressService.getAnsweredQuestionIds(PMP_CERTIFICATION_ID);
-      const answeredIds = new Set(answeredData.questionIds || []);
+      const answeredIds = new Set<string>(answeredData.questionIds || []);
       setAnsweredQuestionIds(answeredIds);
     } catch (error) {
       console.error('Failed to fetch answered question IDs:', error);
@@ -66,7 +70,6 @@ export default function PracticeScreen() {
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'PracticeScreen.tsx:37',message:'Dispatching fetchQuestions',data:{filters, knowledgeAreaId, selectedKnowledgeArea},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H3'})}).catch(()=>{});
     // #endregion
-    dispatch(fetchQuestions(filters));
   };
   
   // Filter questions by domain, knowledge area, and answered status
@@ -125,7 +128,7 @@ export default function PracticeScreen() {
       return () => {
         dailyActivityService.endSession();
       };
-    }, [dispatch, selectedKnowledgeArea, route.params])
+    }, [dispatch, selectedKnowledgeArea, selectedDomain, route.params])
   );
 
   useEffect(() => {
@@ -136,7 +139,7 @@ export default function PracticeScreen() {
   }, [selectedKnowledgeArea]);
 
   const handleQuestionPress = (questionId: string) => {
-    navigation.navigate('QuestionDetail' as never, { questionId } as never);
+    (navigation as any).navigate('QuestionDetail', { questionId });
   };
 
   const toggleQuestionFilter = (filter: 'all' | 'unanswered') => {

@@ -4,17 +4,19 @@ import { Card, Text, ActivityIndicator } from 'react-native-paper';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useSelector, useDispatch } from 'react-redux';
 import { LinearGradient } from 'expo-linear-gradient';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { ActionButton, SectionHeader, EmptyState } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { RootState, AppDispatch } from '../../store';
 import { fetchUserExams, deleteExam } from '../../store/slices/examSlice';
+import { hasPremiumAccess } from '../../utils/subscriptionUtils';
 
 export default function ExamScreen() {
   const navigation = useNavigation();
   const dispatch = useDispatch<AppDispatch>();
   const { exams, isLoading } = useSelector((state: RootState) => state.exams);
+  const { user } = useSelector((state: RootState) => state.auth);
   const [examStats, setExamStats] = useState({
     totalExams: 0,
     bestScore: 0,
@@ -71,17 +73,27 @@ export default function ExamScreen() {
   });
 
   const handleStartMockExam = () => {
-    (navigation as any).navigate('Exam', {
-      screen: 'ExamStart',
-      params: { examType: 'mock' },
+    if (!hasPremiumAccess(user?.subscriptionTier)) {
+      (navigation as any).navigate('Paywall', { feature: 'mock_exams' });
+      return;
+    }
+    (navigation as any).navigate('ExamStart', {
+      examType: 'mock',
     });
   };
 
   const handleStartMiniPMP = () => {
-    (navigation as any).navigate('Exam', {
-      screen: 'ExamStart',
-      params: { examType: 'mini' },
+    if (!hasPremiumAccess(user?.subscriptionTier)) {
+      (navigation as any).navigate('Paywall', { feature: 'mock_exams' });
+      return;
+    }
+    (navigation as any).navigate('ExamStart', {
+      examType: 'mini',
     });
+  };
+
+  const handleStartDailyQuiz = () => {
+    (navigation as any).navigate('DailyQuiz');
   };
 
   return (
@@ -251,6 +263,34 @@ export default function ExamScreen() {
           </Card.Content>
         </Card>
 
+        {/* Daily Quiz Card */}
+        <Card style={styles.examCard}>
+          <Card.Content style={styles.examCardContent}>
+            <View style={styles.examHeader}>
+              <View style={styles.examIconContainer}>
+                <Icon name="calendar-check" size={48} color={colors.info} />
+              </View>
+              <View style={styles.examInfo}>
+                <Text variant="headlineSmall" style={styles.examTitle}>
+                  Daily Quiz
+                </Text>
+                <Text variant="bodyMedium" style={styles.examSubtitle}>
+                  A fresh 10-question challenge each day
+                </Text>
+              </View>
+            </View>
+
+            <ActionButton
+              label="Start Daily Quiz"
+              onPress={handleStartDailyQuiz}
+              icon="calendar-check"
+              variant="outlined"
+              size="large"
+              fullWidth
+            />
+          </Card.Content>
+        </Card>
+
         {/* Exam History Section */}
         <SectionHeader
           title="Exam History"
@@ -408,7 +448,7 @@ export default function ExamScreen() {
                     </View>
                     <ActionButton
                       label="Review Exam"
-                      onPress={() => navigation.navigate('ExamReview' as never, { examId: exam.id } as never)}
+                      onPress={() => (navigation as any).navigate('ExamReview', { examId: exam.id })}
                       variant="outlined"
                       size="small"
                       fullWidth

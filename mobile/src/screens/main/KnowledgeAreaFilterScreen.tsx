@@ -8,7 +8,7 @@ import { fetchKnowledgeAreas } from '../../store/slices/flashcardSlice';
 import { SectionHeader, ActionButton } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
 
 // Icon mapping for knowledge areas
@@ -45,9 +45,8 @@ export default function KnowledgeAreaFilterScreen() {
 
   const handleStartPractice = () => {
     if (selectedArea) {
-      (navigation as any).navigate('Practice', {
-        screen: 'PracticeList',
-        params: { knowledgeAreaId: selectedArea },
+      (navigation as any).navigate('PracticeList', {
+        knowledgeAreaId: selectedArea,
       });
     }
   };
@@ -113,7 +112,7 @@ export default function KnowledgeAreaFilterScreen() {
                             ]}
                           >
                             <Icon
-                              name={iconName}
+                              name={iconName as any}
                               size={24}
                               color={isSelected ? '#FFFFFF' : colors.primary}
                             />

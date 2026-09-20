@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { colors } from '../theme';
 import { spacing } from '../utils/styles';
 import ActionButton from './ActionButton';
@@ -24,7 +24,7 @@ export default function EmptyState({
   return (
     <View style={styles.container}>
       <View style={styles.iconContainer}>
-        <Icon name={icon} size={64} color={colors.gray400} />
+        <Icon name={icon as any} size={64} color={colors.gray400} />
       </View>
       <Text variant="titleLarge" style={styles.title}>
         {title}

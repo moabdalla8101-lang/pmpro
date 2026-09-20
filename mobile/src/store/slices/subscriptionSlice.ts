@@ -1,5 +1,9 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import Purchases from 'react-native-purchases';
+import type {
+  CustomerInfo,
+  PurchasesOfferings,
+  PurchasesPackage,
+} from 'react-native-purchases';
 import {
   getOfferings,
   purchasePackage,
@@ -8,10 +12,11 @@ import {
   getSubscriptionTierFromCustomerInfo,
   getSubscriptionExpirationDate,
 } from '../../services/revenueCatService';
+import { applySubscriptionTier } from './authSlice';
 
 interface SubscriptionState {
-  offerings: Purchases.Offerings | null;
-  customerInfo: Purchases.CustomerInfo | null;
+  offerings: PurchasesOfferings | null;
+  customerInfo: CustomerInfo | null;
   isLoading: boolean;
   isPurchasing: boolean;
   error: string | null;
@@ -47,16 +52,18 @@ export const fetchOfferings = createAsyncThunk(
  */
 export const purchaseSubscription = createAsyncThunk(
   'subscription/purchase',
-  async (packageToPurchase: Purchases.Package, { rejectWithValue, dispatch }) => {
+  async (packageToPurchase: PurchasesPackage, { rejectWithValue, dispatch }) => {
     try {
       const customerInfo = await purchasePackage(packageToPurchase);
       
-      // Sync with backend - import dynamically to avoid circular dependency
-      const { subscriptionService } = await import('../../services/api/subscriptionService');
       const tier = getSubscriptionTierFromCustomerInfo(customerInfo);
       const expiresAt = getSubscriptionExpirationDate(customerInfo);
-      
-      await subscriptionService.syncSubscription(tier, expiresAt);
+      await dispatch(
+        applySubscriptionTier({
+          tier,
+          expiresAt: expiresAt?.toISOString() || null,
+        })
+      );
       
       // Refresh customer info
       dispatch(refreshCustomerInfo());
@@ -77,12 +84,14 @@ export const restoreSubscription = createAsyncThunk(
     try {
       const customerInfo = await restorePurchases();
       
-      // Sync with backend - import dynamically to avoid circular dependency
-      const { subscriptionService } = await import('../../services/api/subscriptionService');
       const tier = getSubscriptionTierFromCustomerInfo(customerInfo);
       const expiresAt = getSubscriptionExpirationDate(customerInfo);
-      
-      await subscriptionService.syncSubscription(tier, expiresAt);
+      await dispatch(
+        applySubscriptionTier({
+          tier,
+          expiresAt: expiresAt?.toISOString() || null,
+        })
+      );
       
       // Refresh customer info
       dispatch(refreshCustomerInfo());
@@ -116,10 +125,10 @@ const subscriptionSlice = createSlice({
     clearError: (state) => {
       state.error = null;
     },
-    setOfferings: (state, action: PayloadAction<Purchases.Offerings>) => {
+    setOfferings: (state, action: PayloadAction<PurchasesOfferings>) => {
       state.offerings = action.payload;
     },
-    setCustomerInfo: (state, action: PayloadAction<Purchases.CustomerInfo>) => {
+    setCustomerInfo: (state, action: PayloadAction<CustomerInfo>) => {
       state.customerInfo = action.payload;
     },
   },

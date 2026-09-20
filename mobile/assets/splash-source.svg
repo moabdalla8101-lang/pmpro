@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="2048" viewBox="0 0 2048 2048">
+  <rect width="2048" height="2048" fill="#F8F7FC"/>
+  <g transform="translate(704 654) scale(.625)">
+    <defs>
+      <linearGradient id="background" x1="100" y1="80" x2="924" y2="944" gradientUnits="userSpaceOnUse">
+        <stop stop-color="#7C3AED"/>
+        <stop offset="1" stop-color="#4C1D95"/>
+      </linearGradient>
+    </defs>
+    <rect width="1024" height="1024" rx="224" fill="url(#background)"/>
+    <circle cx="512" cy="490" r="300" fill="#FFFFFF" fill-opacity="0.12"/>
+    <path d="M270 310C270 281 294 258 323 258H485C511 258 536 268 555 286L572 302L589 286C608 268 633 258 659 258H701C730 258 754 281 754 310V678C754 707 730 730 701 730H643C611 730 581 743 558 765L538 784C523 798 500 798 486 784L466 765C443 743 413 730 381 730H323C294 730 270 707 270 678V310Z" fill="#FFFFFF"/>
+    <path d="M512 332V700" stroke="#6D28D9" stroke-width="34" stroke-linecap="round"/>
+    <path d="M342 384H442M342 466H442M342 548H418" stroke="#6D28D9" stroke-width="30" stroke-linecap="round"/>
+    <path d="M610 482L654 526L735 424" fill="none" stroke="#10B981" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M588 606H700" stroke="#6D28D9" stroke-width="30" stroke-linecap="round"/>
+  </g>
+  <text x="1024" y="1450" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="104" font-weight="700" fill="#24143D">PMP Exam Prep</text>
+</svg>

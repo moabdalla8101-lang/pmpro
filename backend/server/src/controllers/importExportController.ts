@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { parse } from 'csv-parse';
+import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify';
 import fs from 'fs';
 import { pool } from '../db/connection';
@@ -12,13 +12,13 @@ export async function importQuestions(req: Request, res: Response, next: NextFun
     }
 
     const fileContent = fs.readFileSync(req.file.path, 'utf-8');
-    const records = await parse(fileContent, {
+    const records = parse(fileContent, {
       columns: true,
       skip_empty_lines: true
-    });
+    }) as Record<string, string>[];
 
-    const imported = [];
-    const errors = [];
+    const imported: string[] = [];
+    const errors: Array<{ row: Record<string, string>; error: string }> = [];
 
     for (const record of records) {
       try {

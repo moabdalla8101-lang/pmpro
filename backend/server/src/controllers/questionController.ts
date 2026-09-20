@@ -8,8 +8,10 @@ export async function getQuestions(req: Request, res: Response, next: NextFuncti
     const { certificationId, knowledgeAreaId, difficulty, limit, offset = 0, random, distributeByKnowledgeArea } = req.query;
     // Default to a high limit if not specified, or use the provided limit
     const queryLimit = limit ? parseInt(limit as string, 10) : 1000;
-    const isRandom = random === 'true' || random === true || random === '1';
-    const shouldDistribute = distributeByKnowledgeArea === 'true' || distributeByKnowledgeArea === true || distributeByKnowledgeArea === '1';
+    const isRandom = random === 'true' || random === '1';
+    const shouldDistribute =
+      distributeByKnowledgeArea === 'true' ||
+      distributeByKnowledgeArea === '1';
 
     // If distributing by knowledge area, get questions from each area
     if (shouldDistribute && certificationId && !knowledgeAreaId) {
@@ -175,7 +177,7 @@ export async function getQuestions(req: Request, res: Response, next: NextFuncti
 
     // Get answers for each question and transform to camelCase
     const questions = await Promise.all(
-      result.rows.map(async (question) => {
+      result.rows.map(async (question: any) => {
         const answersResult = await pool.query(
           'SELECT * FROM answers WHERE question_id = $1 ORDER BY "order"',
           [question.id]
@@ -554,7 +556,7 @@ export async function getQuestionsByKnowledgeArea(req: Request, res: Response, n
     );
 
     const questions = await Promise.all(
-      result.rows.map(async (question) => {
+      result.rows.map(async (question: any) => {
         const answersResult = await pool.query(
           'SELECT * FROM answers WHERE question_id = $1 ORDER BY "order"',
           [question.id]

@@ -9,7 +9,7 @@ import { fetchQuestions } from '../../store/slices/questionSlice';
 import { questionService } from '../../services/api/questionService';
 import { dailyActivityService } from '../../services/dailyActivityService';
 import client from '../../services/api/client';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { ActionButton } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';

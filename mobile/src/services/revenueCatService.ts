@@ -3,9 +3,13 @@
  * Handles all RevenueCat SDK operations for in-app purchases
  */
 
-import Purchases from 'react-native-purchases';
+import type {
+  CustomerInfo,
+  PurchasesOfferings,
+  PurchasesPackage,
+} from 'react-native-purchases';
 import { Platform } from 'react-native';
-import Constants from 'expo-constants';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 
 // Get API keys from environment
 // Test keys work for both iOS and Android
@@ -17,32 +21,77 @@ const REVENUECAT_ANDROID_API_KEY = Constants.expoConfig?.extra?.revenueCatAndroi
   process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY || '';
 
 let isInitialized = false;
+let purchasesModule: typeof import('react-native-purchases').default | null = null;
+
+const isRevenueCatUnavailable =
+  Platform.OS === 'web' ||
+  Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+
+function getRevenueCatApiKey(): string {
+  // Always prefer store SDK keys for TestFlight / App Store / Play builds.
+  // Test Store keys are rejected by RevenueCat in release builds.
+  const platformKey =
+    Platform.OS === 'ios' ? REVENUECAT_IOS_API_KEY : REVENUECAT_ANDROID_API_KEY;
+
+  if (platformKey) {
+    return platformKey;
+  }
+
+  // Fallback for local/dev builds that only have a Test Store key configured.
+  return REVENUECAT_TEST_API_KEY;
+}
+
+export function isRevenueCatAvailable(): boolean {
+  return !isRevenueCatUnavailable;
+}
+
+export function isRevenueCatConfigured(): boolean {
+  return isRevenueCatAvailable() && Boolean(getRevenueCatApiKey());
+}
+
+async function getPurchases() {
+  if (isRevenueCatUnavailable) {
+    throw new Error(
+      'Subscriptions are unavailable in Expo Go. Use a development build to test purchases.'
+    );
+  }
+
+  if (!purchasesModule) {
+    purchasesModule = (await import('react-native-purchases')).default;
+  }
+
+  return purchasesModule;
+}
 
 /**
  * Initialize RevenueCat SDK
  * Should be called when app starts, before any other RevenueCat operations
  */
-export async function initializeRevenueCat(): Promise<void> {
+export async function initializeRevenueCat(): Promise<boolean> {
+  if (isRevenueCatUnavailable) {
+    console.info('Skipping RevenueCat initialization in this runtime');
+    return false;
+  }
+
   if (isInitialized) {
-    console.log('RevenueCat already initialized');
-    return;
+    return true;
   }
 
   try {
-    // Use test key if available (works for both platforms), otherwise use platform-specific key
-    let apiKey = REVENUECAT_TEST_API_KEY;
-    if (!apiKey) {
-      apiKey = Platform.OS === 'ios' ? REVENUECAT_IOS_API_KEY : REVENUECAT_ANDROID_API_KEY;
-    }
+    const apiKey = getRevenueCatApiKey();
     
     if (!apiKey) {
-      console.warn('RevenueCat API key not found. Please set EXPO_PUBLIC_REVENUECAT_TEST_API_KEY or platform-specific keys');
-      return;
+      console.info(
+        'RevenueCat is disabled until a public SDK key is configured.'
+      );
+      return false;
     }
 
-    await Purchases.configure({ apiKey });
+    const Purchases = await getPurchases();
+    Purchases.configure({ apiKey });
     isInitialized = true;
     console.log('RevenueCat initialized successfully');
+    return true;
   } catch (error) {
     console.error('Failed to initialize RevenueCat:', error);
     throw error;
@@ -55,11 +104,16 @@ export async function initializeRevenueCat(): Promise<void> {
  * Should be called after user logs in
  */
 export async function identifyUser(userId: string): Promise<void> {
+  if (isRevenueCatUnavailable) {
+    return;
+  }
+
   try {
-    if (!isInitialized) {
-      await initializeRevenueCat();
+    if (!isInitialized && !(await initializeRevenueCat())) {
+      return;
     }
     
+    const Purchases = await getPurchases();
     await Purchases.logIn(userId);
     console.log(`RevenueCat user identified: ${userId}`);
   } catch (error) {
@@ -73,10 +127,14 @@ export async function identifyUser(userId: string): Promise<void> {
  * Should be called when user logs out
  */
 export async function logoutUser(): Promise<void> {
+  if (isRevenueCatUnavailable || !isInitialized) {
+    return;
+  }
+
   try {
-    const { customerInfo } = await Purchases.logOut();
+    const Purchases = await getPurchases();
+    await Purchases.logOut();
     console.log('RevenueCat user logged out');
-    return customerInfo;
   } catch (error) {
     console.error('Failed to logout RevenueCat user:', error);
     throw error;
@@ -86,12 +144,15 @@ export async function logoutUser(): Promise<void> {
 /**
  * Get available offerings (subscription packages)
  */
-export async function getOfferings() {
+export async function getOfferings(): Promise<PurchasesOfferings> {
   try {
-    if (!isInitialized) {
-      await initializeRevenueCat();
+    if (!isInitialized && !(await initializeRevenueCat())) {
+      throw new Error(
+        'RevenueCat is not configured. Add a public SDK key to mobile/.env.'
+      );
     }
     
+    const Purchases = await getPurchases();
     const offerings = await Purchases.getOfferings();
     return offerings;
   } catch (error) {
@@ -103,12 +164,15 @@ export async function getOfferings() {
 /**
  * Purchase a subscription package
  */
-export async function purchasePackage(packageToPurchase: Purchases.Package) {
+export async function purchasePackage(packageToPurchase: PurchasesPackage) {
   try {
-    if (!isInitialized) {
-      await initializeRevenueCat();
+    if (!isInitialized && !(await initializeRevenueCat())) {
+      throw new Error(
+        'RevenueCat is not configured. Add a public SDK key to mobile/.env.'
+      );
     }
     
+    const Purchases = await getPurchases();
     const { customerInfo } = await Purchases.purchasePackage(packageToPurchase);
     return customerInfo;
   } catch (error: any) {
@@ -128,10 +192,13 @@ export async function purchasePackage(packageToPurchase: Purchases.Package) {
  */
 export async function restorePurchases() {
   try {
-    if (!isInitialized) {
-      await initializeRevenueCat();
+    if (!isInitialized && !(await initializeRevenueCat())) {
+      throw new Error(
+        'RevenueCat is not configured. Add a public SDK key to mobile/.env.'
+      );
     }
     
+    const Purchases = await getPurchases();
     const customerInfo = await Purchases.restorePurchases();
     return customerInfo;
   } catch (error) {
@@ -145,10 +212,13 @@ export async function restorePurchases() {
  */
 export async function getCustomerInfo() {
   try {
-    if (!isInitialized) {
-      await initializeRevenueCat();
+    if (!isInitialized && !(await initializeRevenueCat())) {
+      throw new Error(
+        'RevenueCat is not configured. Add a public SDK key to mobile/.env.'
+      );
     }
     
+    const Purchases = await getPurchases();
     const customerInfo = await Purchases.getCustomerInfo();
     return customerInfo;
   } catch (error) {
@@ -160,11 +230,24 @@ export async function getCustomerInfo() {
 /**
  * Map RevenueCat product ID to subscription tier
  */
+const PREMIUM_ENTITLEMENT_IDS = ['premium', 'PMPrp app Pro'] as const;
+
+function getPremiumEntitlement(customerInfo: CustomerInfo) {
+  const active = customerInfo.entitlements.active;
+  for (const id of PREMIUM_ENTITLEMENT_IDS) {
+    if (active[id]) {
+      return active[id];
+    }
+  }
+  return null;
+}
+
 export function mapProductIdToTier(productId: string): string {
   const productIdMap: Record<string, string> = {
     'premium_monthly': 'premium_monthly',
     'premium_semi_annual': 'premium_semi_annual',
     'premium_annual': 'premium_annual',
+    'yearly': 'premium_annual',
     'cram_time': 'cram_time',
   };
   
@@ -174,13 +257,10 @@ export function mapProductIdToTier(productId: string): string {
 /**
  * Get subscription tier from customer info
  */
-export function getSubscriptionTierFromCustomerInfo(customerInfo: Purchases.CustomerInfo): string {
-  const activeEntitlements = customerInfo.entitlements.active;
-  
-  // Check for premium entitlement
-  if (activeEntitlements['premium']) {
-    const productId = activeEntitlements['premium'].productIdentifier;
-    return mapProductIdToTier(productId);
+export function getSubscriptionTierFromCustomerInfo(customerInfo: CustomerInfo): string {
+  const premiumEntitlement = getPremiumEntitlement(customerInfo);
+  if (premiumEntitlement) {
+    return mapProductIdToTier(premiumEntitlement.productIdentifier);
   }
   
   return 'free';
@@ -189,10 +269,10 @@ export function getSubscriptionTierFromCustomerInfo(customerInfo: Purchases.Cust
 /**
  * Get subscription expiration date from customer info
  */
-export function getSubscriptionExpirationDate(customerInfo: Purchases.CustomerInfo): Date | null {
-  const premiumEntitlement = customerInfo.entitlements.active['premium'];
+export function getSubscriptionExpirationDate(customerInfo: CustomerInfo): Date | null {
+  const premiumEntitlement = getPremiumEntitlement(customerInfo);
   
-  if (premiumEntitlement) {
+  if (premiumEntitlement?.expirationDate) {
     return new Date(premiumEntitlement.expirationDate);
   }
   
@@ -202,8 +282,8 @@ export function getSubscriptionExpirationDate(customerInfo: Purchases.CustomerIn
 /**
  * Check if user has active premium subscription
  */
-export function hasActivePremium(customerInfo: Purchases.CustomerInfo): boolean {
-  return !!customerInfo.entitlements.active['premium'];
+export function hasActivePremium(customerInfo: CustomerInfo): boolean {
+  return !!getPremiumEntitlement(customerInfo);
 }
 
 /**
@@ -211,7 +291,7 @@ export function hasActivePremium(customerInfo: Purchases.CustomerInfo): boolean 
  * This should be called after purchase or restore
  */
 export async function syncSubscriptionWithBackend(
-  customerInfo: Purchases.CustomerInfo,
+  customerInfo: CustomerInfo,
   syncApiCall: (tier: string, expiresAt: Date | null) => Promise<void>
 ): Promise<void> {
   try {

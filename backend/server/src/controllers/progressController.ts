@@ -213,8 +213,8 @@ export async function getMissedQuestions(req: AuthRequest, res: Response, next: 
     // If reviewed is explicitly 'true' or true, show only reviewed
     // If reviewed is undefined/null, show all (no filter)
     if (reviewed !== undefined && reviewed !== null) {
-      const reviewedValue = reviewed === 'true' || reviewed === true;
-      const reviewedFalse = reviewed === 'false' || reviewed === false;
+      const reviewedValue = reviewed === 'true';
+      const reviewedFalse = reviewed === 'false';
       
       if (reviewedFalse) {
         query += ` AND mr.id IS NULL`;

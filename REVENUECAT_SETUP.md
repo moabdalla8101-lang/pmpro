@@ -102,16 +102,14 @@ This guide will help you set up RevenueCat for in-app purchases in your PMP Exam
 
 ### Mobile App
 
-**Option 1: Using Test Key (Recommended for Development)**
+**Option 1: Using RevenueCat Test Store (Development Builds Only)**
 
-The test API key is already configured in `app.json`:
-```json
-"extra": {
-  "revenueCatTestApiKey": "test_GBuMzfOYeDJtjKhPcqBSwReJhZx"
-}
+Add the public Test Store SDK key to `mobile/.env`:
+```bash
+EXPO_PUBLIC_REVENUECAT_TEST_API_KEY=test_your_public_test_store_key
 ```
 
-This test key works for both iOS and Android during development.
+Do not commit real SDK keys. Copy `mobile/.env.example` to `mobile/.env`.
 
 **Option 2: Using Platform-Specific Keys (Production)**
 
@@ -150,7 +148,18 @@ cd mobile
 npm install
 ```
 
-The RevenueCat package (`@revenuecat/purchases-expo`) is already added to `package.json`.
+The RevenueCat package (`react-native-purchases`) is already added to `package.json`.
+
+RevenueCat does not run in Expo Go. Create and install a development build:
+
+```bash
+cd mobile
+npm run build:dev:ios
+# or
+npm run build:dev:android
+
+npm run start:dev-client
+```
 
 ## Step 9: Test the Integration
 

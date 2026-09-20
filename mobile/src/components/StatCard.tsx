@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Text, Card } from 'react-native-paper';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { colors } from '../theme';
 import { spacing, borderRadius, shadows } from '../utils/styles';
 
@@ -34,7 +34,7 @@ export default function StatCard({
         <Card.Content style={styles.content}>
           <View style={styles.iconContainer}>
             <View style={[styles.iconCircle, { backgroundColor: `${iconColor}15` }]}>
-              <Icon name={icon} size={isLarge ? 32 : 24} color={iconColor} />
+              <Icon name={icon as any} size={isLarge ? 32 : 24} color={iconColor} />
             </View>
           </View>
           <View style={styles.textContainer}>

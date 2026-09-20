@@ -4,7 +4,10 @@ import { Text, ActivityIndicator } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
-import { fetchMarkedFlashcards } from '../../store/slices/flashcardSlice';
+import {
+  fetchMarkedFlashcards,
+  fetchMarkedFlashcardsForStudy,
+} from '../../store/slices/flashcardSlice';
 import { ActionButton, EmptyState, SectionHeader } from '../../components';
 import { colors } from '../../theme';
 import { spacing } from '../../utils/styles';
@@ -18,12 +21,16 @@ export default function MarkedFlashcardsScreen() {
     dispatch(fetchMarkedFlashcards(true) as any); // Random order
   }, [dispatch]);
 
-  const handleStartReview = () => {
-    dispatch(fetchMarkedFlashcardsForStudy(true) as any);
-    navigation.navigate('FlashcardStudy' as never, {
-      knowledgeAreaIds: undefined,
-      markedOnly: true,
-    } as never);
+  const handleStartReview = async () => {
+    try {
+      await dispatch(fetchMarkedFlashcardsForStudy(true) as any).unwrap();
+      (navigation as any).navigate('FlashcardStudy', {
+        knowledgeAreaIds: undefined,
+        markedOnly: true,
+      });
+    } catch (error) {
+      console.error('Failed to load marked flashcards:', error);
+    }
   };
 
   if (isLoading) {

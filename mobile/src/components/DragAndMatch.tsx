@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, TouchableOpacity, ScrollView, Dimensions } from 'react-native';
 import { Text } from 'react-native-paper';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { colors } from '../theme';
 import { spacing, borderRadius, shadows } from '../utils/styles';
 
@@ -322,7 +322,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     borderWidth: 2,
     borderColor: colors.gray300,
-    ...shadows.small,
+    ...shadows.sm,
   },
   leftItemMatched: {
     borderColor: colors.primary,
@@ -430,7 +430,7 @@ const styles = StyleSheet.create({
     borderColor: colors.gray300,
     minWidth: (SCREEN_WIDTH - spacing.md * 4) / 2 - spacing.sm,
     maxWidth: (SCREEN_WIDTH - spacing.md * 4) / 2 - spacing.sm,
-    ...shadows.small,
+    ...shadows.sm,
   },
   rightItemSelected: {
     borderColor: colors.primary,

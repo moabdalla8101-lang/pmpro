@@ -8,7 +8,7 @@ import { fetchKnowledgeAreas } from '../../store/slices/flashcardSlice';
 import { ActionButton, SectionHeader } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
 
 // Icon mapping for knowledge areas
@@ -130,7 +130,7 @@ export default function FlashcardFilterScreen() {
                               ]}
                             >
                               <Icon
-                                name={iconName}
+                                name={iconName as any}
                                 size={24}
                                 color={isSelected ? '#FFFFFF' : areaColor}
                               />

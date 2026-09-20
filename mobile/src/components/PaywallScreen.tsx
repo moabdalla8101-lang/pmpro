@@ -10,16 +10,19 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Card, Text, Button, Divider, Checkbox } from 'react-native-paper';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../store';
-import Purchases from 'react-native-purchases';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import type { PurchasesPackage } from 'react-native-purchases';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { colors } from '../theme';
 import { spacing, borderRadius, shadows } from '../utils/styles';
 import { getSubscriptionDisplayName } from '../utils/subscriptionUtils';
 import { fetchOfferings, purchaseSubscription, restoreSubscription } from '../store/slices/subscriptionSlice';
-import { loadUser } from '../store/slices/authSlice';
+import {
+  isRevenueCatAvailable,
+  isRevenueCatConfigured,
+} from '../services/revenueCatService';
 
 interface SubscriptionPlan {
   id: string;
@@ -93,21 +96,29 @@ interface PaywallScreenProps {
 export default function PaywallScreen({ 
   feature, 
   onClose,
-  showFreeTrial = true 
+  showFreeTrial = false
 }: PaywallScreenProps) {
   const navigation = useNavigation();
+  const route = useRoute();
   const dispatch = useDispatch<AppDispatch>();
   const { user } = useSelector((state: RootState) => state.auth);
   const { offerings, isPurchasing, isLoading, error } = useSelector((state: RootState) => state.subscription);
   
   const [selectedPlan, setSelectedPlan] = useState<string>('premium_semi_annual');
   const [acceptTerms, setAcceptTerms] = useState(false);
-  const [packages, setPackages] = useState<Purchases.Package[]>([]);
+  const [packages, setPackages] = useState<PurchasesPackage[]>([]);
+  const purchasesAvailable = isRevenueCatAvailable();
+  const purchasesConfigured = isRevenueCatConfigured();
+  const routeParams = route.params as PaywallScreenProps | undefined;
+  const requestedFeature = feature || routeParams?.feature;
+  const trialEnabled = routeParams?.showFreeTrial ?? showFreeTrial;
 
   // Fetch offerings on mount
   useEffect(() => {
-    dispatch(fetchOfferings());
-  }, [dispatch]);
+    if (purchasesConfigured) {
+      dispatch(fetchOfferings());
+    }
+  }, [dispatch, purchasesConfigured]);
 
   // Map RevenueCat packages to plans when offerings are loaded
   useEffect(() => {
@@ -118,7 +129,9 @@ export default function PaywallScreen({
       // Set default selected plan to the first available package or most popular
       if (availablePackages.length > 0) {
         const semiAnnualPackage = availablePackages.find(pkg => 
-          pkg.identifier.includes('semi_annual') || pkg.identifier.includes('6months')
+          pkg.identifier.includes('semi_annual') ||
+          pkg.identifier.includes('six_month') ||
+          pkg.product.identifier === 'premium_semi_annual'
         );
         if (semiAnnualPackage) {
           setSelectedPlan(semiAnnualPackage.identifier);
@@ -137,6 +150,22 @@ export default function PaywallScreen({
   }, [error]);
 
   const handleSubscribe = async (planId: string) => {
+    if (!purchasesAvailable) {
+      Alert.alert(
+        'Development Build Required',
+        'In-app purchases cannot run in Expo Go. Open this screen in an iOS or Android development build to test a purchase.'
+      );
+      return;
+    }
+
+    if (!purchasesConfigured) {
+      Alert.alert(
+        'RevenueCat Setup Required',
+        'Add a RevenueCat public SDK key to mobile/.env, then restart the development server.'
+      );
+      return;
+    }
+
     if (!acceptTerms) {
       Alert.alert('Terms Required', 'Please accept the terms and conditions to continue.');
       return;
@@ -146,8 +175,7 @@ export default function PaywallScreen({
       // Find the package by identifier
       const packageToPurchase = packages.find(pkg => 
         pkg.identifier === planId || 
-        pkg.storeProduct.identifier === planId ||
-        pkg.storeProduct.productIdentifier === planId
+        pkg.product.identifier === planId
       );
 
       if (!packageToPurchase) {
@@ -157,9 +185,6 @@ export default function PaywallScreen({
 
       // Purchase the package
       await dispatch(purchaseSubscription(packageToPurchase)).unwrap();
-      
-      // Refresh user data to get updated subscription
-      await dispatch(loadUser());
       
       Alert.alert(
         'Success!',
@@ -196,9 +221,24 @@ export default function PaywallScreen({
   };
 
   const handleRestorePurchases = async () => {
+    if (!purchasesAvailable) {
+      Alert.alert(
+        'Development Build Required',
+        'Purchase restoration is available in iOS and Android development or production builds.'
+      );
+      return;
+    }
+
+    if (!purchasesConfigured) {
+      Alert.alert(
+        'RevenueCat Setup Required',
+        'Add a RevenueCat public SDK key to mobile/.env, then restart the development server.'
+      );
+      return;
+    }
+
     try {
       await dispatch(restoreSubscription()).unwrap();
-      await dispatch(loadUser());
       Alert.alert('Success', 'Your purchases have been restored.');
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to restore purchases.');
@@ -206,17 +246,17 @@ export default function PaywallScreen({
   };
 
   // Get display info for a package
-  const getPackageInfo = (pkg: Purchases.Package) => {
-    const product = pkg.storeProduct;
-    const price = product.priceString || product.localizedPrice || '$0.00';
-    const title = product.title || product.localizedTitle || 'Premium';
-    const description = product.description || product.localizedDescription || '';
+  const getPackageInfo = (pkg: PurchasesPackage) => {
+    const product = pkg.product;
+    const price = product.priceString || '$0.00';
+    const title = product.title || 'Premium';
+    const description = product.description || '';
     
     return { price, title, description };
   };
 
   const getFeatureMessage = () => {
-    if (!feature) return 'Unlock Premium Features';
+    if (!requestedFeature) return 'Unlock Premium Features';
     
     const messages: Record<string, string> = {
       'mock_exams': 'Unlock Unlimited Mock Exams',
@@ -226,7 +266,7 @@ export default function PaywallScreen({
       'advanced_analytics': 'Unlock Advanced Analytics',
     };
     
-    return messages[feature] || 'Unlock Premium Features';
+    return messages[requestedFeature] || 'Unlock Premium Features';
   };
 
   return (
@@ -237,39 +277,20 @@ export default function PaywallScreen({
       >
         {/* Header */}
         <View style={styles.header}>
-          {onClose && (
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Icon name="close" size={24} color={colors.text} />
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            onPress={onClose || (() => navigation.goBack())}
+            style={styles.closeButton}
+          >
+            <Icon name="close" size={24} color={colors.text} />
+          </TouchableOpacity>
           <Icon name="crown" size={48} color={colors.primary} style={styles.crownIcon} />
           <Text variant="headlineMedium" style={styles.title}>
             {getFeatureMessage()}
           </Text>
           <Text variant="bodyLarge" style={styles.subtitle}>
-            Join thousands of PMP candidates who are acing their exams
+            Get unlimited access to practice, exams, review tools, and analytics.
           </Text>
         </View>
-
-        {/* Social Proof */}
-        <Card style={styles.socialProofCard}>
-          <Card.Content>
-            <View style={styles.socialProofRow}>
-              <View style={styles.statItem}>
-                <Text variant="headlineSmall" style={styles.statNumber}>10,000+</Text>
-                <Text variant="bodySmall" style={styles.statLabel}>Active Users</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text variant="headlineSmall" style={styles.statNumber}>85%</Text>
-                <Text variant="bodySmall" style={styles.statLabel}>Pass Rate</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text variant="headlineSmall" style={styles.statNumber}>4.8★</Text>
-                <Text variant="bodySmall" style={styles.statLabel}>App Rating</Text>
-              </View>
-            </View>
-          </Card.Content>
-        </Card>
 
         {/* Subscription Plans */}
         <View style={styles.plansContainer}>
@@ -284,11 +305,15 @@ export default function PaywallScreen({
             packages.map((pkg) => {
               const packageInfo = getPackageInfo(pkg);
               const isSelected = selectedPlan === pkg.identifier;
-              const isPopular = pkg.identifier.includes('semi_annual') || pkg.identifier.includes('6months');
+              const isPopular =
+                pkg.identifier.includes('semi_annual') ||
+                pkg.identifier.includes('six_month') ||
+                pkg.product.identifier === 'premium_semi_annual';
               
               // Map to static plan features if available, otherwise use package info
               const staticPlan = PLANS.find(p => 
                 p.id === pkg.identifier || 
+                p.id === pkg.product.identifier ||
                 pkg.identifier.includes(p.id.replace('_', ''))
               );
               const features = staticPlan?.features || [
@@ -428,7 +453,7 @@ export default function PaywallScreen({
         </View>
 
         {/* Free Trial Option */}
-        {showFreeTrial && (
+        {trialEnabled && (
           <Card style={styles.trialCard}>
             <Card.Content>
               <View style={styles.trialContent}>
@@ -459,7 +484,7 @@ export default function PaywallScreen({
 
         {/* CTA Buttons */}
         <View style={styles.ctaContainer}>
-          {showFreeTrial && (
+          {trialEnabled && (
             <Button
               mode="contained"
               onPress={handleStartFreeTrial}
@@ -515,9 +540,9 @@ export default function PaywallScreen({
             </Text>
           </View>
           <View style={styles.trustItem}>
-            <Icon name="refresh" size={20} color={colors.success} />
+            <Icon name="store-check" size={20} color={colors.success} />
             <Text variant="bodySmall" style={styles.trustText}>
-              Money-Back Guarantee
+              Store-Managed Billing
             </Text>
           </View>
         </View>
@@ -529,7 +554,7 @@ export default function PaywallScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.gray50,
   },
   scrollContent: {
     padding: spacing.lg,
@@ -561,7 +586,7 @@ const styles = StyleSheet.create({
   },
   socialProofCard: {
     marginBottom: spacing.lg,
-    ...shadows.small,
+    ...shadows.sm,
   },
   socialProofRow: {
     flexDirection: 'row',
@@ -583,7 +608,7 @@ const styles = StyleSheet.create({
   },
   planCard: {
     marginBottom: spacing.md,
-    ...shadows.small,
+    ...shadows.sm,
   },
   popularPlanCard: {
     borderWidth: 2,
@@ -667,7 +692,7 @@ const styles = StyleSheet.create({
   trialCard: {
     marginBottom: spacing.lg,
     backgroundColor: colors.primaryLight,
-    ...shadows.small,
+    ...shadows.sm,
   },
   trialContent: {
     flexDirection: 'row',

@@ -13,7 +13,7 @@ import {
   previousCard,
   setCurrentCardIndex,
 } from '../../store/slices/flashcardSlice';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { ActionButton } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';

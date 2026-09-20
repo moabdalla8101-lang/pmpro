@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Text } from 'react-native-paper';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { colors } from '../theme';
 import { spacing } from '../utils/styles';
 
@@ -24,7 +24,7 @@ export default function SectionHeader({
     <View style={styles.container}>
       <View style={styles.titleContainer}>
         {icon && (
-          <Icon name={icon} size={24} color={colors.primary} style={styles.icon} />
+          <Icon name={icon as any} size={24} color={colors.primary} style={styles.icon} />
         )}
         <View style={styles.textContainer}>
           <Text variant="titleLarge" style={styles.title}>

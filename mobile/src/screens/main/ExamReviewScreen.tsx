@@ -3,7 +3,7 @@ import { View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity } from 're
 import { Card, Text, ActivityIndicator, ProgressBar } from 'react-native-paper';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { examService } from '../../services/api/examService';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ActionButton, CategoryBadge, SectionHeader } from '../../components';
 import { colors } from '../../theme';

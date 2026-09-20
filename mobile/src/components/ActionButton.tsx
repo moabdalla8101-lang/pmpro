@@ -1,8 +1,14 @@
 import React from 'react';
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import {
+  StyleProp,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+  ViewStyle,
+} from 'react-native';
 import { Button, Text } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { colors } from '../theme';
 import { spacing, borderRadius, shadows } from '../utils/styles';
 
@@ -15,6 +21,7 @@ interface ActionButtonProps {
   loading?: boolean;
   disabled?: boolean;
   fullWidth?: boolean;
+  style?: StyleProp<ViewStyle>;
 }
 
 export default function ActionButton({
@@ -26,6 +33,7 @@ export default function ActionButton({
   loading = false,
   disabled = false,
   fullWidth = false,
+  style,
 }: ActionButtonProps) {
   // Ensure boolean props are actually booleans
   const isLoading = Boolean(loading);
@@ -46,7 +54,7 @@ export default function ActionButton({
         onPress={onPress}
         disabled={isDisabled || isLoading}
         activeOpacity={0.8}
-        style={[isFullWidth && styles.fullWidth, isDisabled && styles.disabled]}
+        style={[isFullWidth && styles.fullWidth, isDisabled && styles.disabled, style]}
       >
         <LinearGradient
           colors={isDisabled ? [colors.gray400, colors.gray400] : [colors.primary, colors.primaryLight]}
@@ -60,7 +68,7 @@ export default function ActionButton({
         >
           <View style={styles.buttonContent}>
             {icon && !isLoading && (
-              <Icon name={icon} size={20} color="#ffffff" style={styles.icon} />
+              <Icon name={icon as any} size={20} color="#ffffff" style={styles.icon} />
             )}
             {isLoading ? (
               <Text style={[styles.buttonText, { fontSize, color: '#ffffff' }]}>Loading...</Text>
@@ -85,7 +93,7 @@ export default function ActionButton({
         icon={icon}
         buttonColor={colors.secondary}
         textColor="#000000"
-        style={[styles.button, isFullWidth && styles.fullWidth]}
+        style={[styles.button, isFullWidth && styles.fullWidth, style]}
         labelStyle={{ fontSize, paddingVertical: spacing.xs }}
       >
         {label}
@@ -103,7 +111,7 @@ export default function ActionButton({
         icon={icon}
         buttonColor="transparent"
         textColor={colors.primary}
-        style={[styles.button, isFullWidth && styles.fullWidth, { borderColor: colors.primary }]}
+        style={[styles.button, isFullWidth && styles.fullWidth, { borderColor: colors.primary }, style]}
         labelStyle={{ fontSize, paddingVertical: spacing.xs }}
       >
         {label}
@@ -120,7 +128,7 @@ export default function ActionButton({
       loading={isLoading}
       icon={icon}
       textColor={colors.primary}
-      style={[styles.button, isFullWidth && styles.fullWidth]}
+      style={[styles.button, isFullWidth && styles.fullWidth, style]}
       labelStyle={{ fontSize, paddingVertical: spacing.xs }}
     >
       {label}

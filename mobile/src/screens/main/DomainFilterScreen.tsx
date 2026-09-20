@@ -5,7 +5,7 @@ import { useNavigation } from '@react-navigation/native';
 import { SectionHeader, ActionButton } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 
 const DOMAINS = [
   { id: 'People', name: 'People', color: colors.domain.people, icon: 'account-group' },
@@ -23,9 +23,8 @@ export default function DomainFilterScreen() {
 
   const handleStartPractice = () => {
     if (selectedDomain) {
-      (navigation as any).navigate('Practice', {
-        screen: 'PracticeList',
-        params: { domain: selectedDomain },
+      (navigation as any).navigate('PracticeList', {
+        domain: selectedDomain,
       });
     }
   };
@@ -69,7 +68,7 @@ export default function DomainFilterScreen() {
                           ]}
                         >
                           <Icon
-                            name={domain.icon}
+                            name={domain.icon as any}
                             size={24}
                             color={isSelected ? '#FFFFFF' : domain.color}
                           />

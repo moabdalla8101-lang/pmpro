@@ -6,12 +6,18 @@ import { logout } from '../../store/slices/authSlice';
 import { RootState, AppDispatch } from '../../store';
 import { loadSettings, saveSettings, setDailyQuestionsGoal, setDailyMinutesGoal } from '../../store/slices/settingsSlice';
 import { ActionButton, SectionHeader } from '../../components';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
+import { useNavigation } from '@react-navigation/native';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
+import {
+  getSubscriptionDisplayName,
+  hasPremiumAccess,
+} from '../../utils/subscriptionUtils';
 
 export default function SettingsScreen() {
   const dispatch = useDispatch<AppDispatch>();
+  const navigation = useNavigation();
   const { user } = useSelector((state: RootState) => state.auth);
   const { dailyQuestionsGoal, dailyMinutesGoal } = useSelector((state: RootState) => state.settings);
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
@@ -62,17 +68,11 @@ export default function SettingsScreen() {
   };
 
   const getSubscriptionColor = (tier: string) => {
-    switch (tier?.toLowerCase()) {
-      case 'premium':
-        return colors.primary;
-      case 'pro':
-        return colors.warning;
-      default:
-        return colors.gray500;
-    }
+    return hasPremiumAccess(tier) ? colors.primary : colors.gray500;
   };
 
   const subscriptionTier = user?.subscriptionTier || 'Free';
+  const isPremium = hasPremiumAccess(subscriptionTier);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -100,11 +100,20 @@ export default function SettingsScreen() {
               <View style={styles.subscriptionBadge}>
                 <View style={[styles.subscriptionDot, { backgroundColor: getSubscriptionColor(subscriptionTier) }]} />
                 <Text variant="labelMedium" style={[styles.subscriptionText, { color: getSubscriptionColor(subscriptionTier) }]}>
-                  {subscriptionTier}
+                  {getSubscriptionDisplayName(subscriptionTier)}
                 </Text>
               </View>
             </View>
           </Card.Content>
+          <Button
+            mode={isPremium ? 'outlined' : 'contained'}
+            icon={isPremium ? 'crown' : 'arrow-up-circle'}
+            onPress={() => (navigation as any).navigate('Paywall')}
+            style={styles.upgradeButton}
+            buttonColor={isPremium ? undefined : colors.primary}
+          >
+            {isPremium ? 'View Subscription' : 'Upgrade to Premium'}
+          </Button>
         </Card>
 
         {/* Preferences Section */}
@@ -314,6 +323,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
     borderRadius: borderRadius.lg,
     ...shadows.sm,
+  },
+  upgradeButton: {
+    marginHorizontal: spacing.base,
+    marginBottom: spacing.base,
   },
   accountContent: {
     flexDirection: 'row',

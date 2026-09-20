@@ -9,7 +9,7 @@ import { fetchQuestions } from '../../store/slices/questionSlice';
 import { addBookmark, removeBookmark, checkBookmark } from '../../store/slices/bookmarkSlice';
 import { dailyActivityService } from '../../services/dailyActivityService';
 import { useFocusEffect } from '@react-navigation/native';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { ActionButton } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
@@ -152,7 +152,7 @@ export default function ExamStartScreen() {
               // End session and track time
               await dailyActivityService.endSession();
               
-              navigation.navigate('ExamReview' as never, { examId } as never);
+              (navigation as any).navigate('ExamReview', { examId });
             } catch (error: any) {
               Alert.alert('Error', error.message || 'Failed to submit exam');
             }

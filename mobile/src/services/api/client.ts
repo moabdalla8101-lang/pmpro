@@ -1,5 +1,6 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { DeviceEventEmitter } from 'react-native';
 import { getApiUrl } from '../../utils/getApiUrl';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || getApiUrl();
@@ -36,7 +37,7 @@ client.interceptors.response.use(
       // Token expired or invalid
       await AsyncStorage.removeItem('token');
       await AsyncStorage.removeItem('user');
-      // Navigate to login - handled by app
+      DeviceEventEmitter.emit('auth:unauthorized');
     }
     return Promise.reject(error);
   }

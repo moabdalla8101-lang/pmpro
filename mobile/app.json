@@ -2,21 +2,22 @@
   "expo": {
     "name": "PMP Exam Prep",
     "slug": "pmp-exam-prep",
+    "owner": "mmasoud81",
+    "scheme": "pmpexamprep",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.pmpapp.examprep"
+      "bundleIdentifier": "com.pmpapp.examprep",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -36,13 +37,28 @@
           "icon": "./assets/notification-icon.png",
           "color": "#ffffff"
         }
-      ]
+      ],
+      "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#F8F7FC"
+        }
+      ],
+      "expo-font"
     ],
     "extra": {
-      "revenueCatTestApiKey": "test_GBuMzfOYeDJtjKhPcqBSwReJhZx",
       "eas": {
         "projectId": "ad18936d-b103-4852-91e8-3ec714a462e0"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/ad18936d-b103-4852-91e8-3ec714a462e0"
     }
   }
 }

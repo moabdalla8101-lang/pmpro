@@ -1,17 +1,18 @@
 import React from 'react';
 import { View, StyleSheet, ScrollView, SafeAreaView, Dimensions } from 'react-native';
-import { Card, Text, ProgressBar, SegmentedButtons } from 'react-native-paper';
+import { Card, Text, ProgressBar } from 'react-native-paper';
 import { useSelector } from 'react-redux';
 import { RootState } from '../../store';
-import { LineChart, PieChart } from 'react-native-chart-kit';
-import { SectionHeader, StatCard, ProgressRing } from '../../components';
+import { PieChart } from 'react-native-chart-kit';
+import { EmptyState, SectionHeader, StatCard, ProgressRing } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
 import { useDispatch } from 'react-redux';
 import { AppDispatch } from '../../store';
 import { fetchProgress, fetchPerformanceByKnowledgeArea, fetchPerformanceByDomain } from '../../store/slices/progressSlice';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { hasPremiumAccess } from '../../utils/subscriptionUtils';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -19,11 +20,11 @@ const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
 
 export default function ProgressScreen() {
   const dispatch = useDispatch<AppDispatch>();
+  const navigation = useNavigation();
+  const { user } = useSelector((state: RootState) => state.auth);
   const { overallProgress, performanceByKnowledgeArea, performanceByDomain, isLoading, error } = useSelector(
     (state: RootState) => state.progress
   );
-
-  const [timeRange, setTimeRange] = React.useState('all');
 
   // Fetch all progress data when screen comes into focus
   useFocusEffect(
@@ -50,27 +51,6 @@ export default function ProgressScreen() {
   }
   const totalAnswered = overallProgress?.totalQuestionsAnswered || overallProgress?.total_questions_answered || 0;
   const correctAnswers = overallProgress?.correctAnswers || overallProgress?.correct_answers || 0;
-  
-  // Debug log
-  console.log('Progress Screen - Progress Data:', {
-    accuracyValue,
-    accuracy,
-    totalAnswered,
-    correctAnswers,
-    overallProgress,
-  });
-
-  // Mock data for charts (TODO: Get from backend)
-  const accuracyOverTime = {
-    labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
-    datasets: [
-      {
-        data: [65, 70, 75, accuracy || 80],
-        color: (opacity = 1) => `rgba(98, 0, 238, ${opacity})`,
-        strokeWidth: 2,
-      },
-    ],
-  };
 
   const knowledgeAreaData = performanceByKnowledgeArea.length > 0
     ? performanceByKnowledgeArea.map((area: any, index: number) => {
@@ -87,11 +67,7 @@ export default function ProgressScreen() {
           legendFontSize: 12,
         };
       })
-    : [
-        { name: 'Integration', accuracy: 75, color: colors.knowledgeArea.integration, legendFontColor: colors.textSecondary, legendFontSize: 12 },
-        { name: 'Scope', accuracy: 80, color: colors.knowledgeArea.scope, legendFontColor: colors.textSecondary, legendFontSize: 12 },
-        { name: 'Schedule', accuracy: 70, color: colors.knowledgeArea.schedule, legendFontColor: colors.textSecondary, legendFontSize: 12 },
-      ];
+    : [];
 
   const chartConfig = {
     backgroundColor: '#ffffff',
@@ -133,6 +109,24 @@ export default function ProgressScreen() {
     );
   }
 
+  if (!hasPremiumAccess(user?.subscriptionTier)) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <EmptyState
+          icon="chart-line"
+          title="Unlock Advanced Analytics"
+          message="Upgrade to Premium to track performance trends by domain and knowledge area."
+          actionLabel="View Premium Plans"
+          onActionPress={() =>
+            (navigation as any).navigate('Paywall', {
+              feature: 'advanced_analytics',
+            })
+          }
+        />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
@@ -169,40 +163,15 @@ export default function ProgressScreen() {
           </View>
         </View>
 
-        {/* Time Range Selector */}
-        <View style={styles.timeRangeContainer}>
-          <SegmentedButtons
-            value={timeRange}
-            onValueChange={setTimeRange}
-            buttons={[
-              { value: 'week', label: 'Week' },
-              { value: 'month', label: 'Month' },
-              { value: 'all', label: 'All Time' },
-            ]}
-            style={styles.segmentedButtons}
-          />
-        </View>
-
-        {/* Accuracy Over Time Chart */}
+        {/* Accuracy history requires completed practice activity. */}
         <Card style={styles.chartCard}>
           <Card.Content>
             <Text variant="titleMedium" style={styles.chartTitle}>
               Accuracy Over Time
             </Text>
-            <LineChart
-              data={accuracyOverTime}
-              width={screenWidth - 64}
-              height={220}
-              chartConfig={chartConfig}
-              bezier
-              style={styles.chart}
-              withInnerLines={false}
-              withOuterLines={true}
-              withVerticalLabels={true}
-              withHorizontalLabels={true}
-              withDots={true}
-              withShadow={false}
-            />
+            <Text variant="bodyMedium" style={styles.emptyText}>
+              Complete practice questions to build your accuracy history.
+            </Text>
           </Card.Content>
         </Card>
 
