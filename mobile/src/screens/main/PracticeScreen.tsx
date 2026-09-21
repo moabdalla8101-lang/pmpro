@@ -12,6 +12,7 @@ import { CategoryBadge, SectionHeader, EmptyState } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
+import { useRequireAuth } from '../../utils/requireAuth';
 
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
 
@@ -19,7 +20,9 @@ export default function PracticeScreen() {
   const dispatch = useDispatch<AppDispatch>();
   const navigation = useNavigation();
   const route = useRoute();
+  const requireAuth = useRequireAuth();
   const { questions, isLoading } = useSelector((state: RootState) => state.questions);
+  const { isAuthenticated } = useSelector((state: RootState) => state.auth);
   
   const [selectedQuestionFilter, setSelectedQuestionFilter] = useState<'all' | 'unanswered'>('all');
   const [selectedKnowledgeArea, setSelectedKnowledgeArea] = useState<string | null>(null);
@@ -56,7 +59,12 @@ export default function PracticeScreen() {
     // while the answered-question filter is being fetched.
     dispatch(fetchQuestions(filters));
     
-    // Fetch answered question IDs
+    // Answered status is account-scoped — skip for guests
+    if (!isAuthenticated) {
+      setAnsweredQuestionIds(new Set());
+      return;
+    }
+
     try {
       const answeredData = await progressService.getAnsweredQuestionIds(PMP_CERTIFICATION_ID);
       const answeredIds = new Set<string>(answeredData.questionIds || []);
@@ -128,7 +136,7 @@ export default function PracticeScreen() {
       return () => {
         dailyActivityService.endSession();
       };
-    }, [dispatch, selectedKnowledgeArea, selectedDomain, route.params])
+    }, [dispatch, selectedKnowledgeArea, selectedDomain, route.params, isAuthenticated])
   );
 
   useEffect(() => {
@@ -136,13 +144,16 @@ export default function PracticeScreen() {
     fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'PracticeScreen.tsx:20',message:'PracticeScreen useEffect triggered',data:{selectedQuestionFilter,selectedKnowledgeArea},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
     // #endregion
     loadQuestions();
-  }, [selectedKnowledgeArea]);
+  }, [selectedKnowledgeArea, isAuthenticated]);
 
   const handleQuestionPress = (questionId: string) => {
     (navigation as any).navigate('QuestionDetail', { questionId });
   };
 
   const toggleQuestionFilter = (filter: 'all' | 'unanswered') => {
+    if (filter === 'unanswered' && !requireAuth('progress')) {
+      return;
+    }
     setSelectedQuestionFilter(filter);
   };
 

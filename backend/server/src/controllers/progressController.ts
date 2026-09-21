@@ -1,8 +1,9 @@
 import { Response, NextFunction } from 'express';
-import { NotFoundError } from '@pmp-app/shared';
+import { NotFoundError, ValidationError } from '@pmp-app/shared';
 import { AuthRequest } from '../middleware/auth';
 import { pool } from '../db/connection';
 import { v4 as uuidv4 } from 'uuid';
+import { serializeAnsweredQuestionFeedback, serializeAdminQuestion } from '../serializers/questionSerializers';
 
 export async function getUserProgress(req: AuthRequest, res: Response, next: NextFunction) {
   try {
@@ -92,28 +93,98 @@ export async function updateUserProgress(req: AuthRequest, res: Response, next: 
 
 export async function recordAnswer(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    const { questionId, answerId } = req.body;
+    const { questionId, answerId, answerIds, dragMatches } = req.body;
 
-    // Get answer to check if correct
-    const answerResult = await pool.query(
-      'SELECT is_correct FROM answers WHERE id = $1',
-      [answerId]
+    const questionResult = await pool.query('SELECT * FROM questions WHERE id = $1', [questionId]);
+    if (questionResult.rows.length === 0) {
+      return next(new NotFoundError('Question not found'));
+    }
+    const question = questionResult.rows[0];
+
+    const answersResult = await pool.query(
+      'SELECT * FROM answers WHERE question_id = $1 ORDER BY "order"',
+      [questionId]
     );
+    const answers = answersResult.rows;
 
-    if (answerResult.rows.length === 0) {
-      return next(new NotFoundError('Answer not found'));
+    const questionType = question.question_type;
+    let isCorrect = false;
+    const userAnswerIds: string[] = [];
+
+    if (questionType === 'drag_and_match' && dragMatches && typeof dragMatches === 'object') {
+      let metadata = question.question_metadata;
+      if (typeof metadata === 'string') {
+        try {
+          metadata = JSON.parse(metadata);
+        } catch {
+          metadata = null;
+        }
+      }
+      const correctMatches = metadata?.matches || metadata?.correctMatches || {};
+      const leftKeys = Object.keys(correctMatches);
+      isCorrect =
+        leftKeys.length > 0 &&
+        leftKeys.every((key) => String(dragMatches[key]) === String(correctMatches[key]));
+
+      // Persist a placeholder user_answer row using first answer if present
+      if (answers[0]) {
+        const userAnswerId = uuidv4();
+        await pool.query(
+          `INSERT INTO user_answers (id, user_id, question_id, answer_id, is_correct, answered_at)
+           VALUES ($1, $2, $3, $4, $5, NOW())`,
+          [userAnswerId, req.user!.userId, questionId, answers[0].id, isCorrect]
+        );
+        userAnswerIds.push(userAnswerId);
+      }
+    } else {
+      const selectedIds: string[] = Array.isArray(answerIds)
+        ? answerIds
+        : answerId
+          ? [answerId]
+          : [];
+
+      if (!questionId || selectedIds.length === 0) {
+        return next(new ValidationError('questionId and answerId(s) are required'));
+      }
+
+      if (answers.length === 0) {
+        return next(new NotFoundError('Answers not found'));
+      }
+
+      const answerById = new Map(answers.map((a: any) => [a.id, a]));
+      for (const id of selectedIds) {
+        if (!answerById.has(id)) {
+          return next(new NotFoundError('Answer not found'));
+        }
+      }
+
+      const correctIds = answers.filter((a: any) => a.is_correct).map((a: any) => a.id);
+      const selectedSet = new Set(selectedIds);
+      const correctSet = new Set(correctIds);
+      isCorrect =
+        selectedIds.length === correctIds.length &&
+        selectedIds.every((id) => correctSet.has(id)) &&
+        correctIds.every((id) => selectedSet.has(id));
+
+      for (const id of selectedIds) {
+        const row = answerById.get(id)!;
+        const userAnswerId = uuidv4();
+        await pool.query(
+          `INSERT INTO user_answers (id, user_id, question_id, answer_id, is_correct, answered_at)
+           VALUES ($1, $2, $3, $4, $5, NOW())`,
+          [userAnswerId, req.user!.userId, questionId, id, Boolean(row.is_correct)]
+        );
+        userAnswerIds.push(userAnswerId);
+      }
     }
 
-    const isCorrect = answerResult.rows[0].is_correct;
-    const userAnswerId = uuidv4();
+    const feedback = serializeAnsweredQuestionFeedback(question, answers, {
+      isCorrect,
+      userAnswerId: userAnswerIds[0],
+      userAnswerIds,
+    });
 
-    await pool.query(
-      `INSERT INTO user_answers (id, user_id, question_id, answer_id, is_correct, answered_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())`,
-      [userAnswerId, req.user!.userId, questionId, answerId, isCorrect]
-    );
-
-    res.json({ isCorrect, userAnswerId });
+    res.json(feedback);
   } catch (error) {
     next(error);
   }
@@ -235,34 +306,33 @@ export async function getMissedQuestions(req: AuthRequest, res: Response, next: 
     
     console.log('Missed Questions Result Count:', result.rows.length);
     
-    // Get answers for each question
+    // Get answers for each question — post-answer review may include correctness
     const missedQuestions = await Promise.all(
       result.rows.map(async (row: any) => {
         const answersResult = await pool.query(
-          'SELECT id, answer_text, is_correct, "order" FROM answers WHERE question_id = $1 ORDER BY "order"',
+          'SELECT * FROM answers WHERE question_id = $1 ORDER BY "order"',
           [row.question_id]
         );
-        
-        return {
-          questionId: row.question_id,
-          question: {
+
+        const questionPayload = serializeAdminQuestion(
+          {
             id: row.question_id,
-            questionText: row.question_text,
             question_text: row.question_text,
             difficulty: row.difficulty,
             explanation: row.explanation,
-            knowledgeAreaId: row.knowledge_area_id,
-            knowledgeAreaName: row.knowledge_area_name,
-            knowledge_area_name: row.knowledge_area_name,
-            answers: answersResult.rows.map((ans: any) => ({
-              id: ans.id,
-              answerText: ans.answer_text,
-              answer_text: ans.answer_text,
-              isCorrect: ans.is_correct,
-              is_correct: ans.is_correct,
-              order: ans.order,
-            })),
+            knowledge_area_id: row.knowledge_area_id,
+            certification_id: null,
+            is_active: true,
+            created_at: row.answered_at,
+            updated_at: row.answered_at,
           },
+          answersResult.rows,
+          row.knowledge_area_name
+        );
+
+        return {
+          questionId: row.question_id,
+          question: questionPayload,
           answeredAt: row.answered_at,
           isReviewed: row.is_reviewed || false,
           userAnswerId: row.user_answer_id,

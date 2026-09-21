@@ -372,6 +372,15 @@ export async function getExamReview(req: AuthRequest, res: Response, next: NextF
       return next(new NotFoundError('Exam not found'));
     }
 
+    const exam = examResult.rows[0];
+
+    // Do not leak correctness/explanations until the exam is completed
+    if (!exam.completed_at) {
+      return res.status(403).json({
+        error: 'Exam review is available only after the exam is submitted',
+      });
+    }
+
     // Get all answers for this exam with knowledge area information
     const answersResult = await pool.query(
       `SELECT 
@@ -388,14 +397,13 @@ export async function getExamReview(req: AuthRequest, res: Response, next: NextF
        LEFT JOIN knowledge_areas ka ON q.knowledge_area_id = ka.id
        JOIN answers a ON ua.answer_id = a.id
        WHERE ua.user_id = $1
-       AND ua.answered_at >= (SELECT started_at FROM mock_exams WHERE id = $2)
-       AND ua.answered_at <= COALESCE((SELECT completed_at FROM mock_exams WHERE id = $2), NOW())
+       AND ua.answered_at >= $2
+       AND ua.answered_at <= $3
        ORDER BY ua.answered_at`,
-      [req.user!.userId, id]
+      [req.user!.userId, exam.started_at, exam.completed_at]
     );
 
     // Transform to camelCase for API response
-    const exam = examResult.rows[0];
     const answers = answersResult.rows.map((answer: any) => ({
       id: answer.id,
       userId: answer.user_id,

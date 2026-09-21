@@ -18,15 +18,18 @@ import {
   hasPremiumAccess,
   hasReachedFreeLimit,
 } from '../../utils/subscriptionUtils';
+import { useRequireAuth } from '../../utils/requireAuth';
+import { AnsweredQuestionFeedback } from '../../types/question';
 
 export default function QuestionDetailScreen() {
   const route = useRoute();
   const navigation = useNavigation();
   const questionId = ((route.params as { questionId?: string }) || {}).questionId || '';
   const dispatch = useDispatch<AppDispatch>();
+  const requireAuth = useRequireAuth();
   const { currentQuestion, questions, isLoading, error } = useSelector((state: RootState) => state.questions);
   const { bookmarkedQuestionIds } = useSelector((state: RootState) => state.bookmarks);
-  const { user } = useSelector((state: RootState) => state.auth);
+  const { user, isAuthenticated } = useSelector((state: RootState) => state.auth);
   const { overallProgress } = useSelector((state: RootState) => state.progress);
   
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
@@ -34,6 +37,7 @@ export default function QuestionDetailScreen() {
   const [dragMatches, setDragMatches] = useState<{ [leftItem: string]: string }>({}); // For drag_and_match
   const [showExplanation, setShowExplanation] = useState(false);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
+  const [answerFeedback, setAnswerFeedback] = useState<AnsweredQuestionFeedback | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
   
@@ -63,46 +67,13 @@ export default function QuestionDetailScreen() {
     if (item && typeof item === 'object') return item.text || String(item.index) || String(item);
     return String(item);
   });
+
+  // Correct matches come only from post-submit feedback (never preloaded)
+  const correctMatches: { [key: string]: string } = answerFeedback?.correctMatches || {};
   
-  // Normalize correctMatches - convert keys (letters) and values (indices) to text
-  const rawMatches = dragMetadata?.matches || {};
-  const correctMatches: { [key: string]: string } = {};
-  
-  if (Object.keys(rawMatches).length > 0) {
-    Object.entries(rawMatches).forEach(([leftKey, rightValue]: [string, any]) => {
-      // Find the left item by letter (leftKey is typically a letter like "A", "B", etc.)
-      const leftItem = rawLeftItems.find((item: any) => {
-        if (typeof item === 'object') {
-          return item.letter === leftKey || String(item.letter) === String(leftKey);
-        }
-        return false;
-      });
-      const leftItemText = leftItem && typeof leftItem === 'object' 
-        ? (leftItem.text || leftItem.letter || String(leftItem)) 
-        : leftKey;
-      
-      // Find the right item by index (rightValue is typically an index like 1, 2, 3, etc.)
-      const rightItem = rawRightItems.find((item: any) => {
-        if (typeof item === 'object') {
-          return item.index === rightValue || 
-                 String(item.index) === String(rightValue) ||
-                 Number(item.index) === Number(rightValue);
-        }
-        return false;
-      });
-      const rightItemText = rightItem && typeof rightItem === 'object' 
-        ? (rightItem.text || String(rightItem.index) || String(rightItem)) 
-        : String(rightValue);
-      
-      if (leftItemText && rightItemText) {
-        correctMatches[leftItemText] = rightItemText;
-      }
-    });
-  }
-  
-  // Get question and explanation images
+  // Get question images (explanation images only after feedback)
   const questionImages = currentQuestion?.questionImages || currentQuestion?.question_images || null;
-  const explanationImages = currentQuestion?.explanationImages || currentQuestion?.explanation_images || null;
+  const explanationImages = answerFeedback?.explanationImages || null;
   
   // Helper to get full image URL
   const getImageUrl = (imagePath: string) => {
@@ -155,6 +126,7 @@ export default function QuestionDetailScreen() {
         setDragMatches({});
         setShowExplanation(false);
         setIsCorrect(null);
+        setAnswerFeedback(null);
       }
       prevQuestionIdRef.current = questionId;
     }
@@ -167,16 +139,18 @@ export default function QuestionDetailScreen() {
   // #endregion
 
   useEffect(() => {
-    if (questionId) {
+    if (questionId && isAuthenticated) {
       dispatch(checkBookmark(questionId) as any);
     }
-  }, [questionId, dispatch]);
+  }, [questionId, dispatch, isAuthenticated]);
 
   useEffect(() => {
     setIsBookmarked(bookmarkedQuestionIds.includes(questionId));
   }, [bookmarkedQuestionIds, questionId]);
 
   const handleToggleBookmark = async () => {
+    if (!requireAuth('bookmarks')) return;
+
     if (!hasPremiumAccess(user?.subscriptionTier)) {
       (navigation as any).navigate('Paywall', { feature: 'bookmarks' });
       return;
@@ -191,6 +165,7 @@ export default function QuestionDetailScreen() {
 
   const handleSubmit = async () => {
     if (!currentQuestion) return;
+    if (!requireAuth('submit_answer')) return;
 
     const questionsAnswered =
       overallProgress?.totalQuestionsAnswered ||
@@ -229,106 +204,38 @@ export default function QuestionDetailScreen() {
 
     setSubmitting(true);
     try {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QuestionDetailScreen.tsx:88',message:'handleSubmit called',data:{questionId,selectedAnswer,selectedAnswers,isMultipleSelection,hasCurrentQuestion:!!currentQuestion},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H4'})}).catch(()=>{});
-      // #endregion
-      
+      let feedback: AnsweredQuestionFeedback;
+
       if (isDragAndMatch) {
-        // For drag_and_match, check if all matches are correct
-        let allCorrect = true;
-        for (const leftItem of leftItems) {
-          const userMatch = dragMatches[leftItem];
-          const correctMatch = correctMatches[leftItem];
-          if (userMatch !== correctMatch) {
-            allCorrect = false;
-            break;
-          }
-        }
-        setIsCorrect(allCorrect);
-        
-        // Record matches as answers (we'll need to find the answer IDs)
-        // For now, we'll just mark it as correct/incorrect
-        // TODO: Update backend to handle drag_and_match submissions properly
-      } else if (isMultipleSelection) {
-        // For multiple selection, record all answers and check if all are correct
-        let allCorrect = true;
-        let correctCount = 0;
-        let totalCorrectAnswers = 0;
-        
-        // Count total correct answers for this question
-        currentQuestion.answers?.forEach((a: any) => {
-          if (a.isCorrect || a.is_correct) {
-            totalCorrectAnswers++;
-          }
+        feedback = await progressService.recordAnswer(questionId, undefined, {
+          dragMatches,
         });
-        
-        // Record each selected answer
-        for (const answerId of selectedAnswers) {
-          const result = await progressService.recordAnswer(questionId, answerId);
-          const answer = currentQuestion.answers?.find((a: any) => a.id === answerId);
-          const isAnswerCorrect = answer?.isCorrect || answer?.is_correct || false;
-          
-          if (isAnswerCorrect) {
-            correctCount++;
-          } else {
-            allCorrect = false;
-          }
-        }
-        
-        // For multiple selection, all selected must be correct AND all correct must be selected
-        const allCorrectSelected = allCorrect && correctCount === totalCorrectAnswers && selectedAnswers.length === totalCorrectAnswers;
-        setIsCorrect(allCorrectSelected);
+      } else if (isMultipleSelection) {
+        feedback = await progressService.recordAnswer(questionId, undefined, {
+          answerIds: selectedAnswers,
+        });
       } else {
-        // Single selection
-        const result = await progressService.recordAnswer(questionId, selectedAnswer!);
-        setIsCorrect(result.isCorrect);
+        feedback = await progressService.recordAnswer(questionId, selectedAnswer!);
       }
-      
-      // Track question answered for daily goals
+
+      setAnswerFeedback(feedback);
+      setIsCorrect(feedback.isCorrect);
       await dailyActivityService.incrementQuestions(1);
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QuestionDetailScreen.tsx:120',message:'Answer recorded, setting explanation',data:{isCorrect},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H4'})}).catch(()=>{});
-      // #endregion
-      
       setShowExplanation(true);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QuestionDetailScreen.tsx:124',message:'Explanation state set to true',data:{isCorrect},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H4'})}).catch(()=>{});
-      // #endregion
     } catch (error: any) {
       console.error('Failed to record answer:', error);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QuestionDetailScreen.tsx:127',message:'Error recording answer, showing explanation anyway',data:{error:error?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H4'})}).catch(()=>{});
-      // #endregion
-      // Still show explanation based on selected answer(s)
-      if (isDragAndMatch) {
-        // Check if all matches are correct
-        let allCorrect = true;
-        for (const leftItem of leftItems) {
-          const userMatch = dragMatches[leftItem];
-          const correctMatch = correctMatches[leftItem];
-          if (userMatch !== correctMatch) {
-            allCorrect = false;
-            break;
-          }
-        }
-        setIsCorrect(allCorrect);
-      } else if (isMultipleSelection) {
-        // Check if all selected are correct and all correct are selected
-        const correctAnswers = currentQuestion.answers?.filter((a: any) => a.isCorrect || a.is_correct) || [];
-        const selectedCorrect = selectedAnswers.filter(id => {
-          const answer = currentQuestion.answers?.find((a: any) => a.id === id);
-          return answer?.isCorrect || answer?.is_correct;
-        });
-        setIsCorrect(selectedCorrect.length === correctAnswers.length && selectedAnswers.length === correctAnswers.length);
-      } else {
-        const answer = currentQuestion.answers?.find((a: any) => a.id === selectedAnswer);
-        setIsCorrect(answer?.isCorrect || answer?.is_correct || false);
-      }
-      setShowExplanation(true);
+      // Do not reveal correctness without a successful server-validated submission
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const isAnswerMarkedCorrect = (answerId: string) => {
+    if (!answerFeedback) return false;
+    return (
+      answerFeedback.correctAnswerIds?.includes(answerId) ||
+      answerFeedback.answers?.some((a) => a.id === answerId && a.isCorrect)
+    );
   };
 
   const getAnswerStyle = (answerId: string) => {
@@ -336,20 +243,16 @@ export default function QuestionDetailScreen() {
       ? selectedAnswers.includes(answerId)
       : selectedAnswer === answerId;
     
-    if (!showExplanation) {
+    if (!showExplanation || !answerFeedback) {
       return isSelected
         ? [styles.answerOption, styles.answerOptionSelected]
         : styles.answerOption;
     }
     
-    // Show explanation styles
-    const answer = currentQuestion?.answers?.find((a: any) => a.id === answerId);
-    const isAnswerCorrect = answer?.isCorrect || answer?.is_correct || false;
-    
-    if (isAnswerCorrect) {
+    if (isAnswerMarkedCorrect(answerId)) {
       return [styles.answerOption, styles.answerOptionCorrect];
     }
-    if (isSelected && !isAnswerCorrect) {
+    if (isSelected && !isAnswerMarkedCorrect(answerId)) {
       return [styles.answerOption, styles.answerOptionIncorrect];
     }
     return styles.answerOption;
@@ -360,7 +263,7 @@ export default function QuestionDetailScreen() {
       ? selectedAnswers.includes(answerId)
       : selectedAnswer === answerId;
     
-    if (!showExplanation) {
+    if (!showExplanation || !answerFeedback) {
       if (isMultipleSelection) {
         return isSelected ? 'checkbox-marked' : 'checkbox-blank-outline';
       } else {
@@ -368,14 +271,10 @@ export default function QuestionDetailScreen() {
       }
     }
     
-    // Show explanation icons
-    const answer = currentQuestion?.answers?.find((a: any) => a.id === answerId);
-    const isAnswerCorrect = answer?.isCorrect || answer?.is_correct || false;
-    
-    if (isAnswerCorrect) {
+    if (isAnswerMarkedCorrect(answerId)) {
       return 'check-circle';
     }
-    if (isSelected && !isAnswerCorrect) {
+    if (isSelected && !isAnswerMarkedCorrect(answerId)) {
       return 'close-circle';
     }
     return isMultipleSelection ? 'checkbox-blank-outline' : 'circle-outline';
@@ -386,18 +285,14 @@ export default function QuestionDetailScreen() {
       ? selectedAnswers.includes(answerId)
       : selectedAnswer === answerId;
     
-    if (!showExplanation) {
+    if (!showExplanation || !answerFeedback) {
       return isSelected ? colors.primary : colors.gray400;
     }
     
-    // Show explanation colors
-    const answer = currentQuestion?.answers?.find((a: any) => a.id === answerId);
-    const isAnswerCorrect = answer?.isCorrect || answer?.is_correct || false;
-    
-    if (isAnswerCorrect) {
+    if (isAnswerMarkedCorrect(answerId)) {
       return colors.success;
     }
-    if (isSelected && !isAnswerCorrect) {
+    if (isSelected && !isAnswerMarkedCorrect(answerId)) {
       return colors.error;
     }
     return colors.gray400;
@@ -683,13 +578,13 @@ export default function QuestionDetailScreen() {
                 {isCorrect ? 'Correct!' : 'Incorrect'}
               </Text>
             </View>
-            {currentQuestion.explanation && (
+            {answerFeedback?.explanation && (
               <View style={styles.explanationContent}>
                 <Text variant="bodyLarge" style={styles.explanationLabel}>
                   Explanation:
                 </Text>
                 <Text variant="bodyMedium" style={styles.explanationText}>
-                  {currentQuestion.explanation}
+                  {answerFeedback.explanation}
                 </Text>
                 
                 {/* Explanation Images */}

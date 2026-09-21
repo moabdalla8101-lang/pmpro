@@ -34,15 +34,17 @@ client.interceptors.response.use(
   },
   async (error) => {
     if (error.response?.status === 401) {
-      // Token expired or invalid
-      await AsyncStorage.removeItem('token');
-      await AsyncStorage.removeItem('user');
-      DeviceEventEmitter.emit('auth:unauthorized');
+      // Only clear session when an existing token was rejected.
+      // Guests hitting protected endpoints should stay in browse mode.
+      const token = await AsyncStorage.getItem('token');
+      if (token) {
+        await AsyncStorage.removeItem('token');
+        await AsyncStorage.removeItem('user');
+        DeviceEventEmitter.emit('auth:unauthorized');
+      }
     }
     return Promise.reject(error);
   }
 );
 
 export default client;
-
-

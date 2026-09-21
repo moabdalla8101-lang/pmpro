@@ -13,6 +13,7 @@ import { AppDispatch } from '../../store';
 import { fetchProgress, fetchPerformanceByKnowledgeArea, fetchPerformanceByDomain } from '../../store/slices/progressSlice';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { hasPremiumAccess } from '../../utils/subscriptionUtils';
+import { useRequireAuth } from '../../utils/requireAuth';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -21,7 +22,8 @@ const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
 export default function ProgressScreen() {
   const dispatch = useDispatch<AppDispatch>();
   const navigation = useNavigation();
-  const { user } = useSelector((state: RootState) => state.auth);
+  const requireAuth = useRequireAuth();
+  const { user, isAuthenticated } = useSelector((state: RootState) => state.auth);
   const { overallProgress, performanceByKnowledgeArea, performanceByDomain, isLoading, error } = useSelector(
     (state: RootState) => state.progress
   );
@@ -29,10 +31,11 @@ export default function ProgressScreen() {
   // Fetch all progress data when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
+      if (!isAuthenticated) return;
       dispatch(fetchProgress(PMP_CERTIFICATION_ID));
       dispatch(fetchPerformanceByKnowledgeArea(PMP_CERTIFICATION_ID));
       dispatch(fetchPerformanceByDomain(PMP_CERTIFICATION_ID));
-    }, [dispatch])
+    }, [dispatch, isAuthenticated])
   );
 
   // Ensure accuracy is always a number (0-100 percentage)
@@ -87,7 +90,7 @@ export default function ProgressScreen() {
   };
 
   // Show loading state
-  if (isLoading && !overallProgress && performanceByKnowledgeArea.length === 0 && performanceByDomain.length === 0) {
+  if (isAuthenticated && isLoading && !overallProgress && performanceByKnowledgeArea.length === 0 && performanceByDomain.length === 0) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
@@ -98,13 +101,27 @@ export default function ProgressScreen() {
   }
 
   // Show error state
-  if (error && !overallProgress && performanceByKnowledgeArea.length === 0 && performanceByDomain.length === 0) {
+  if (isAuthenticated && error && !overallProgress && performanceByKnowledgeArea.length === 0 && performanceByDomain.length === 0) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.errorContainer}>
           <Text variant="titleMedium" style={styles.errorText}>Error loading progress</Text>
           <Text variant="bodyMedium" style={styles.errorMessage}>{error}</Text>
         </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <EmptyState
+          icon="chart-line"
+          title="Sign in to track progress"
+          message="Create an account to save answers, streaks, and performance analytics."
+          actionLabel="Sign In"
+          onActionPress={() => requireAuth('progress')}
+        />
       </SafeAreaView>
     );
   }

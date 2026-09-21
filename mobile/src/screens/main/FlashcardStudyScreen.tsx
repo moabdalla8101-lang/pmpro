@@ -17,6 +17,7 @@ import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { ActionButton } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
+import { useRequireAuth } from '../../utils/requireAuth';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -24,9 +25,11 @@ export default function FlashcardStudyScreen() {
   const route = useRoute();
   const navigation = useNavigation();
   const dispatch = useDispatch<AppDispatch>();
+  const requireAuth = useRequireAuth();
   const { flashcards, currentCardIndex, isLoading } = useSelector(
     (state: RootState) => state.flashcards
   );
+  const { isAuthenticated } = useSelector((state: RootState) => state.auth);
 
   const { knowledgeAreaIds, markedOnly } = (route.params as any) || {};
   const [isFlipped, setIsFlipped] = useState(false);
@@ -35,11 +38,19 @@ export default function FlashcardStudyScreen() {
 
   useEffect(() => {
     if (markedOnly) {
+      if (!isAuthenticated) return;
       dispatch(fetchMarkedFlashcardsForStudy(random) as any);
     } else {
       dispatch(fetchFlashcards({ knowledgeAreaIds, random }) as any);
     }
-  }, [dispatch, knowledgeAreaIds, random, markedOnly]);
+  }, [dispatch, knowledgeAreaIds, random, markedOnly, isAuthenticated]);
+
+  useEffect(() => {
+    if (markedOnly && !isAuthenticated) {
+      requireAuth('flashcards');
+      navigation.goBack();
+    }
+  }, [markedOnly, isAuthenticated]);
 
   const currentCard = flashcards[currentCardIndex];
 
@@ -64,14 +75,18 @@ export default function FlashcardStudyScreen() {
 
   const handleKnow = async () => {
     if (currentCard) {
-      await dispatch(recordReview({ flashcardId: currentCard.id, isCorrect: true }) as any);
+      if (isAuthenticated) {
+        await dispatch(recordReview({ flashcardId: currentCard.id, isCorrect: true }) as any);
+      }
       handleNext();
     }
   };
 
   const handleDontKnow = async () => {
     if (currentCard) {
-      await dispatch(recordReview({ flashcardId: currentCard.id, isCorrect: false }) as any);
+      if (isAuthenticated) {
+        await dispatch(recordReview({ flashcardId: currentCard.id, isCorrect: false }) as any);
+      }
       handleNext();
     }
   };
@@ -96,14 +111,14 @@ export default function FlashcardStudyScreen() {
   };
 
   const handleToggleMark = async () => {
-    if (currentCard) {
-      await dispatch(
-        toggleMarkFlashcard({
-          flashcardId: currentCard.id,
-          isMarked: !currentCard.isMarked,
-        }) as any
-      );
-    }
+    if (!currentCard) return;
+    if (!requireAuth('flashcards')) return;
+    await dispatch(
+      toggleMarkFlashcard({
+        flashcardId: currentCard.id,
+        isMarked: !currentCard.isMarked,
+      }) as any
+    );
   };
 
   const frontInterpolate = flipAnimation.interpolate({

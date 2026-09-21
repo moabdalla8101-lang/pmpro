@@ -11,12 +11,14 @@ import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { RootState, AppDispatch } from '../../store';
 import { fetchUserExams, deleteExam } from '../../store/slices/examSlice';
 import { hasPremiumAccess } from '../../utils/subscriptionUtils';
+import { useRequireAuth } from '../../utils/requireAuth';
 
 export default function ExamScreen() {
   const navigation = useNavigation();
   const dispatch = useDispatch<AppDispatch>();
+  const requireAuth = useRequireAuth();
   const { exams, isLoading } = useSelector((state: RootState) => state.exams);
-  const { user } = useSelector((state: RootState) => state.auth);
+  const { user, isAuthenticated } = useSelector((state: RootState) => state.auth);
   const [examStats, setExamStats] = useState({
     totalExams: 0,
     bestScore: 0,
@@ -26,14 +28,18 @@ export default function ExamScreen() {
   // Fetch exams when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
-      dispatch(fetchUserExams());
-    }, [dispatch])
+      if (isAuthenticated) {
+        dispatch(fetchUserExams());
+      }
+    }, [dispatch, isAuthenticated])
   );
 
   // Also fetch on initial mount
   useEffect(() => {
-    dispatch(fetchUserExams());
-  }, [dispatch]);
+    if (isAuthenticated) {
+      dispatch(fetchUserExams());
+    }
+  }, [dispatch, isAuthenticated]);
 
   // Calculate exam stats
   useEffect(() => {
@@ -73,6 +79,7 @@ export default function ExamScreen() {
   });
 
   const handleStartMockExam = () => {
+    if (!requireAuth('exams')) return;
     if (!hasPremiumAccess(user?.subscriptionTier)) {
       (navigation as any).navigate('Paywall', { feature: 'mock_exams' });
       return;
@@ -83,6 +90,7 @@ export default function ExamScreen() {
   };
 
   const handleStartMiniPMP = () => {
+    if (!requireAuth('exams')) return;
     if (!hasPremiumAccess(user?.subscriptionTier)) {
       (navigation as any).navigate('Paywall', { feature: 'mock_exams' });
       return;
@@ -93,6 +101,7 @@ export default function ExamScreen() {
   };
 
   const handleStartDailyQuiz = () => {
+    if (!requireAuth('exams')) return;
     (navigation as any).navigate('DailyQuiz');
   };
 

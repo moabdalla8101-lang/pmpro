@@ -9,16 +9,16 @@ import {
   deleteQuestion,
   getQuestionsByKnowledgeArea
 } from '../controllers/questionController';
-import { authenticate, requireAdmin } from '../middleware/auth';
+import { authenticate, requireAdmin, optionalAuthenticate } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 
 const router = Router();
 
-// Public routes (authenticated users)
-router.get('/', authenticate, getQuestions);
-router.get('/by-ids', authenticate, getQuestionsByIds);
-router.get('/:id', authenticate, getQuestion);
-router.get('/knowledge-area/:knowledgeAreaId', authenticate, getQuestionsByKnowledgeArea);
+// Catalog GETs: learner shape by default; admin token gets full AdminQuestion
+router.get('/', optionalAuthenticate, getQuestions);
+router.get('/by-ids', optionalAuthenticate, getQuestionsByIds);
+router.get('/:id', optionalAuthenticate, getQuestion);
+router.get('/knowledge-area/:knowledgeAreaId', optionalAuthenticate, getQuestionsByKnowledgeArea);
 
 // Admin routes
 router.post(

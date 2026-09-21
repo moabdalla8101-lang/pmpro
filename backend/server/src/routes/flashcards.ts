@@ -6,19 +6,17 @@ import {
   toggleMarkFlashcard,
   recordFlashcardReview,
 } from '../controllers/flashcardController';
-import { authenticate } from '../middleware/auth';
+import { authenticate, optionalAuthenticate } from '../middleware/auth';
 
 const router = Router();
 
-router.use(authenticate);
-
-router.get('/', getFlashcards);
+// Browse catalog without login (optional auth enriches marked state)
+router.get('/', optionalAuthenticate, getFlashcards);
 router.get('/knowledge-areas', getKnowledgeAreas);
-router.get('/marked', getMarkedFlashcards);
-router.post('/:flashcardId/mark', toggleMarkFlashcard);
-router.post('/review', recordFlashcardReview);
+
+// User-scoped flashcard actions require auth
+router.get('/marked', authenticate, getMarkedFlashcards);
+router.post('/:flashcardId/mark', authenticate, toggleMarkFlashcard);
+router.post('/review', authenticate, recordFlashcardReview);
 
 export default router;
-
-
-

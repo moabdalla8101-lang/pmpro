@@ -18,7 +18,7 @@ import {
 export default function SettingsScreen() {
   const dispatch = useDispatch<AppDispatch>();
   const navigation = useNavigation();
-  const { user } = useSelector((state: RootState) => state.auth);
+  const { user, isAuthenticated } = useSelector((state: RootState) => state.auth);
   const { dailyQuestionsGoal, dailyMinutesGoal } = useSelector((state: RootState) => state.settings);
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
   const [questionsInput, setQuestionsInput] = useState(dailyQuestionsGoal.toString());
@@ -26,15 +26,29 @@ export default function SettingsScreen() {
   const [isEditingGoals, setIsEditingGoals] = useState(false);
 
   useEffect(() => {
-    dispatch(loadSettings() as any);
-  }, [dispatch]);
+    if (isAuthenticated) {
+      dispatch(loadSettings() as any);
+    }
+  }, [dispatch, isAuthenticated]);
 
   useEffect(() => {
     setQuestionsInput(dailyQuestionsGoal.toString());
     setMinutesInput(dailyMinutesGoal.toString());
   }, [dailyQuestionsGoal, dailyMinutesGoal]);
 
+  const handleSignIn = () => {
+    (navigation as any).navigate('Auth', {
+      screen: 'Login',
+      params: { reason: 'settings', allowDismiss: true },
+    });
+  };
+
   const handleSaveGoals = async () => {
+    if (!isAuthenticated) {
+      handleSignIn();
+      return;
+    }
+
     const questions = parseInt(questionsInput, 10);
     const minutes = parseInt(minutesInput, 10);
 
@@ -84,36 +98,67 @@ export default function SettingsScreen() {
         {/* Account Section */}
         <SectionHeader title="Account" icon="account-circle" />
         <Card style={styles.card}>
-          <Card.Content style={styles.accountContent}>
-            <Avatar.Text
-              size={64}
-              label={user?.firstName?.charAt(0)?.toUpperCase() || 'U'}
-              style={[styles.avatar, { backgroundColor: colors.primary }]}
-            />
-            <View style={styles.accountInfo}>
-              <Text variant="titleLarge" style={styles.accountName}>
-                {user?.firstName} {user?.lastName}
-              </Text>
-              <Text variant="bodyMedium" style={styles.accountEmail}>
-                {user?.email}
-              </Text>
-              <View style={styles.subscriptionBadge}>
-                <View style={[styles.subscriptionDot, { backgroundColor: getSubscriptionColor(subscriptionTier) }]} />
-                <Text variant="labelMedium" style={[styles.subscriptionText, { color: getSubscriptionColor(subscriptionTier) }]}>
-                  {getSubscriptionDisplayName(subscriptionTier)}
-                </Text>
-              </View>
+          {isAuthenticated ? (
+            <View>
+              <Card.Content style={styles.accountContent}>
+                <Avatar.Text
+                  size={64}
+                  label={user?.firstName?.charAt(0)?.toUpperCase() || 'U'}
+                  style={[styles.avatar, { backgroundColor: colors.primary }]}
+                />
+                <View style={styles.accountInfo}>
+                  <Text variant="titleLarge" style={styles.accountName}>
+                    {user?.firstName} {user?.lastName}
+                  </Text>
+                  <Text variant="bodyMedium" style={styles.accountEmail}>
+                    {user?.email}
+                  </Text>
+                  <View style={styles.subscriptionBadge}>
+                    <View style={[styles.subscriptionDot, { backgroundColor: getSubscriptionColor(subscriptionTier) }]} />
+                    <Text variant="labelMedium" style={[styles.subscriptionText, { color: getSubscriptionColor(subscriptionTier) }]}>
+                      {getSubscriptionDisplayName(subscriptionTier)}
+                    </Text>
+                  </View>
+                </View>
+              </Card.Content>
+              <Button
+                mode={isPremium ? 'outlined' : 'contained'}
+                icon={isPremium ? 'crown' : 'arrow-up-circle'}
+                onPress={() => (navigation as any).navigate('Paywall')}
+                style={styles.upgradeButton}
+                buttonColor={isPremium ? undefined : colors.primary}
+              >
+                {isPremium ? 'View Subscription' : 'Upgrade to Premium'}
+              </Button>
             </View>
-          </Card.Content>
-          <Button
-            mode={isPremium ? 'outlined' : 'contained'}
-            icon={isPremium ? 'crown' : 'arrow-up-circle'}
-            onPress={() => (navigation as any).navigate('Paywall')}
-            style={styles.upgradeButton}
-            buttonColor={isPremium ? undefined : colors.primary}
-          >
-            {isPremium ? 'View Subscription' : 'Upgrade to Premium'}
-          </Button>
+          ) : (
+            <View>
+              <Card.Content style={styles.accountContent}>
+                <Avatar.Text
+                  size={64}
+                  label="G"
+                  style={[styles.avatar, { backgroundColor: colors.gray400 }]}
+                />
+                <View style={styles.accountInfo}>
+                  <Text variant="titleLarge" style={styles.accountName}>
+                    Guest
+                  </Text>
+                  <Text variant="bodyMedium" style={styles.accountEmail}>
+                    Browse freely. Sign in to save progress.
+                  </Text>
+                </View>
+              </Card.Content>
+              <Button
+                mode="contained"
+                icon="login"
+                onPress={handleSignIn}
+                style={styles.upgradeButton}
+                buttonColor={colors.primary}
+              >
+                Sign In
+              </Button>
+            </View>
+          )}
         </Card>
 
         {/* Preferences Section */}
@@ -227,34 +272,46 @@ export default function SettingsScreen() {
               )}
             </View>
 
-            {isEditingGoals ? (
-              <View style={styles.goalActions}>
+            {isAuthenticated ? (
+              isEditingGoals ? (
+                <View style={styles.goalActions}>
+                  <Button
+                    mode="outlined"
+                    onPress={handleCancelEdit}
+                    style={styles.goalButton}
+                    textColor={colors.textSecondary}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    mode="contained"
+                    onPress={handleSaveGoals}
+                    style={[styles.goalButton, styles.goalButtonPrimary]}
+                    buttonColor={colors.primary}
+                  >
+                    Save
+                  </Button>
+                </View>
+              ) : (
                 <Button
                   mode="outlined"
-                  onPress={handleCancelEdit}
-                  style={styles.goalButton}
-                  textColor={colors.textSecondary}
+                  onPress={() => setIsEditingGoals(true)}
+                  style={styles.editButton}
+                  icon="pencil"
+                  textColor={colors.primary}
                 >
-                  Cancel
+                  Edit Goals
                 </Button>
-                <Button
-                  mode="contained"
-                  onPress={handleSaveGoals}
-                  style={[styles.goalButton, styles.goalButtonPrimary]}
-                  buttonColor={colors.primary}
-                >
-                  Save
-                </Button>
-              </View>
+              )
             ) : (
               <Button
                 mode="outlined"
-                onPress={() => setIsEditingGoals(true)}
+                onPress={handleSignIn}
                 style={styles.editButton}
-                icon="pencil"
+                icon="login"
                 textColor={colors.primary}
               >
-                Edit Goals
+                Sign in to sync goals
               </Button>
             )}
           </Card.Content>
@@ -291,17 +348,18 @@ export default function SettingsScreen() {
           />
         </Card>
 
-        {/* Logout Button */}
-        <View style={styles.logoutContainer}>
-          <ActionButton
-            label="Sign Out"
-            onPress={handleLogout}
-            icon="logout"
-            variant="outlined"
-            size="medium"
-            fullWidth
-          />
-        </View>
+        {isAuthenticated && (
+          <View style={styles.logoutContainer}>
+            <ActionButton
+              label="Sign Out"
+              onPress={handleLogout}
+              icon="logout"
+              variant="outlined"
+              size="medium"
+              fullWidth
+            />
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );

@@ -14,6 +14,7 @@ import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { ActionButton } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
+import { useRequireAuth } from '../../utils/requireAuth';
 
 const TOTAL_QUESTIONS = 10;
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
@@ -22,8 +23,10 @@ export default function DailyQuizScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const dispatch = useDispatch<AppDispatch>();
+  const requireAuth = useRequireAuth();
   const { questions } = useSelector((state: RootState) => state.questions);
   const { bookmarkedQuestionIds } = useSelector((state: RootState) => state.bookmarks);
+  const { isAuthenticated } = useSelector((state: RootState) => state.auth);
   
   const [examId, setExamId] = useState<string | null>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -73,6 +76,8 @@ export default function DailyQuizScreen() {
   };
 
   const handleStartQuiz = async () => {
+    if (!requireAuth('exams')) return;
+
     setIsLoading(true);
     try {
       const response = await examService.startDailyQuiz(PMP_CERTIFICATION_ID);
@@ -133,6 +138,7 @@ export default function DailyQuizScreen() {
 
   const handleToggleBookmark = async () => {
     if (!currentQuestion) return;
+    if (!requireAuth('bookmarks')) return;
     const questionId = currentQuestion.id;
     const isBookmarked = bookmarkedQuestionIds.includes(questionId);
     
@@ -144,10 +150,10 @@ export default function DailyQuizScreen() {
   };
 
   useEffect(() => {
-    if (currentQuestion?.id) {
+    if (currentQuestion?.id && isAuthenticated) {
       dispatch(checkBookmark(currentQuestion.id) as any);
     }
-  }, [currentQuestion?.id, dispatch]);
+  }, [currentQuestion?.id, dispatch, isAuthenticated]);
 
   const handleNext = () => {
     if (currentQuestionIndex < displayQuestions.length - 1) {

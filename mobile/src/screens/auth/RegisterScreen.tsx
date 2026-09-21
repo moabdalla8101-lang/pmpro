@@ -31,7 +31,11 @@ export default function RegisterScreen() {
 
     try {
       await dispatch(register({ email, password, firstName, lastName }) as any).unwrap();
-      // AppNavigator switches to the authenticated stack when registration succeeds.
+      // Dismiss Auth modal when presented on-demand over Main
+      const parent = (navigation as any).getParent?.();
+      if (parent?.canGoBack?.()) {
+        parent.goBack();
+      }
     } catch (err: any) {
       setError(err.message || 'Registration failed');
     } finally {

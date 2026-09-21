@@ -27,6 +27,24 @@ export function authenticate(req: AuthRequest, res: Response, next: NextFunction
   }
 }
 
+/** Attach user when a valid token is present; otherwise continue as guest. */
+export function optionalAuthenticate(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      req.user = verifyToken(token);
+    }
+  } catch {
+    // Ignore invalid tokens for public/guest routes
+  }
+  next();
+}
+
 export function requireAdmin(req: AuthRequest, res: Response, next: NextFunction) {
   if (!req.user) {
     return next(new UnauthorizedError());
@@ -38,5 +56,3 @@ export function requireAdmin(req: AuthRequest, res: Response, next: NextFunction
 
   next();
 }
-
-

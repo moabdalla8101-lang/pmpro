@@ -55,16 +55,24 @@ export async function getFlashcards(req: AuthRequest, res: Response, next: NextF
     }
 
     const result = await pool.query(query, params);
+    const userId = req.user?.userId;
 
-    // Get user progress for each flashcard
+    // Get user progress for each flashcard when authenticated
     const flashcards = await Promise.all(
       result.rows.map(async (row: any) => {
-        const progressResult = await pool.query(
-          'SELECT is_marked, times_reviewed, times_correct, times_incorrect FROM user_flashcard_progress WHERE user_id = $1 AND flashcard_id = $2',
-          [req.user!.userId, row.id]
-        );
-
-        const progress = progressResult.rows[0] || null;
+        let progress: {
+          is_marked?: boolean;
+          times_reviewed?: number;
+          times_correct?: number;
+          times_incorrect?: number;
+        } | null = null;
+        if (userId) {
+          const progressResult = await pool.query(
+            'SELECT is_marked, times_reviewed, times_correct, times_incorrect FROM user_flashcard_progress WHERE user_id = $1 AND flashcard_id = $2',
+            [userId, row.id]
+          );
+          progress = progressResult.rows[0] || null;
+        }
 
         return {
           id: row.id,

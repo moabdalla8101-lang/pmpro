@@ -29,8 +29,21 @@ export const progressService = {
     return response.data;
   },
 
-  async recordAnswer(questionId: string, answerId: string) {
-    const response = await client.post('/api/progress/answer', { questionId, answerId });
+  async recordAnswer(
+    questionId: string,
+    answerId?: string,
+    options?: { answerIds?: string[]; dragMatches?: Record<string, string> }
+  ) {
+    const body: any = { questionId };
+    if (options?.answerIds?.length) {
+      body.answerIds = options.answerIds;
+    } else if (answerId) {
+      body.answerId = answerId;
+    }
+    if (options?.dragMatches) {
+      body.dragMatches = options.dragMatches;
+    }
+    const response = await client.post('/api/progress/answer', body);
     return response.data;
   },
 
