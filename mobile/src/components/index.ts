@@ -8,6 +8,8 @@ export { default as StreakBadge } from './StreakBadge';
 export { default as DailyQuizStreakCard } from './DailyQuizStreakCard';
 export { default as AchievementCard } from './AchievementCard';
 export { default as DragAndMatch } from './DragAndMatch';
+export { default as ExamAnswerPanel, isExamAnswerComplete, toExamSubmitAnswer } from './ExamAnswerPanel';
+export type { ExamAnswerValue } from './ExamAnswerPanel';
 export { default as DailyGoalsHero } from './DailyGoalsHero';
 export { default as PaywallScreen } from './PaywallScreen';
 

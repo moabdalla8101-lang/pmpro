@@ -4,7 +4,7 @@ import { AuthRequest } from '../middleware/auth';
 import { pool } from '../db/connection';
 import { v4 as uuidv4 } from 'uuid';
 import { serializeAnsweredQuestionFeedback, serializeAdminQuestion } from '../serializers/questionSerializers';
-import { gradeSelectedAnswers } from '../utils/gradeSelectedAnswers';
+import { gradeQuestionResponse } from '../utils/gradeQuestionResponse';
 import { LEARNER_ATTEMPTS_CTE } from '../utils/learnerAttempts';
 
 async function ensureQuestionAttemptsTable(client: { query: (sql: string) => Promise<any> }) {
@@ -142,71 +142,36 @@ export async function recordAnswer(req: AuthRequest, res: Response, next: NextFu
     let selectedIds: string[] = [];
     let responseJson: any = null;
 
-    if (questionType === 'drag_and_match' && dragMatches && typeof dragMatches === 'object') {
-      let metadata = question.question_metadata;
-      if (typeof metadata === 'string') {
-        try {
-          metadata = JSON.parse(metadata);
-        } catch {
-          metadata = null;
-        }
-      }
-      let correctMatches: Record<string, string> =
-        metadata?.matches || metadata?.correctMatches || {};
-      if (
-        Object.keys(correctMatches).length === 0 &&
-        Array.isArray(metadata?.dragDropPairs || metadata?.drag_drop_pairs)
-      ) {
-        correctMatches = {};
-        for (const pair of metadata.dragDropPairs || metadata.drag_drop_pairs) {
-          const left = pair?.left_item ?? pair?.left ?? pair?.leftItem;
-          const right = pair?.right_item ?? pair?.right ?? pair?.rightItem;
-          if (left != null && right != null) {
-            correctMatches[String(left)] = String(right);
-          }
-        }
-      }
-      const leftKeys = Object.keys(correctMatches);
-      isCorrect =
-        leftKeys.length > 0 &&
-        leftKeys.every((key) => String(dragMatches[key]) === String(correctMatches[key]));
-      responseJson = { dragMatches };
-      selectedIds = answers[0] ? [answers[0].id] : [];
-    } else {
-      const rawIds: string[] = Array.isArray(answerIds)
-        ? answerIds
-        : answerId
-          ? [answerId]
-          : [];
+    try {
+      const graded = gradeQuestionResponse({
+        questionType,
+        questionMetadata: question.question_metadata,
+        answers,
+        answerId,
+        answerIds,
+        dragMatches,
+      });
+      isCorrect = graded.isCorrect;
+      selectedIds = graded.selectedIds;
+      responseJson = graded.responseJson;
+    } catch (err: any) {
+      await client.query('ROLLBACK');
+      return next(new ValidationError(err.message || 'Invalid answer payload'));
+    }
 
-      if (!questionId || rawIds.length === 0) {
-        await client.query('ROLLBACK');
-        return next(new ValidationError('questionId and answerId(s) are required'));
-      }
+    if (questionType !== 'drag_and_match' && selectedIds.length === 0) {
+      await client.query('ROLLBACK');
+      return next(new ValidationError('questionId and answerId(s) are required'));
+    }
 
-      if (answers.length === 0) {
-        await client.query('ROLLBACK');
-        return next(new NotFoundError('Answers not found'));
-      }
-
+    if (selectedIds.length > 0) {
       const answerById = new Map(answers.map((a: any) => [a.id, a]));
-      for (const id of rawIds) {
+      for (const id of selectedIds) {
         if (!answerById.has(id)) {
           await client.query('ROLLBACK');
           return next(new NotFoundError('Answer not found'));
         }
       }
-
-      const correctIds = answers.filter((a: any) => a.is_correct).map((a: any) => a.id);
-      const graded = gradeSelectedAnswers(rawIds.map(String), correctIds);
-      if (graded.hasDuplicates) {
-        await client.query('ROLLBACK');
-        return next(new ValidationError('Duplicate answer IDs are not allowed'));
-      }
-
-      selectedIds = graded.uniqueSelectedIds;
-      isCorrect = graded.isCorrect;
-      responseJson = { selectedAnswerIds: selectedIds };
     }
 
     const attemptId = uuidv4();

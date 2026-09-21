@@ -45,10 +45,6 @@ export default function PracticeScreen() {
 
   const buildFilters = useCallback(
     (pageOffset: number, append: boolean) => {
-      const params = route.params as any;
-      const knowledgeAreaId = selectedKnowledgeArea || params?.knowledgeAreaId;
-      const domain = selectedDomain || params?.domain;
-
       const filters: any = {
         certificationId: PMP_CERTIFICATION_ID,
         limit: PRACTICE_PAGE_SIZE,
@@ -56,16 +52,16 @@ export default function PracticeScreen() {
         append,
       };
 
-      if (knowledgeAreaId) {
-        filters.knowledgeAreaId = knowledgeAreaId;
+      if (selectedKnowledgeArea) {
+        filters.knowledgeAreaId = selectedKnowledgeArea;
       }
-      if (domain) {
-        filters.domain = domain;
+      if (selectedDomain) {
+        filters.domain = selectedDomain;
       }
 
       return filters;
     },
-    [route.params, selectedKnowledgeArea, selectedDomain]
+    [selectedKnowledgeArea, selectedDomain]
   );
 
   const loadAnsweredIds = useCallback(async () => {
@@ -235,6 +231,10 @@ export default function PracticeScreen() {
                 setSelectedQuestionFilter('all');
                 setSelectedKnowledgeArea(null);
                 setSelectedDomain(null);
+                (navigation as any).setParams?.({
+                  knowledgeAreaId: undefined,
+                  domain: undefined,
+                });
               }}
             >
               <Icon name="close-circle" size={20} color={colors.textSecondary} />
@@ -276,6 +276,10 @@ export default function PracticeScreen() {
               setSelectedQuestionFilter('all');
               setSelectedKnowledgeArea(null);
               setSelectedDomain(null);
+              (navigation as any).setParams?.({
+                knowledgeAreaId: undefined,
+                domain: undefined,
+              });
             }}
           />
         }

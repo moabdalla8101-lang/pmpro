@@ -2,15 +2,20 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, StyleSheet, ScrollView, Alert, SafeAreaView, TouchableOpacity } from 'react-native';
 import { Text, ProgressBar, ActivityIndicator } from 'react-native-paper';
 import { useNavigation, CommonActions } from '@react-navigation/native';
-import { useSelector, useDispatch } from 'react-redux';
+import { useSelector } from 'react-redux';
 import { examService } from '../../services/api/examService';
-import { RootState, AppDispatch } from '../../store';
-import { fetchQuestions } from '../../store/slices/questionSlice';
+import { RootState } from '../../store';
 import { questionService } from '../../services/api/questionService';
 import { dailyActivityService } from '../../services/dailyActivityService';
 import client from '../../services/api/client';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
-import { ActionButton } from '../../components';
+import {
+  ActionButton,
+  ExamAnswerPanel,
+  ExamAnswerValue,
+  isExamAnswerComplete,
+  toExamSubmitAnswer,
+} from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { useRequireAuth } from '../../utils/requireAuth';
@@ -26,14 +31,12 @@ const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
 
 export default function PracticeTestScreen() {
   const navigation = useNavigation();
-  const dispatch = useDispatch<AppDispatch>();
   const requireAuth = useRequireAuth();
-  const { questions } = useSelector((state: RootState) => state.questions);
   const { isAuthenticated } = useSelector((state: RootState) => state.auth);
-  
+
   const [examId, setExamId] = useState<string | null>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [selectedAnswers, setSelectedAnswers] = useState<{ [key: string]: string }>({});
+  const [selectedAnswers, setSelectedAnswers] = useState<{ [key: string]: ExamAnswerValue }>({});
   const [isTestStarted, setIsTestStarted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -47,10 +50,10 @@ export default function PracticeTestScreen() {
   selectedAnswersRef.current = selectedAnswers;
   testQuestionsRef.current = testQuestions;
 
-  // Use testQuestions if available, otherwise fall back to Redux questions
-  const displayQuestions = testQuestions.length > 0 ? testQuestions : questions;
+  const displayQuestions = testQuestions;
   const currentQuestion = displayQuestions[currentQuestionIndex];
-  const progress = displayQuestions.length > 0 ? (currentQuestionIndex + 1) / displayQuestions.length : 0;
+  const progress =
+    displayQuestions.length > 0 ? (currentQuestionIndex + 1) / displayQuestions.length : 0;
 
   const clearPendingDraft = useCallback(async () => {
     await clearPracticeDraft();
@@ -66,39 +69,29 @@ export default function PracticeTestScreen() {
     return draft;
   }, [currentQuestionIndex]);
 
-  const loadPracticeQuestions = async () => {
+  const loadGuestPracticeQuestions = async () => {
     const questionsData = await questionService.getQuestions({
       certificationId: PMP_CERTIFICATION_ID,
       limit: TOTAL_QUESTIONS.toString(),
       random: 'true',
       distributeByKnowledgeArea: 'true',
     });
-
-    if (questionsData.questions && questionsData.questions.length > 0) {
-      setTestQuestions(questionsData.questions);
-      return;
-    }
-
-    await dispatch(fetchQuestions({
-      certificationId: PMP_CERTIFICATION_ID,
-      limit: TOTAL_QUESTIONS.toString(),
-    }) as any);
+    setTestQuestions(questionsData.questions || []);
   };
 
   const handleStartTest = async () => {
     setIsLoading(true);
     try {
       await clearPendingDraft();
-      // Guests can start immediately using the public question catalog.
-      // Authenticated users also create a server exam so results can sync.
       if (isAuthenticated) {
         const response = await examService.startExam(PMP_CERTIFICATION_ID, TOTAL_QUESTIONS);
         setExamId(response.examId);
+        setTestQuestions(response.questions || []);
       } else {
         setExamId(null);
+        await loadGuestPracticeQuestions();
       }
 
-      await loadPracticeQuestions();
       setIsTestStarted(true);
       dailyActivityService.startSession();
     } catch (error: any) {
@@ -108,62 +101,72 @@ export default function PracticeTestScreen() {
     }
   };
 
-  const finalizeAndShowResults = useCallback(async (answersOverride?: { [key: string]: string }) => {
-    if (isSubmitting) return;
-    setIsSubmitting(true);
-
-    try {
-      const answerMap = answersOverride || selectedAnswersRef.current;
-      const answers = Object.entries(answerMap).map(([questionId, answerId]) => ({
-        questionId,
-        answerId,
-      }));
-
-      if (answers.length === 0) {
-        throw new Error('No answers to submit. Please retake the practice test.');
-      }
-
-      let activeExamId = examId;
-      if (!activeExamId) {
-        const response = await examService.startExam(PMP_CERTIFICATION_ID, answers.length || TOTAL_QUESTIONS);
-        activeExamId = response.examId;
-        setExamId(activeExamId);
-      }
-
-      if (!activeExamId) {
-        throw new Error('Failed to create exam session');
-      }
-
-      await examService.submitExam(activeExamId, answers);
-
-      await dailyActivityService.incrementQuestions(answers.length);
-      await dailyActivityService.endSession();
-      await clearPendingDraft();
+  const finalizeAndShowResults = useCallback(
+    async (answersOverride?: { [key: string]: ExamAnswerValue }) => {
+      if (isSubmitting) return;
+      setIsSubmitting(true);
 
       try {
-        await client.post('/api/badges/streak');
+        const answerMap = answersOverride || selectedAnswersRef.current;
+        const questions = testQuestionsRef.current;
+        const incomplete = questions.filter((q) => !isExamAnswerComplete(q, answerMap[q.id]));
+        if (incomplete.length > 0) {
+          throw new Error(
+            `Please answer all ${questions.length} questions before submitting (${incomplete.length} remaining).`
+          );
+        }
+
+        const answers = questions.map((q) => toExamSubmitAnswer(q.id, answerMap[q.id] || {}));
+        if (answers.length === 0) {
+          throw new Error('No answers to submit. Please retake the practice test.');
+        }
+
+        let activeExamId = examId;
+        if (!activeExamId) {
+          const response = await examService.startExam(
+            PMP_CERTIFICATION_ID,
+            questions.length,
+            questions.map((q) => q.id)
+          );
+          activeExamId = response.examId;
+          setExamId(activeExamId);
+        }
+
+        if (!activeExamId) {
+          throw new Error('Failed to create exam session');
+        }
+
+        await examService.submitExam(activeExamId, answers);
+        await dailyActivityService.incrementQuestions(answers.length);
+        await dailyActivityService.endSession();
+        await clearPendingDraft();
+
+        try {
+          await client.post('/api/badges/streak');
+        } catch (error: any) {
+          console.error('Failed to update streak:', error?.response?.data || error?.message);
+        }
+
+        (navigation as any).dispatch(
+          CommonActions.reset({
+            index: 0,
+            routes: [{ name: 'PracticeDashboard' }],
+          })
+        );
+
+        (navigation as any).navigate('Exam', {
+          screen: 'ExamReview',
+          params: { examId: activeExamId },
+        });
       } catch (error: any) {
-        console.error('Failed to update streak:', error?.response?.data || error?.message);
+        Alert.alert('Error', error.message || 'Failed to submit test');
+      } finally {
+        setIsSubmitting(false);
+        setPendingSubmit(false);
       }
-
-      (navigation as any).dispatch(
-        CommonActions.reset({
-          index: 0,
-          routes: [{ name: 'PracticeDashboard' }],
-        })
-      );
-
-      (navigation as any).navigate('Exam', {
-        screen: 'ExamReview',
-        params: { examId: activeExamId },
-      });
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to submit test');
-    } finally {
-      setIsSubmitting(false);
-      setPendingSubmit(false);
-    }
-  }, [clearPendingDraft, examId, isSubmitting, navigation]);
+    },
+    [clearPendingDraft, examId, isSubmitting, navigation]
+  );
 
   // After intentional "Sign In & View Results": submit only an awaiting persisted draft
   useEffect(() => {
@@ -304,13 +307,12 @@ export default function PracticeTestScreen() {
     );
   };
 
-  const handleAnswerSelect = (answerId: string) => {
-    if (currentQuestion) {
-      setSelectedAnswers({
-        ...selectedAnswers,
-        [currentQuestion.id]: answerId,
-      });
-    }
+  const handleAnswerChange = (value: ExamAnswerValue) => {
+    if (!currentQuestion) return;
+    setSelectedAnswers({
+      ...selectedAnswers,
+      [currentQuestion.id]: value,
+    });
   };
 
   const handleNext = () => {
@@ -323,18 +325,6 @@ export default function PracticeTestScreen() {
     if (currentQuestionIndex > 0) {
       setCurrentQuestionIndex(currentQuestionIndex - 1);
     }
-  };
-
-  const getAnswerStyle = (answerId: string) => {
-    const isSelected = selectedAnswers[currentQuestion?.id || ''] === answerId;
-    return isSelected
-      ? [styles.answerOption, styles.answerOptionSelected]
-      : styles.answerOption;
-  };
-
-  const getAnswerIcon = (answerId: string) => {
-    const isSelected = selectedAnswers[currentQuestion?.id || ''] === answerId;
-    return isSelected ? 'radiobox-marked' : 'radiobox-blank';
   };
 
   // Pre-test screen
@@ -433,23 +423,11 @@ export default function PracticeTestScreen() {
           </Text>
 
           <View style={styles.answerOptionsContainer}>
-            {currentQuestion.answers?.map((answer: any) => (
-              <TouchableOpacity
-                key={answer.id}
-                style={getAnswerStyle(answer.id)}
-                onPress={() => handleAnswerSelect(answer.id)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.answerIconContainer}>
-                  <Icon
-                    name={getAnswerIcon(answer.id)}
-                    size={24}
-                    color={selectedAnswers[currentQuestion.id] === answer.id ? colors.primary : colors.gray400}
-                  />
-                </View>
-                <Text style={styles.answerText}>{answer.answerText || answer.answer_text}</Text>
-              </TouchableOpacity>
-            ))}
+            <ExamAnswerPanel
+              question={currentQuestion}
+              value={selectedAnswers[currentQuestion.id]}
+              onChange={handleAnswerChange}
+            />
           </View>
         </View>
       </ScrollView>

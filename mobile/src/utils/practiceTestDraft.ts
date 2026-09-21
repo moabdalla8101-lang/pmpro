@@ -1,11 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { ExamAnswerValue } from '../components/ExamAnswerPanel';
 
 export const PENDING_PRACTICE_KEY = 'pendingPracticeTest';
 export const PRACTICE_DRAFT_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 export type PendingPracticeDraft = {
   attemptId: string;
-  selectedAnswers: { [key: string]: string };
+  selectedAnswers: { [key: string]: ExamAnswerValue };
   testQuestions: any[];
   currentQuestionIndex: number;
   awaitingAuthForResults: boolean;
@@ -32,7 +33,7 @@ export function isDraftAwaitingAuth(draft: PendingPracticeDraft, now = Date.now(
 }
 
 export async function savePracticeDraft(input: {
-  selectedAnswers: { [key: string]: string };
+  selectedAnswers: { [key: string]: ExamAnswerValue };
   testQuestions: any[];
   currentQuestionIndex: number;
   attemptId?: string;

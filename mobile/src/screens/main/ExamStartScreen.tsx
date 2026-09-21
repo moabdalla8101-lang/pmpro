@@ -5,12 +5,16 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSelector, useDispatch } from 'react-redux';
 import { examService } from '../../services/api/examService';
 import { RootState, AppDispatch } from '../../store';
-import { fetchQuestions } from '../../store/slices/questionSlice';
 import { addBookmark, removeBookmark, checkBookmark } from '../../store/slices/bookmarkSlice';
 import { dailyActivityService } from '../../services/dailyActivityService';
-import { useFocusEffect } from '@react-navigation/native';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
-import { ActionButton } from '../../components';
+import {
+  ActionButton,
+  ExamAnswerPanel,
+  ExamAnswerValue,
+  isExamAnswerComplete,
+  toExamSubmitAnswer,
+} from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 
@@ -23,35 +27,34 @@ export default function ExamStartScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const dispatch = useDispatch<AppDispatch>();
-  const { questions } = useSelector((state: RootState) => state.questions);
   const { bookmarkedQuestionIds } = useSelector((state: RootState) => state.bookmarks);
-  
-  // Get exam type from route params (defaults to 'mock')
+
   const examType = (route.params as any)?.examType || 'mock';
   const TOTAL_QUESTIONS = examType === 'mini' ? MINI_PMP_QUESTIONS : MOCK_EXAM_QUESTIONS;
   const EXAM_DURATION_MINUTES = examType === 'mini' ? MINI_PMP_DURATION_MINUTES : MOCK_EXAM_DURATION_MINUTES;
-  
+
   const [examId, setExamId] = useState<string | null>(null);
+  const [examQuestions, setExamQuestions] = useState<any[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [selectedAnswers, setSelectedAnswers] = useState<{ [key: string]: string }>({});
+  const [selectedAnswers, setSelectedAnswers] = useState<{ [key: string]: ExamAnswerValue }>({});
   const [timeRemaining, setTimeRemaining] = useState(EXAM_DURATION_MINUTES * 60);
   const [isExamStarted, setIsExamStarted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  const currentQuestion = questions[currentQuestionIndex];
-  const progress = (currentQuestionIndex + 1) / TOTAL_QUESTIONS;
-  
-  // Update time remaining when exam type changes
+  const currentQuestion = examQuestions[currentQuestionIndex];
+  const progress =
+    examQuestions.length > 0 ? (currentQuestionIndex + 1) / examQuestions.length : 0;
+
   useEffect(() => {
     setTimeRemaining(EXAM_DURATION_MINUTES * 60);
-  }, [examType]);
+  }, [examType, EXAM_DURATION_MINUTES]);
 
   useEffect(() => {
     if (isExamStarted && timeRemaining > 0) {
       const timer = setInterval(() => {
         setTimeRemaining((prev) => {
           if (prev <= 1) {
-            handleSubmitExam();
+            handleSubmitExam(true);
             return 0;
           }
           return prev - 1;
@@ -72,14 +75,12 @@ export default function ExamStartScreen() {
   const handleStartExam = async () => {
     setIsLoading(true);
     try {
-      const certificationId = '550e8400-e29b-41d4-a716-446655440000'; // PMP
+      const certificationId = '550e8400-e29b-41d4-a716-446655440000';
       const response = await examService.startExam(certificationId, TOTAL_QUESTIONS);
       setExamId(response.examId);
+      setExamQuestions(response.questions || []);
       setIsExamStarted(true);
       dailyActivityService.startSession();
-
-      // Fetch questions for the exam
-      await dispatch(fetchQuestions({ certificationId, limit: TOTAL_QUESTIONS.toString() }) as any);
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to start exam');
     } finally {
@@ -87,20 +88,19 @@ export default function ExamStartScreen() {
     }
   };
 
-  const handleAnswerSelect = (answerId: string) => {
-    if (currentQuestion) {
-      setSelectedAnswers({
-        ...selectedAnswers,
-        [currentQuestion.id]: answerId,
-      });
-    }
+  const handleAnswerChange = (value: ExamAnswerValue) => {
+    if (!currentQuestion) return;
+    setSelectedAnswers({
+      ...selectedAnswers,
+      [currentQuestion.id]: value,
+    });
   };
 
   const handleToggleBookmark = async () => {
     if (!currentQuestion) return;
     const questionId = currentQuestion.id;
     const isBookmarked = bookmarkedQuestionIds.includes(questionId);
-    
+
     if (isBookmarked) {
       await dispatch(removeBookmark(questionId) as any);
     } else {
@@ -115,7 +115,7 @@ export default function ExamStartScreen() {
   }, [currentQuestion?.id, dispatch]);
 
   const handleNext = () => {
-    if (currentQuestionIndex < questions.length - 1) {
+    if (currentQuestionIndex < examQuestions.length - 1) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
     }
   };
@@ -126,52 +126,44 @@ export default function ExamStartScreen() {
     }
   };
 
-  const handleSubmitExam = async () => {
+  const submitAnswers = async () => {
     if (!examId) return;
+    const incomplete = examQuestions.filter((q) => !isExamAnswerComplete(q, selectedAnswers[q.id]));
+    if (incomplete.length > 0) {
+      Alert.alert(
+        'Incomplete Exam',
+        `Please answer all ${examQuestions.length} questions before submitting (${incomplete.length} remaining).`
+      );
+      return;
+    }
 
+    try {
+      const answers = examQuestions.map((q) =>
+        toExamSubmitAnswer(q.id, selectedAnswers[q.id] || {})
+      );
+      await examService.submitExam(examId, answers);
+      await dailyActivityService.incrementQuestions(examQuestions.length);
+      await dailyActivityService.endSession();
+      (navigation as any).navigate('ExamReview', { examId });
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to submit exam');
+    }
+  };
+
+  const handleSubmitExam = (auto = false) => {
+    if (!examId) return;
+    if (auto) {
+      submitAnswers();
+      return;
+    }
     Alert.alert(
       'Submit Exam',
       'Are you sure you want to submit? You cannot change answers after submission.',
       [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Submit',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const answers = Object.entries(selectedAnswers).map(([questionId, answerId]) => ({
-                questionId,
-                answerId,
-              }));
-
-              await examService.submitExam(examId, answers);
-              
-              // Track questions answered for daily goals
-              await dailyActivityService.incrementQuestions(questions.length);
-              
-              // End session and track time
-              await dailyActivityService.endSession();
-              
-              (navigation as any).navigate('ExamReview', { examId });
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to submit exam');
-            }
-          },
-        },
+        { text: 'Submit', style: 'destructive', onPress: submitAnswers },
       ]
     );
-  };
-
-  const getAnswerStyle = (answerId: string) => {
-    const isSelected = selectedAnswers[currentQuestion?.id || ''] === answerId;
-    return isSelected
-      ? [styles.answerOption, styles.answerOptionSelected]
-      : styles.answerOption;
-  };
-
-  const getAnswerIcon = (answerId: string) => {
-    const isSelected = selectedAnswers[currentQuestion?.id || ''] === answerId;
-    return isSelected ? 'radiobox-marked' : 'radiobox-blank';
   };
 
   // Pre-exam screen
@@ -234,19 +226,11 @@ export default function ExamStartScreen() {
   }
 
   // Loading state
-  if (!currentQuestion && questions.length === 0) {
-    return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading questions...</Text>
-      </SafeAreaView>
-    );
-  }
-
   if (!currentQuestion) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>Loading questions...</Text>
       </SafeAreaView>
     );
   }
@@ -265,7 +249,7 @@ export default function ExamStartScreen() {
           </View>
           <View style={styles.questionCounter}>
             <Text variant="bodyMedium" style={styles.questionCounterText}>
-              Question {currentQuestionIndex + 1} of {questions.length}
+              Question {currentQuestionIndex + 1} of {examQuestions.length}
             </Text>
           </View>
           <TouchableOpacity
@@ -304,35 +288,11 @@ export default function ExamStartScreen() {
           <Text variant="titleMedium" style={styles.answersTitle}>
             Select your answer:
           </Text>
-          {currentQuestion.answers?.map((answer: any, index: number) => (
-            <TouchableOpacity
-              key={answer.id}
-              style={getAnswerStyle(answer.id)}
-              onPress={() => handleAnswerSelect(answer.id)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.answerContent}>
-                <View style={styles.answerIndicator}>
-                  <View style={styles.answerLetter}>
-                    <Text style={styles.answerLetterText}>
-                      {String.fromCharCode(65 + index)}
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.answerTextContainer}>
-                  <Text style={styles.answerText}>
-                    {answer.answerText || answer.answer_text}
-                  </Text>
-                </View>
-                <Icon
-                  name={getAnswerIcon(answer.id)}
-                  size={24}
-                  color={selectedAnswers[currentQuestion.id] === answer.id ? colors.primary : colors.gray400}
-                  style={styles.answerIcon}
-                />
-              </View>
-            </TouchableOpacity>
-          ))}
+          <ExamAnswerPanel
+            question={currentQuestion}
+            value={selectedAnswers[currentQuestion.id]}
+            onChange={handleAnswerChange}
+          />
         </View>
       </ScrollView>
 
@@ -347,9 +307,13 @@ export default function ExamStartScreen() {
           disabled={currentQuestionIndex === 0}
         />
         <ActionButton
-          label={currentQuestionIndex === questions.length - 1 ? 'Submit Exam' : 'Next'}
-          onPress={currentQuestionIndex === questions.length - 1 ? handleSubmitExam : handleNext}
-          icon={currentQuestionIndex === questions.length - 1 ? 'check-circle' : 'arrow-right'}
+          label={currentQuestionIndex === examQuestions.length - 1 ? 'Submit Exam' : 'Next'}
+          onPress={
+            currentQuestionIndex === examQuestions.length - 1
+              ? () => handleSubmitExam(false)
+              : handleNext
+          }
+          icon={currentQuestionIndex === examQuestions.length - 1 ? 'check-circle' : 'arrow-right'}
           variant="primary"
           size="medium"
         />

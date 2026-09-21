@@ -145,7 +145,7 @@ export async function getQuestions(req: AuthRequest, res: Response, next: NextFu
 
         areaQuery += isRandom
           ? ` ORDER BY RANDOM() LIMIT $${areaParamCount++}`
-          : ` ORDER BY created_at DESC LIMIT $${areaParamCount++}`;
+          : ` ORDER BY created_at DESC, id DESC LIMIT $${areaParamCount++}`;
 
         areaParams.push(questionsPerArea);
 
@@ -212,7 +212,7 @@ export async function getQuestions(req: AuthRequest, res: Response, next: NextFu
       query += ` ORDER BY RANDOM() LIMIT $${paramCount++}`;
       listParams.push(queryLimit);
     } else {
-      query += ` ORDER BY created_at DESC LIMIT $${paramCount++} OFFSET $${paramCount++}`;
+      query += ` ORDER BY created_at DESC, id DESC LIMIT $${paramCount++} OFFSET $${paramCount++}`;
       listParams.push(queryLimit, queryOffset);
     }
 
@@ -446,7 +446,7 @@ export async function getQuestionsByKnowledgeArea(
     const result = await pool.query(
       `SELECT * FROM questions
        WHERE knowledge_area_id = $1 AND is_active = true
-       ORDER BY created_at DESC
+       ORDER BY created_at DESC, id DESC
        LIMIT $2 OFFSET $3`,
       [knowledgeAreaId, queryLimit, queryOffset]
     );

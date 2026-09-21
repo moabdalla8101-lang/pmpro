@@ -1,12 +1,23 @@
 import client from './client';
 
+export type ExamSubmitAnswer = {
+  questionId: string;
+  answerId?: string;
+  answerIds?: string[];
+  dragMatches?: { [leftItem: string]: string };
+};
+
 export const examService = {
-  async startExam(certificationId: string, totalQuestions: number) {
-    const response = await client.post('/api/exams/start', { certificationId, totalQuestions });
+  async startExam(certificationId: string, totalQuestions: number, questionIds?: string[]) {
+    const response = await client.post('/api/exams/start', {
+      certificationId,
+      totalQuestions,
+      ...(questionIds ? { questionIds } : {}),
+    });
     return response.data;
   },
 
-  async submitExam(examId: string, answers: Array<{ questionId: string; answerId: string }>) {
+  async submitExam(examId: string, answers: ExamSubmitAnswer[]) {
     const response = await client.post(`/api/exams/${examId}/submit`, { answers });
     return response.data;
   },
@@ -37,9 +48,9 @@ export const examService = {
   },
 
   async getDailyQuizStatus(certificationId: string) {
-    const response = await client.get(`/api/exams/daily-quiz/status?certificationId=${certificationId}`);
+    const response = await client.get(
+      `/api/exams/daily-quiz/status?certificationId=${certificationId}`
+    );
     return response.data;
   },
 };
-
-
