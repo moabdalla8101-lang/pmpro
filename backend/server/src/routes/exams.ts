@@ -7,6 +7,7 @@ import {
   getWeeklyDailyQuizCompletions,
   submitExam,
   getExam,
+  saveExamProgress,
   getUserExams,
   getExamReview,
   deleteExam
@@ -42,6 +43,7 @@ router.get('/daily-quiz/weekly', getWeeklyDailyQuizCompletions);
 
 router.get('/', getUserExams);
 router.get('/:id', getExam);
+router.put('/:id/progress', saveExamProgress);
 router.get('/:id/review', getExamReview);
 router.post(
   '/:id/submit',

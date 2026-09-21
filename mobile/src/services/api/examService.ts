@@ -30,6 +30,18 @@ export const examService = {
     return response.data;
   },
 
+  async saveExamProgress(
+    examId: string,
+    answers: { [questionId: string]: ExamSubmitAnswer | Record<string, unknown> }
+  ) {
+    const response = await client.put(
+      `/api/exams/${examId}/progress`,
+      { answers },
+      { timeout: 15000 }
+    );
+    return response.data;
+  },
+
   async getExam(examId: string) {
     const response = await client.get(`/api/exams/${examId}`, { timeout: 60000 });
     return response.data;

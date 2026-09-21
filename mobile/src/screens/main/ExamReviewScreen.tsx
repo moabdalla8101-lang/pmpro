@@ -6,6 +6,10 @@ import { examService } from '../../services/api/examService';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ActionButton, CategoryBadge, SectionHeader } from '../../components';
+import {
+  formatReviewYourAnswer,
+  formatReviewCorrectAnswer,
+} from '../../utils/examSubmitHelpers';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
@@ -332,21 +336,11 @@ export default function ExamReviewScreen() {
                       styles.answerText,
                       !isCorrect && styles.answerTextIncorrect,
                     ]}>
-                      {item.unanswered
-                        ? 'No answer'
-                        : item.questionType === 'drag_and_match' || item.question_type === 'drag_and_match'
-                          ? (item.selectedDragMatches?.length
-                              ? item.selectedDragMatches
-                                  .map((m: any) => `${m.leftLabel} → ${m.rightLabel}`)
-                                  .join('\n')
-                              : 'No answer')
-                          : item.answerLabels?.length
-                            ? item.answerLabels.join('\n')
-                            : item.answerText || item.answer_text || 'No answer'}
+                      {formatReviewYourAnswer(item)}
                     </Text>
                   </View>
 
-                  {(item.correctAnswerLabels?.length > 0 || item.correctDragMatches?.length > 0) && (
+                  {formatReviewCorrectAnswer(item) && (
                     <View style={styles.answerSection}>
                       <View style={styles.answerSectionHeader}>
                         <Icon name="check-decagram" size={20} color={colors.success} />
@@ -355,11 +349,7 @@ export default function ExamReviewScreen() {
                         </Text>
                       </View>
                       <Text variant="bodyMedium" style={styles.answerText}>
-                        {item.correctDragMatches?.length
-                          ? item.correctDragMatches
-                              .map((m: any) => `${m.leftLabel} → ${m.rightLabel}`)
-                              .join('\n')
-                          : item.correctAnswerLabels.join('\n')}
+                        {formatReviewCorrectAnswer(item)}
                       </Text>
                     </View>
                   )}

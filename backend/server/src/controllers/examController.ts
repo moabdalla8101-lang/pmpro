@@ -41,6 +41,10 @@ async function ensureExamSchema(client: { query: (sql: string, params?: any[]) =
       ON question_attempts(exam_id, question_id)
       WHERE exam_id IS NOT NULL
   `);
+  await client.query(`
+    ALTER TABLE mock_exams
+      ADD COLUMN IF NOT EXISTS draft_answers JSONB NOT NULL DEFAULT '{}'::jsonb
+  `);
 }
 
 async function selectRandomQuestionRows(certificationId: string, limit: number) {
@@ -136,6 +140,7 @@ function mapExam(exam: any) {
     correctAnswers: exam.correct_answers,
     score: exam.score,
     examType: exam.exam_type,
+    draftAnswers: exam.draft_answers || {},
   };
 }
 
@@ -565,7 +570,8 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
        SET completed_at = NOW(),
            score = $1,
            correct_answers = $2,
-           total_questions = $3
+           total_questions = $3,
+           draft_answers = '{}'::jsonb
        WHERE id = $4`,
       [score, correctCount, totalQuestions, id]
     );
@@ -636,6 +642,8 @@ export async function getExam(req: AuthRequest, res: Response, next: NextFunctio
   try {
     const { id } = req.params;
 
+    await ensureExamSchema(pool);
+
     const result = await pool.query(
       'SELECT * FROM mock_exams WHERE id = $1 AND user_id = $2',
       [id, req.user!.userId]
@@ -654,6 +662,57 @@ export async function getExam(req: AuthRequest, res: Response, next: NextFunctio
     }
 
     res.json(payload);
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Persist in-progress answers so a timed exam can be resumed after app kill.
+ * Body: { answers: { [questionId]: { answerId?, answerIds?, dragMatches? } } }
+ */
+export async function saveExamProgress(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const { id } = req.params;
+    const { answers } = req.body;
+
+    if (!answers || typeof answers !== 'object' || Array.isArray(answers)) {
+      return next(new ValidationError('answers object is required'));
+    }
+
+    await ensureExamSchema(pool);
+
+    const examResult = await pool.query(
+      'SELECT id, completed_at FROM mock_exams WHERE id = $1 AND user_id = $2',
+      [id, req.user!.userId]
+    );
+    if (examResult.rows.length === 0) {
+      return next(new NotFoundError('Exam not found'));
+    }
+    if (examResult.rows[0].completed_at) {
+      return next(new ValidationError('Cannot update progress on a completed exam'));
+    }
+
+    const assigned = await pool.query(
+      'SELECT question_id FROM exam_questions WHERE exam_id = $1',
+      [id]
+    );
+    const allowed = new Set(assigned.rows.map((r: any) => r.question_id as string));
+    const sanitized: Record<string, unknown> = {};
+    for (const [questionId, value] of Object.entries(answers)) {
+      if (!allowed.has(questionId)) continue;
+      if (value == null || typeof value !== 'object') continue;
+      sanitized[questionId] = value;
+    }
+
+    await pool.query(
+      `UPDATE mock_exams
+       SET draft_answers = $1::jsonb
+       WHERE id = $2 AND user_id = $3`,
+      [JSON.stringify(sanitized), id, req.user!.userId]
+    );
+
+    res.json({ examId: id, draftAnswerCount: Object.keys(sanitized).length });
   } catch (error) {
     next(error);
   }

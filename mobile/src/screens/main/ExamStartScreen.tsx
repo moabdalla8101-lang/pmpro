@@ -13,8 +13,11 @@ import {
   ExamAnswerPanel,
   ExamAnswerValue,
   isExamAnswerComplete,
-  toExamSubmitAnswer,
 } from '../../components';
+import {
+  buildExamSubmitPayload,
+  computeRemainingSeconds,
+} from '../../utils/examSubmitHelpers';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 
@@ -44,6 +47,9 @@ export default function ExamStartScreen() {
   const [isSubmittingTimeout, setIsSubmittingTimeout] = useState(false);
   const [timeExpired, setTimeExpired] = useState(false);
   const timeoutSubmitRef = useRef(false);
+  const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selectedAnswersRef = useRef(selectedAnswers);
+  selectedAnswersRef.current = selectedAnswers;
 
   const currentQuestion = examQuestions[currentQuestionIndex];
   const progress =
@@ -72,15 +78,14 @@ export default function ExamStartScreen() {
           return;
         }
         const startedAt = new Date(exam.startedAt || exam.started_at).getTime();
-        const elapsedSec = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
-        const totalSec = EXAM_DURATION_MINUTES * 60;
-        const remaining = Math.max(0, totalSec - elapsedSec);
+        const remaining = computeRemainingSeconds(startedAt, EXAM_DURATION_MINUTES);
+        const drafts = exam.draftAnswers || exam.draft_answers || {};
         setExamId(exam.id || resumeExamId);
         setExamQuestions(questions);
+        setSelectedAnswers(drafts);
         setTimeRemaining(remaining);
         setIsExamStarted(true);
         dailyActivityService.startSession();
-        // If time already expired, the timer effect submits with forceIncomplete.
       } catch (error: any) {
         if (!cancelled) {
           Alert.alert('Error', error.message || 'Failed to resume exam');
@@ -111,6 +116,22 @@ export default function ExamStartScreen() {
     return () => clearInterval(timer);
   }, [isExamStarted, timeRemaining, timeExpired, isSubmittingTimeout]);
 
+  useEffect(() => {
+    return () => {
+      if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+    };
+  }, []);
+
+  const persistDraftAnswers = (answers: { [key: string]: ExamAnswerValue }) => {
+    if (!examId || timeExpired) return;
+    if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+    draftSaveTimerRef.current = setTimeout(() => {
+      examService.saveExamProgress(examId, answers).catch(() => {
+        // Best-effort; resume still has last successful save
+      });
+    }, 500);
+  };
+
   const formatTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
@@ -135,11 +156,13 @@ export default function ExamStartScreen() {
   };
 
   const handleAnswerChange = (value: ExamAnswerValue) => {
-    if (!currentQuestion) return;
-    setSelectedAnswers({
+    if (!currentQuestion || timeExpired || isSubmittingTimeout) return;
+    const next = {
       ...selectedAnswers,
       [currentQuestion.id]: value,
-    });
+    };
+    setSelectedAnswers(next);
+    persistDraftAnswers(next);
   };
 
   const handleToggleBookmark = async () => {
@@ -174,20 +197,27 @@ export default function ExamStartScreen() {
 
   const submitAnswers = async (opts?: { forceIncomplete?: boolean }) => {
     if (!examId || isSubmittingTimeout) return;
-    const incomplete = examQuestions.filter((q) => !isExamAnswerComplete(q, selectedAnswers[q.id]));
-    if (!opts?.forceIncomplete && incomplete.length > 0) {
-      Alert.alert(
-        'Incomplete Exam',
-        `Please answer all ${examQuestions.length} questions before submitting (${incomplete.length} remaining).`
+    if (!opts?.forceIncomplete) {
+      const incomplete = examQuestions.filter(
+        (q) => !isExamAnswerComplete(q, selectedAnswersRef.current[q.id])
       );
-      return;
+      if (incomplete.length > 0) {
+        Alert.alert(
+          'Incomplete Exam',
+          `Please answer all ${examQuestions.length} questions before submitting (${incomplete.length} remaining).`
+        );
+        return;
+      }
     }
+
+    const { answers } = buildExamSubmitPayload(
+      examQuestions.map((q) => q.id),
+      selectedAnswersRef.current,
+      { forceIncomplete: true }
+    );
 
     try {
       setIsSubmittingTimeout(Boolean(opts?.forceIncomplete));
-      const answers = examQuestions.map((q) =>
-        toExamSubmitAnswer(q.id, selectedAnswers[q.id])
-      );
       await examService.submitExam(examId, answers);
       await dailyActivityService.incrementQuestions(examQuestions.length);
       await dailyActivityService.endSession();
