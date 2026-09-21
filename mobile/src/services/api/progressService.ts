@@ -39,10 +39,9 @@ export const progressService = {
       certificationId?: string;
     }
   ) {
-    const body: any = { questionId };
-    if (options?.certificationId) {
-      body.certificationId = options.certificationId;
-    }
+    const certificationId =
+      options?.certificationId || '550e8400-e29b-41d4-a716-446655440000';
+    const body: any = { questionId, certificationId };
     if (options?.answerIds?.length) {
       body.answerIds = options.answerIds;
     } else if (answerId) {

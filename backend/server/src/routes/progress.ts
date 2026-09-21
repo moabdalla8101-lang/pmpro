@@ -34,6 +34,7 @@ router.post(
   '/answer',
   [
     body('questionId').notEmpty(),
+    body('certificationId').notEmpty().withMessage('certificationId is required'),
     body().custom((_, { req }) => {
       const forbidden = [
         'isCorrect',
@@ -55,6 +56,14 @@ router.post(
         (req.body.dragMatches && typeof req.body.dragMatches === 'object');
       if (!hasAnswer) {
         throw new Error('answerId, answerIds, or dragMatches is required');
+      }
+      const headerKey = req.headers?.['idempotency-key'];
+      const idempotencyKey =
+        (typeof headerKey === 'string' && headerKey.trim()) ||
+        (typeof req.body?.idempotencyKey === 'string' && req.body.idempotencyKey.trim()) ||
+        '';
+      if (!idempotencyKey) {
+        throw new Error('Idempotency-Key header (or idempotencyKey) is required');
       }
       return true;
     }),

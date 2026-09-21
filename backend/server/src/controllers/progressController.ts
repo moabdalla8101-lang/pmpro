@@ -158,6 +158,14 @@ export async function recordAnswer(req: AuthRequest, res: Response, next: NextFu
     if (!questionId) {
       return next(new ValidationError('questionId is required'));
     }
+    if (!certificationId) {
+      return next(new ValidationError('certificationId is required'));
+    }
+    if (!idempotencyKey) {
+      return next(
+        new ValidationError('Idempotency-Key header (or idempotencyKey) is required')
+      );
+    }
 
     await client.query('BEGIN');
     await ensureQuestionAttemptsTable(client);
@@ -171,7 +179,8 @@ export async function recordAnswer(req: AuthRequest, res: Response, next: NextFu
         WHERE idempotency_key IS NOT NULL
     `);
 
-    if (idempotencyKey) {
+    // Idempotent replay — must come before insert.
+    {
       const existing = await client.query(
         `SELECT qa.*, q.question_text, q.explanation, q.question_type, q.question_metadata,
                 q.explanation_images, q.id as qid
@@ -198,17 +207,19 @@ export async function recordAnswer(req: AuthRequest, res: Response, next: NextFu
       }
     }
 
-    let questionQuery = 'SELECT * FROM questions WHERE id = $1 AND is_active = true';
-    const questionParams: any[] = [questionId];
-    if (certificationId) {
-      questionQuery += ' AND certification_id = $2';
-      questionParams.push(certificationId);
-    }
-
-    const questionResult = await client.query(questionQuery, questionParams);
+    // Eligible practice question: exists, active, and belongs to the requested certification.
+    const questionResult = await client.query(
+      `SELECT * FROM questions
+       WHERE id = $1
+         AND is_active = true
+         AND certification_id = $2`,
+      [questionId, certificationId]
+    );
     if (questionResult.rows.length === 0) {
       await client.query('ROLLBACK');
-      return next(new NotFoundError('Question not found'));
+      return next(
+        new NotFoundError('Question not found, inactive, or not in this certification')
+      );
     }
     const question = questionResult.rows[0];
 

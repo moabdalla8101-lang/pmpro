@@ -464,7 +464,8 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
     }
 
     const assignedResult = await client.query(
-      `SELECT eq.question_id, eq.position, q.question_type, q.question_metadata, q.explanation, q.question_text, q.is_active
+      `SELECT eq.question_id, eq.position, q.question_type, q.question_metadata, q.explanation,
+              q.question_text, q.is_active, q.certification_id
        FROM exam_questions eq
        JOIN questions q ON q.id = eq.question_id
        WHERE eq.exam_id = $1
@@ -477,6 +478,15 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
       return next(new ValidationError('Exam has no assigned questions'));
     }
 
+    // Every assigned question must belong to the exam certification.
+    const mismatched = assignedResult.rows.find(
+      (r: any) => r.certification_id !== exam.certification_id
+    );
+    if (mismatched) {
+      await client.query('ROLLBACK');
+      return next(new ValidationError('Exam assignment contains questions from another certification'));
+    }
+
     const assignedIds = assignedResult.rows.map((r: any) => r.question_id as string);
     const assignedSet = new Set(assignedIds);
     const assignedMeta = new Map(
@@ -485,7 +495,7 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
         {
           questionType: r.question_type,
           questionMetadata: r.question_metadata,
-          isActive: r.is_active,
+          isActive: Boolean(r.is_active),
         },
       ])
     );
@@ -534,6 +544,33 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
     for (const answer of normalizedAnswers) {
       const optionRows = answersByQuestion.get(answer.questionId) || [];
       const meta = assignedMeta.get(answer.questionId)!;
+
+      // Assigned questions that were deactivated after start cannot score as correct.
+      // Record them as incorrect so the assigned denominator stays intact.
+      if (!meta.isActive) {
+        correctCount += 0;
+        valueSql.push(
+          `($${p++}, $${p++}, $${p++}, $${p++}, $${p++}::uuid[], $${p++}::jsonb, NOW(), $${p++})`
+        );
+        params.push(
+          uuidv4(),
+          req.user!.userId,
+          answer.questionId,
+          false,
+          [],
+          JSON.stringify({
+            questionType: meta.questionType,
+            unanswered: true,
+            inactiveQuestion: true,
+            examId: id,
+          }),
+          id
+        );
+        continue;
+      }
+
+      // Assigned questions must still belong to this exam's certification.
+      // (Defense in depth — exam_questions should already enforce this.)
 
       let graded;
       try {

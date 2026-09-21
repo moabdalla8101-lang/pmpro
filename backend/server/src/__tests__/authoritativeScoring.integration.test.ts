@@ -74,6 +74,18 @@ function itDb(name: string, fn: () => Promise<void>, timeout = 60000) {
   }, timeout);
 }
 
+function practicePost(
+  token: string,
+  body: Record<string, unknown>,
+  idempotencyKey = `test-${uuidv4()}`
+) {
+  return request(app)
+    .post('/api/progress/answer')
+    .set('Authorization', `Bearer ${token}`)
+    .set('Idempotency-Key', idempotencyKey)
+    .send({ certificationId: CERT_ID, ...body });
+}
+
 async function pickSelectOne() {
   const result = await pool.query(
     `SELECT q.id as question_id, a.id as answer_id, a.is_correct
@@ -119,10 +131,10 @@ describe('authoritative practice scoring', () => {
     );
     const foreignAnswerId = q2rows.rows[0].id;
 
-    const res = await request(app)
-      .post('/api/progress/answer')
-      .set('Authorization', `Bearer ${tokenA}`)
-      .send({ questionId: q1.questionId, answerId: foreignAnswerId });
+    const res = await practicePost(tokenA, {
+      questionId: q1.questionId,
+      answerId: foreignAnswerId,
+    });
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(JSON.stringify(res.body)).toMatch(/belong|Invalid|Validation|error/i);
 
@@ -135,38 +147,77 @@ describe('authoritative practice scoring', () => {
 
   itDb('rejects repeated answer IDs in one payload', async () => {
     const q = await pickSelectOne();
-    const res = await request(app)
+    const res = await practicePost(tokenA, {
+      questionId: q.questionId,
+      answerIds: [q.correctAnswerId, q.correctAnswerId],
+    });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+  });
+
+  itDb('requires Idempotency-Key and certificationId', async () => {
+    const q = await pickSelectOne();
+    const missingKey = await request(app)
       .post('/api/progress/answer')
       .set('Authorization', `Bearer ${tokenA}`)
       .send({
         questionId: q.questionId,
-        answerIds: [q.correctAnswerId, q.correctAnswerId],
+        answerId: q.correctAnswerId,
+        certificationId: CERT_ID,
       });
-    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(missingKey.status).toBeGreaterThanOrEqual(400);
+
+    const missingCert = await request(app)
+      .post('/api/progress/answer')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .set('Idempotency-Key', `nokey-${uuidv4()}`)
+      .send({
+        questionId: q.questionId,
+        answerId: q.correctAnswerId,
+      });
+    expect(missingCert.status).toBeGreaterThanOrEqual(400);
+  });
+
+  itDb('rejects questions that do not belong to the requested certification', async () => {
+    const q = await pickSelectOne();
+    const fakeCert = uuidv4();
+    const res = await request(app)
+      .post('/api/progress/answer')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .set('Idempotency-Key', `wrong-cert-${uuidv4()}`)
+      .send({
+        questionId: q.questionId,
+        answerId: q.correctAnswerId,
+        certificationId: fakeCert,
+      });
+    expect(res.status).toBe(404);
+
+    const count = await pool.query(
+      'SELECT COUNT(*)::int AS c FROM question_attempts WHERE user_id = $1 AND question_id = $2',
+      [userA, q.questionId]
+    );
+    expect(count.rows[0].c).toBe(0);
   });
 
   itDb('idempotent retries with the same key do not inflate progress', async () => {
     const q = await pickSelectOne();
     const key = `idem-${uuidv4()}`;
 
-    const first = await request(app)
-      .post('/api/progress/answer')
-      .set('Authorization', `Bearer ${tokenA}`)
-      .set('Idempotency-Key', key)
-      .send({ questionId: q.questionId, answerId: q.correctAnswerId })
-      .expect(200);
+    const first = await practicePost(
+      tokenA,
+      { questionId: q.questionId, answerId: q.correctAnswerId },
+      key
+    ).expect(200);
 
     const before = await pool.query(
       'SELECT total_questions_answered::int AS t FROM user_progress WHERE user_id = $1 AND certification_id = $2',
       [userA, CERT_ID]
     );
 
-    const second = await request(app)
-      .post('/api/progress/answer')
-      .set('Authorization', `Bearer ${tokenA}`)
-      .set('Idempotency-Key', key)
-      .send({ questionId: q.questionId, answerId: q.correctAnswerId })
-      .expect(200);
+    const second = await practicePost(
+      tokenA,
+      { questionId: q.questionId, answerId: q.correctAnswerId },
+      key
+    ).expect(200);
 
     expect(second.body.alreadyRecorded).toBe(true);
     expect(second.body.attemptId).toBe(first.body.attemptId);
@@ -191,19 +242,20 @@ describe('authoritative practice scoring', () => {
       [CERT_ID]
     );
     if (!inactive.rows.length) return;
-    const res = await request(app)
-      .post('/api/progress/answer')
-      .set('Authorization', `Bearer ${tokenA}`)
-      .send({ questionId: inactive.rows[0].id, answerId: uuidv4() });
+    const res = await practicePost(tokenA, {
+      questionId: inactive.rows[0].id,
+      answerId: uuidv4(),
+    });
     expect(res.status).toBe(404);
   });
 
   itDb('rejects client-authored isCorrect on practice submit', async () => {
     const q = await pickSelectOne();
-    const res = await request(app)
-      .post('/api/progress/answer')
-      .set('Authorization', `Bearer ${tokenA}`)
-      .send({ questionId: q.questionId, answerId: q.wrongAnswerId, isCorrect: true });
+    const res = await practicePost(tokenA, {
+      questionId: q.questionId,
+      answerId: q.wrongAnswerId,
+      isCorrect: true,
+    });
     expect(res.status).toBeGreaterThanOrEqual(400);
   });
 
@@ -221,12 +273,10 @@ describe('authoritative practice scoring', () => {
 
   itDb('valid single-select practice still works', async () => {
     const q = await pickSelectOne();
-    const res = await request(app)
-      .post('/api/progress/answer')
-      .set('Authorization', `Bearer ${tokenA}`)
-      .set('Idempotency-Key', `ok-${uuidv4()}`)
-      .send({ questionId: q.questionId, answerId: q.correctAnswerId, certificationId: CERT_ID })
-      .expect(200);
+    const res = await practicePost(tokenA, {
+      questionId: q.questionId,
+      answerId: q.correctAnswerId,
+    }).expect(200);
     expect(typeof res.body.isCorrect).toBe('boolean');
     expect(res.body.isCorrect).toBe(true);
   });
@@ -399,5 +449,84 @@ describe('authoritative exam scoring', () => {
       .set('Authorization', `Bearer ${tokenA}`)
       .send({ answers: [], score: 100, correctAnswers: 2 });
     expect(res.status).toBeGreaterThanOrEqual(400);
+  });
+
+  itDb('rejects exam assignments that mix certifications', async () => {
+    const start = await request(app)
+      .post('/api/exams/start')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({ certificationId: CERT_ID, totalQuestions: 2 })
+      .expect(201);
+
+    const examId = start.body.examId;
+    const q0 = start.body.questions[0].id;
+    const otherCert = uuidv4();
+
+    await pool.query(
+      `INSERT INTO certifications (id, name, type, description, is_active)
+       VALUES ($1, 'Other Cert', 'other', 'test', true)`,
+      [otherCert]
+    );
+
+    // Simulate a corrupted assignment that points at another certification.
+    await pool.query('UPDATE questions SET certification_id = $1 WHERE id = $2', [
+      otherCert,
+      q0,
+    ]);
+
+    try {
+      const res = await request(app)
+        .post(`/api/exams/${examId}/submit`)
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ answers: [] });
+      expect(res.status).toBeGreaterThanOrEqual(400);
+      expect(JSON.stringify(res.body)).toMatch(/certification/i);
+    } finally {
+      await pool.query('UPDATE questions SET certification_id = $1 WHERE id = $2', [
+        CERT_ID,
+        q0,
+      ]);
+      await pool.query('DELETE FROM certifications WHERE id = $1', [otherCert]);
+    }
+  });
+
+  itDb('inactive assigned exam questions cannot score as correct', async () => {
+    const start = await request(app)
+      .post('/api/exams/start')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({ certificationId: CERT_ID, totalQuestions: 2 })
+      .expect(201);
+
+    const examId = start.body.examId;
+    const q0 = start.body.questions[0];
+    const correctOpt = (q0.answers || []).find((a: any) => a) || q0.answers?.[0];
+
+    // Deactivate one assigned question after assignment (content disable mid-exam).
+    await pool.query('UPDATE questions SET is_active = false WHERE id = $1', [q0.id]);
+
+    try {
+      const submitted = await request(app)
+        .post(`/api/exams/${examId}/submit`)
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({
+          answers: correctOpt?.id
+            ? [{ questionId: q0.id, answerId: correctOpt.id }]
+            : [{ questionId: q0.id }],
+        })
+        .expect(200);
+
+      expect(submitted.body.totalQuestions).toBe(2);
+      // Even if client sent a "correct" option, inactive item is forced incorrect.
+      const inactiveAttempt = await pool.query(
+        `SELECT is_correct, response_json FROM question_attempts
+         WHERE exam_id = $1 AND question_id = $2`,
+        [examId, q0.id]
+      );
+      expect(inactiveAttempt.rows[0].is_correct).toBe(false);
+      expect(inactiveAttempt.rows[0].response_json?.inactiveQuestion).toBe(true);
+      expect(submitted.body.correctAnswers).toBeLessThanOrEqual(1);
+    } finally {
+      await pool.query('UPDATE questions SET is_active = true WHERE id = $1', [q0.id]);
+    }
   });
 });
