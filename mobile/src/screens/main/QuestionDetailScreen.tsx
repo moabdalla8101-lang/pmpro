@@ -203,19 +203,26 @@ export default function QuestionDetailScreen() {
     }
 
     setSubmitting(true);
+    const idempotencyKey = `practice:${questionId}:${Date.now()}:${Math.random()
+      .toString(36)
+      .slice(2, 10)}`;
     try {
       let feedback: AnsweredQuestionFeedback;
 
       if (isDragAndMatch) {
         feedback = await progressService.recordAnswer(questionId, undefined, {
           dragMatches,
+          idempotencyKey,
         });
       } else if (isMultipleSelection) {
         feedback = await progressService.recordAnswer(questionId, undefined, {
           answerIds: selectedAnswers,
+          idempotencyKey,
         });
       } else {
-        feedback = await progressService.recordAnswer(questionId, selectedAnswer!);
+        feedback = await progressService.recordAnswer(questionId, selectedAnswer!, {
+          idempotencyKey,
+        });
       }
 
       setAnswerFeedback(feedback);

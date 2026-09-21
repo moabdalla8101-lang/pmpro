@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { serializeAnsweredQuestionFeedback, serializeAdminQuestion } from '../serializers/questionSerializers';
 import { gradeQuestionResponse } from '../utils/gradeQuestionResponse';
 import { LEARNER_ATTEMPTS_CTE } from '../utils/learnerAttempts';
+import { assertNoClientAuthoritativeScoreFields } from '../utils/authoritativeScoring';
 
 async function ensureQuestionAttemptsTable(client: { query: (sql: string) => Promise<any> }) {
   await client.query(`
@@ -77,9 +78,32 @@ export async function getUserProgress(req: AuthRequest, res: Response, next: Nex
 
 export async function updateUserProgress(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    const { certificationId, totalQuestionsAnswered, correctAnswers } = req.body;
+    const { certificationId } = req.body;
+    if (!certificationId) {
+      return next(new ValidationError('certificationId is required'));
+    }
 
-    const accuracy = correctAnswers / totalQuestionsAnswered;
+    // Ignore any client-supplied counts/accuracy — recompute from authoritative attempts.
+    try {
+      assertNoClientAuthoritativeScoreFields(req.body, 'Progress update');
+    } catch (err: any) {
+      return next(new ValidationError(err.message));
+    }
+
+    const progressResult = await pool.query(
+      `WITH ${LEARNER_ATTEMPTS_CTE}
+       SELECT
+         COUNT(*)::int as total_answered,
+         COALESCE(SUM(CASE WHEN is_correct THEN 1 ELSE 0 END), 0)::int as correct_count
+       FROM learner_attempts
+       WHERE user_id = $1
+         AND question_id IN (SELECT id FROM questions WHERE certification_id = $2)`,
+      [req.user!.userId, certificationId]
+    );
+
+    const totalAnswered = progressResult.rows[0]?.total_answered || 0;
+    const totalCorrect = progressResult.rows[0]?.correct_count || 0;
+    const accuracy = totalAnswered > 0 ? totalCorrect / totalAnswered : 0;
 
     const existing = await pool.query(
       'SELECT id FROM user_progress WHERE user_id = $1 AND certification_id = $2',
@@ -88,25 +112,29 @@ export async function updateUserProgress(req: AuthRequest, res: Response, next: 
 
     if (existing.rows.length > 0) {
       await pool.query(
-        `UPDATE user_progress 
+        `UPDATE user_progress
          SET total_questions_answered = $1,
              correct_answers = $2,
              accuracy = $3,
              last_activity_at = NOW(),
              updated_at = NOW()
          WHERE user_id = $4 AND certification_id = $5`,
-        [totalQuestionsAnswered, correctAnswers, accuracy, req.user!.userId, certificationId]
+        [totalAnswered, totalCorrect, accuracy, req.user!.userId, certificationId]
       );
     } else {
-      const id = uuidv4();
       await pool.query(
         `INSERT INTO user_progress (id, user_id, certification_id, total_questions_answered, correct_answers, accuracy, last_activity_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
-        [id, req.user!.userId, certificationId, totalQuestionsAnswered, correctAnswers, accuracy]
+        [uuidv4(), req.user!.userId, certificationId, totalAnswered, totalCorrect, accuracy]
       );
     }
 
-    res.json({ message: 'Progress updated successfully' });
+    res.json({
+      message: 'Progress updated successfully',
+      totalQuestionsAnswered: totalAnswered,
+      correctAnswers: totalCorrect,
+      accuracy: accuracy * 100,
+    });
   } catch (error) {
     next(error);
   }
@@ -115,16 +143,69 @@ export async function updateUserProgress(req: AuthRequest, res: Response, next: 
 export async function recordAnswer(req: AuthRequest, res: Response, next: NextFunction) {
   const client = await pool.connect();
   try {
-    const { questionId, answerId, answerIds, dragMatches } = req.body;
+    const { questionId, answerId, answerIds, dragMatches, certificationId } = req.body;
+    const idempotencyKey =
+      (typeof req.headers['idempotency-key'] === 'string' && req.headers['idempotency-key'].trim()) ||
+      (typeof req.body?.idempotencyKey === 'string' && req.body.idempotencyKey.trim()) ||
+      null;
+
+    try {
+      assertNoClientAuthoritativeScoreFields(req.body, 'Practice answer');
+    } catch (err: any) {
+      return next(new ValidationError(err.message));
+    }
+
+    if (!questionId) {
+      return next(new ValidationError('questionId is required'));
+    }
 
     await client.query('BEGIN');
-
     await ensureQuestionAttemptsTable(client);
+    await client.query(`
+      ALTER TABLE question_attempts
+        ADD COLUMN IF NOT EXISTS idempotency_key TEXT
+    `);
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_question_attempts_user_idempotency
+        ON question_attempts (user_id, idempotency_key)
+        WHERE idempotency_key IS NOT NULL
+    `);
 
-    const questionResult = await client.query(
-      'SELECT * FROM questions WHERE id = $1 AND is_active = true',
-      [questionId]
-    );
+    if (idempotencyKey) {
+      const existing = await client.query(
+        `SELECT qa.*, q.question_text, q.explanation, q.question_type, q.question_metadata,
+                q.explanation_images, q.id as qid
+         FROM question_attempts qa
+         JOIN questions q ON q.id = qa.question_id
+         WHERE qa.user_id = $1 AND qa.idempotency_key = $2
+         FOR UPDATE`,
+        [req.user!.userId, idempotencyKey]
+      );
+      if (existing.rows.length > 0) {
+        const row = existing.rows[0];
+        const answersResult = await client.query(
+          'SELECT * FROM answers WHERE question_id = $1 ORDER BY "order"',
+          [row.question_id]
+        );
+        await client.query('COMMIT');
+        const feedback = serializeAnsweredQuestionFeedback(row, answersResult.rows, {
+          isCorrect: row.is_correct,
+          attemptId: row.id,
+          userAnswerId: row.id,
+          userAnswerIds: [row.id],
+        });
+        return res.json({ ...feedback, alreadyRecorded: true });
+      }
+    }
+
+    let questionQuery = 'SELECT * FROM questions WHERE id = $1 AND is_active = true';
+    const questionParams: any[] = [questionId];
+    if (certificationId) {
+      questionQuery += ' AND certification_id = $2';
+      questionParams.push(certificationId);
+    }
+
+    const questionResult = await client.query(questionQuery, questionParams);
     if (questionResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return next(new NotFoundError('Question not found'));
@@ -137,19 +218,19 @@ export async function recordAnswer(req: AuthRequest, res: Response, next: NextFu
     );
     const answers = answersResult.rows;
 
-    const questionType = question.question_type;
     let isCorrect = false;
     let selectedIds: string[] = [];
     let responseJson: any = null;
 
     try {
       const graded = gradeQuestionResponse({
-        questionType,
+        questionType: question.question_type,
         questionMetadata: question.question_metadata,
         answers,
         answerId,
         answerIds,
         dragMatches,
+        allowUnanswered: false,
       });
       isCorrect = graded.isCorrect;
       selectedIds = graded.selectedIds;
@@ -159,36 +240,87 @@ export async function recordAnswer(req: AuthRequest, res: Response, next: NextFu
       return next(new ValidationError(err.message || 'Invalid answer payload'));
     }
 
-    if (questionType !== 'drag_and_match' && selectedIds.length === 0) {
-      await client.query('ROLLBACK');
-      return next(new ValidationError('questionId and answerId(s) are required'));
-    }
-
-    if (selectedIds.length > 0) {
-      const answerById = new Map(answers.map((a: any) => [a.id, a]));
-      for (const id of selectedIds) {
-        if (!answerById.has(id)) {
-          await client.query('ROLLBACK');
-          return next(new NotFoundError('Answer not found'));
+    const attemptId = uuidv4();
+    try {
+      await client.query(
+        `INSERT INTO question_attempts
+           (id, user_id, question_id, is_correct, selected_answer_ids, response_json, answered_at, idempotency_key)
+         VALUES ($1, $2, $3, $4, $5::uuid[], $6::jsonb, NOW(), $7)`,
+        [
+          attemptId,
+          req.user!.userId,
+          questionId,
+          isCorrect,
+          selectedIds,
+          JSON.stringify(responseJson),
+          idempotencyKey,
+        ]
+      );
+    } catch (err: any) {
+      // Concurrent retry with same idempotency key
+      if (idempotencyKey && err?.code === '23505') {
+        await client.query('ROLLBACK');
+        const replay = await pool.query(
+          `SELECT * FROM question_attempts WHERE user_id = $1 AND idempotency_key = $2`,
+          [req.user!.userId, idempotencyKey]
+        );
+        if (replay.rows.length > 0) {
+          const row = replay.rows[0];
+          const opts = await pool.query(
+            'SELECT * FROM answers WHERE question_id = $1 ORDER BY "order"',
+            [row.question_id]
+          );
+          const q = await pool.query('SELECT * FROM questions WHERE id = $1', [row.question_id]);
+          const feedback = serializeAnsweredQuestionFeedback(q.rows[0], opts.rows, {
+            isCorrect: row.is_correct,
+            attemptId: row.id,
+            userAnswerId: row.id,
+            userAnswerIds: [row.id],
+          });
+          return res.json({ ...feedback, alreadyRecorded: true });
         }
       }
+      throw err;
     }
 
-    const attemptId = uuidv4();
-    // Single attempt row — do not dual-write user_answers (corrupts drag/delete analytics).
-    await client.query(
-      `INSERT INTO question_attempts
-         (id, user_id, question_id, is_correct, selected_answer_ids, response_json, answered_at)
-       VALUES ($1, $2, $3, $4, $5::uuid[], $6::jsonb, NOW())`,
-      [
-        attemptId,
-        req.user!.userId,
-        questionId,
-        isCorrect,
-        selectedIds,
-        JSON.stringify(responseJson),
-      ]
+    // Recompute progress for this certification from attempts (server-authoritative).
+    const certId = question.certification_id;
+    const progressResult = await client.query(
+      `WITH ${LEARNER_ATTEMPTS_CTE}
+       SELECT
+         COUNT(*)::int as total_answered,
+         COALESCE(SUM(CASE WHEN is_correct THEN 1 ELSE 0 END), 0)::int as correct_count
+       FROM learner_attempts
+       WHERE user_id = $1
+         AND question_id IN (SELECT id FROM questions WHERE certification_id = $2)`,
+      [req.user!.userId, certId]
     );
+    const totalAnswered = progressResult.rows[0]?.total_answered || 0;
+    const totalCorrect = progressResult.rows[0]?.correct_count || 0;
+    const accuracy = totalAnswered > 0 ? totalCorrect / totalAnswered : 0;
+
+    const existingProgress = await client.query(
+      'SELECT id FROM user_progress WHERE user_id = $1 AND certification_id = $2 FOR UPDATE',
+      [req.user!.userId, certId]
+    );
+    if (existingProgress.rows.length > 0) {
+      await client.query(
+        `UPDATE user_progress
+         SET total_questions_answered = $1,
+             correct_answers = $2,
+             accuracy = $3,
+             last_activity_at = NOW(),
+             updated_at = NOW()
+         WHERE user_id = $4 AND certification_id = $5`,
+        [totalAnswered, totalCorrect, accuracy, req.user!.userId, certId]
+      );
+    } else {
+      await client.query(
+        `INSERT INTO user_progress (id, user_id, certification_id, total_questions_answered, correct_answers, accuracy, last_activity_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
+        [uuidv4(), req.user!.userId, certId, totalAnswered, totalCorrect, accuracy]
+      );
+    }
 
     await client.query('COMMIT');
 
