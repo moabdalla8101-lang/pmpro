@@ -13,10 +13,10 @@ import { validate } from '../middleware/validate';
 
 const router = Router();
 
-// Public routes (authenticated users)
-router.get('/', authenticate, getKnowledgeAreas);
-router.get('/:id', authenticate, getKnowledgeArea);
-router.get('/certification/:certificationId', authenticate, getKnowledgeAreasByCertification);
+// Catalog GETs are public so guests can browse
+router.get('/', getKnowledgeAreas);
+router.get('/:id', getKnowledgeArea);
+router.get('/certification/:certificationId', getKnowledgeAreasByCertification);
 
 // Admin routes
 router.post(

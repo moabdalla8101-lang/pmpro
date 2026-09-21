@@ -11,19 +11,22 @@ import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
 import { hasPremiumAccess } from '../../utils/subscriptionUtils';
+import { useRequireAuth } from '../../utils/requireAuth';
 
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
 
 export default function MissedQuestionsScreen() {
   const dispatch = useDispatch<AppDispatch>();
   const navigation = useNavigation();
+  const requireAuth = useRequireAuth();
   const { missedQuestions, isLoading } = useSelector((state: RootState) => state.missedQuestions);
-  const { user } = useSelector((state: RootState) => state.auth);
+  const { user, isAuthenticated } = useSelector((state: RootState) => state.auth);
   
   const [selectedKnowledgeArea, setSelectedKnowledgeArea] = useState<string | null>(null);
   const [showReviewed, setShowReviewed] = useState(false);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     // When showReviewed is false, we want to show only non-reviewed (reviewed: false)
     // When showReviewed is true, we want to show only reviewed (reviewed: true)
     // Pass undefined if we want to show all (but for now, default to false to show non-reviewed)
@@ -34,7 +37,7 @@ export default function MissedQuestionsScreen() {
         reviewed: showReviewed ? true : false, // Explicitly pass false to show non-reviewed by default
       }) as any
     );
-  }, [selectedKnowledgeArea, showReviewed, dispatch]);
+  }, [selectedKnowledgeArea, showReviewed, dispatch, isAuthenticated]);
 
   const handleQuestionPress = (questionId: string) => {
     (navigation as any).navigate('QuestionDetail', { questionId });
@@ -139,6 +142,20 @@ export default function MissedQuestionsScreen() {
       </TouchableOpacity>
     );
   };
+
+  if (!isAuthenticated) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <EmptyState
+          icon="alert-circle-outline"
+          title="Sign in to review missed questions"
+          message="Practice answers are saved to your account so you can revisit mistakes."
+          actionLabel="Sign In"
+          onActionPress={() => requireAuth('missed_questions')}
+        />
+      </SafeAreaView>
+    );
+  }
 
   if (!hasPremiumAccess(user?.subscriptionTier)) {
     return (

@@ -5,15 +5,19 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSelector, useDispatch } from 'react-redux';
 import { examService } from '../../services/api/examService';
 import { RootState, AppDispatch } from '../../store';
-import { fetchQuestions } from '../../store/slices/questionSlice';
-import { questionService } from '../../services/api/questionService';
 import { addBookmark, removeBookmark, checkBookmark } from '../../store/slices/bookmarkSlice';
 import { dailyActivityService } from '../../services/dailyActivityService';
-import { useFocusEffect } from '@react-navigation/native';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
-import { ActionButton } from '../../components';
+import {
+  ActionButton,
+  ExamAnswerPanel,
+  ExamAnswerValue,
+  isExamAnswerComplete,
+  toExamSubmitAnswer,
+} from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
+import { useRequireAuth } from '../../utils/requireAuth';
 
 const TOTAL_QUESTIONS = 10;
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
@@ -22,25 +26,26 @@ export default function DailyQuizScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const dispatch = useDispatch<AppDispatch>();
-  const { questions } = useSelector((state: RootState) => state.questions);
+  const requireAuth = useRequireAuth();
   const { bookmarkedQuestionIds } = useSelector((state: RootState) => state.bookmarks);
-  
+  const { isAuthenticated } = useSelector((state: RootState) => state.auth);
+
   const [examId, setExamId] = useState<string | null>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [selectedAnswers, setSelectedAnswers] = useState<{ [key: string]: string }>({});
+  const [selectedAnswers, setSelectedAnswers] = useState<{ [key: string]: ExamAnswerValue }>({});
   const [isQuizStarted, setIsQuizStarted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
 
-  // Use quizQuestions if available, otherwise fall back to Redux questions
-  const displayQuestions = quizQuestions.length > 0 ? quizQuestions : questions;
+  const displayQuestions = quizQuestions;
   const currentQuestion = displayQuestions[currentQuestionIndex];
-  const progress = displayQuestions.length > 0 ? (currentQuestionIndex + 1) / displayQuestions.length : 0;
-  const allQuestionsAnswered = Boolean(displayQuestions.length > 0 && Object.keys(selectedAnswers).length === displayQuestions.length);
+  const progress =
+    displayQuestions.length > 0 ? (currentQuestionIndex + 1) / displayQuestions.length : 0;
+  const allQuestionsAnswered =
+    displayQuestions.length > 0 &&
+    displayQuestions.every((q) => isExamAnswerComplete(q, selectedAnswers[q.id]));
 
   useEffect(() => {
-    // Check if we're resuming an existing quiz
-    // Handle nested navigation params - params might be in route.params or route.params.params
     try {
       const params = route.params;
       if (!params || typeof params !== 'object') {
@@ -50,7 +55,6 @@ export default function DailyQuizScreen() {
       if (examIdParam && typeof examIdParam === 'string') {
         setExamId(examIdParam);
         setIsQuizStarted(true);
-        // Fetch questions for this exam
         loadQuizQuestions(examIdParam);
       }
     } catch (error) {
@@ -61,47 +65,29 @@ export default function DailyQuizScreen() {
   const loadQuizQuestions = async (quizExamId: string) => {
     try {
       const examData = await examService.getExam(quizExamId);
-      // For now, fetch questions - in a real scenario, we'd store question IDs with the exam
-      // or create an endpoint to get exam questions
-      await dispatch(fetchQuestions({ 
-        certificationId: PMP_CERTIFICATION_ID, 
-        limit: TOTAL_QUESTIONS.toString() 
-      }) as any);
+      if (examData.questions?.length) {
+        setQuizQuestions(examData.questions);
+      }
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to load quiz questions');
     }
   };
 
   const handleStartQuiz = async () => {
+    if (!requireAuth('exams')) return;
+
     setIsLoading(true);
     try {
       const response = await examService.startDailyQuiz(PMP_CERTIFICATION_ID);
       setExamId(response.examId);
+      setQuizQuestions(response.questions || []);
       setIsQuizStarted(true);
       dailyActivityService.startSession();
-
-      // Fetch the specific questions for this quiz using the questionIds returned
-      if (response.questionIds && response.questionIds.length > 0) {
-        const questionsData = await questionService.getQuestionsByIds(response.questionIds);
-        // Store questions in Redux or local state
-        // For now, we'll dispatch them to Redux
-        if (questionsData.questions) {
-          // We need to manually set the questions in Redux or use a different approach
-          // Let's use a local state for quiz questions
-          setQuizQuestions(questionsData.questions);
-        }
-      } else {
-        // Fallback: fetch random questions
-        await dispatch(fetchQuestions({ 
-          certificationId: PMP_CERTIFICATION_ID, 
-          limit: TOTAL_QUESTIONS.toString() 
-        }) as any);
-      }
     } catch (error: any) {
       if (error.response?.status === 400 && error.response?.data?.error === 'Daily quiz already completed') {
         Alert.alert(
           'Quiz Already Completed',
-          'You have already completed today\'s quiz. Come back tomorrow for a new one!',
+          "You have already completed today's quiz. Come back tomorrow for a new one!",
           [
             {
               text: 'View Results',
@@ -109,9 +95,9 @@ export default function DailyQuizScreen() {
                 if (error.response?.data?.examId) {
                   (navigation as any).navigate('ExamReview', { examId: error.response.data.examId });
                 }
-              }
+              },
             },
-            { text: 'OK', onPress: () => navigation.goBack() }
+            { text: 'OK', onPress: () => navigation.goBack() },
           ]
         );
       } else {
@@ -122,17 +108,17 @@ export default function DailyQuizScreen() {
     }
   };
 
-  const handleAnswerSelect = (answerId: string) => {
-    if (currentQuestion) {
-      setSelectedAnswers({
-        ...selectedAnswers,
-        [currentQuestion.id]: answerId,
-      });
-    }
+  const handleAnswerChange = (value: ExamAnswerValue) => {
+    if (!currentQuestion) return;
+    setSelectedAnswers({
+      ...selectedAnswers,
+      [currentQuestion.id]: value,
+    });
   };
 
   const handleToggleBookmark = async () => {
     if (!currentQuestion) return;
+    if (!requireAuth('bookmarks')) return;
     const questionId = currentQuestion.id;
     const isBookmarked = bookmarkedQuestionIds.includes(questionId);
     
@@ -144,10 +130,10 @@ export default function DailyQuizScreen() {
   };
 
   useEffect(() => {
-    if (currentQuestion?.id) {
+    if (currentQuestion?.id && isAuthenticated) {
       dispatch(checkBookmark(currentQuestion.id) as any);
     }
-  }, [currentQuestion?.id, dispatch]);
+  }, [currentQuestion?.id, dispatch, isAuthenticated]);
 
   const handleNext = () => {
     if (currentQuestionIndex < displayQuestions.length - 1) {
@@ -166,17 +152,13 @@ export default function DailyQuizScreen() {
 
     // Check if all questions are answered
     if (!allQuestionsAnswered) {
+      const remaining = displayQuestions.filter(
+        (q) => !isExamAnswerComplete(q, selectedAnswers[q.id])
+      ).length;
       Alert.alert(
         'Incomplete Quiz',
-        `You have ${displayQuestions.length - Object.keys(selectedAnswers).length} unanswered question(s). Are you sure you want to submit?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Submit Anyway',
-            style: 'destructive',
-            onPress: submitAnswers,
-          },
-        ]
+        `You have ${remaining} unanswered question(s). Please answer all questions before submitting.`,
+        [{ text: 'OK', style: 'cancel' }]
       );
       return;
     }
@@ -199,35 +181,30 @@ export default function DailyQuizScreen() {
     if (!examId) return;
 
     try {
-      const answers = Object.entries(selectedAnswers).map(([questionId, answerId]) => ({
-        questionId,
-        answerId,
-      }));
+      const incomplete = displayQuestions.filter(
+        (q) => !isExamAnswerComplete(q, selectedAnswers[q.id])
+      );
+      if (incomplete.length > 0) {
+        Alert.alert(
+          'Incomplete Quiz',
+          `Please answer all ${displayQuestions.length} questions (${incomplete.length} remaining).`
+        );
+        return;
+      }
+
+      const answers = displayQuestions.map((q) =>
+        toExamSubmitAnswer(q.id, selectedAnswers[q.id] || {})
+      );
 
       await examService.submitExam(examId, answers);
-      
-      // Track questions answered for daily goals
+
       await dailyActivityService.incrementQuestions(displayQuestions.length);
-      
-      // End session and track time
       await dailyActivityService.endSession();
-      
+
       (navigation as any).navigate('ExamReview', { examId });
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to submit quiz');
     }
-  };
-
-  const getAnswerStyle = (answerId: string) => {
-    const isSelected = selectedAnswers[currentQuestion?.id || ''] === answerId;
-    return isSelected
-      ? [styles.answerOption, styles.answerOptionSelected]
-      : styles.answerOption;
-  };
-
-  const getAnswerIcon = (answerId: string) => {
-    const isSelected = selectedAnswers[currentQuestion?.id || ''] === answerId;
-    return isSelected ? 'radiobox-marked' : 'radiobox-blank';
   };
 
   // Pre-quiz screen
@@ -347,35 +324,11 @@ export default function DailyQuizScreen() {
 
         {/* Answer Options */}
         <View style={styles.answersContainer}>
-          {currentQuestion.answers?.map((answer: any, index: number) => (
-            <TouchableOpacity
-              key={answer.id}
-              style={getAnswerStyle(answer.id)}
-              onPress={() => handleAnswerSelect(answer.id)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.answerContent}>
-                <View style={styles.answerIndicator}>
-                  <View style={styles.answerLetter}>
-                    <Text style={styles.answerLetterText}>
-                      {String.fromCharCode(65 + index)}
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.answerTextContainer}>
-                  <Text style={styles.answerText}>
-                    {answer.answerText || answer.answer_text}
-                  </Text>
-                </View>
-                <Icon
-                  name={getAnswerIcon(answer.id)}
-                  size={24}
-                  color={selectedAnswers[currentQuestion.id] === answer.id ? colors.primary : colors.gray400}
-                  style={styles.answerIcon}
-                />
-              </View>
-            </TouchableOpacity>
-          ))}
+          <ExamAnswerPanel
+            question={currentQuestion}
+            value={selectedAnswers[currentQuestion.id]}
+            onChange={handleAnswerChange}
+          />
         </View>
       </ScrollView>
 

@@ -6,6 +6,10 @@ import { examService } from '../../services/api/examService';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ActionButton, CategoryBadge, SectionHeader } from '../../components';
+import {
+  formatReviewYourAnswer,
+  formatReviewCorrectAnswer,
+} from '../../utils/examSubmitHelpers';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
@@ -332,9 +336,23 @@ export default function ExamReviewScreen() {
                       styles.answerText,
                       !isCorrect && styles.answerTextIncorrect,
                     ]}>
-                      {item.answerText || item.answer_text || 'No answer'}
+                      {formatReviewYourAnswer(item)}
                     </Text>
                   </View>
+
+                  {formatReviewCorrectAnswer(item) && (
+                    <View style={styles.answerSection}>
+                      <View style={styles.answerSectionHeader}>
+                        <Icon name="check-decagram" size={20} color={colors.success} />
+                        <Text variant="titleSmall" style={styles.answerSectionLabel}>
+                          Correct Answer:
+                        </Text>
+                      </View>
+                      <Text variant="bodyMedium" style={styles.answerText}>
+                        {formatReviewCorrectAnswer(item)}
+                      </Text>
+                    </View>
+                  )}
 
                   {item.explanation && (
                     <View style={styles.explanationSection}>
@@ -347,6 +365,39 @@ export default function ExamReviewScreen() {
                       <Text variant="bodyMedium" style={styles.explanationText}>
                         {item.explanation}
                       </Text>
+                    </View>
+                  )}
+
+                  {Array.isArray(item.options) && item.options.length > 0 && (
+                    <View style={styles.explanationSection}>
+                      <View style={styles.explanationHeader}>
+                        <Icon name="format-list-bulleted" size={20} color={colors.textSecondary} />
+                        <Text variant="titleSmall" style={styles.explanationLabel}>
+                          Options:
+                        </Text>
+                      </View>
+                      {item.options.map((opt: any) => (
+                        <View key={opt.id} style={{ marginBottom: spacing.sm }}>
+                          <Text
+                            variant="bodyMedium"
+                            style={[
+                              styles.answerText,
+                              opt.isCorrect && { color: colors.success, fontWeight: '600' },
+                              opt.selected && !opt.isCorrect && styles.answerTextIncorrect,
+                            ]}
+                          >
+                            {opt.selected ? '• ' : '  '}
+                            {opt.answerText}
+                            {opt.isCorrect ? ' (correct)' : ''}
+                            {opt.selected ? ' (yours)' : ''}
+                          </Text>
+                          {opt.rationale ? (
+                            <Text variant="bodySmall" style={styles.explanationText}>
+                              {opt.rationale}
+                            </Text>
+                          ) : null}
+                        </View>
+                      ))}
                     </View>
                   )}
                 </Card.Content>

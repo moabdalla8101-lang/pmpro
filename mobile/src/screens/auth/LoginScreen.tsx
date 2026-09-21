@@ -3,10 +3,12 @@ import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, SafeAreaV
 import { TextInput, Text, Snackbar } from 'react-native-paper';
 import { useDispatch } from 'react-redux';
 import { login } from '../../store/slices/authSlice';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { ActionButton } from '../../components';
 import { colors } from '../../theme';
-import { spacing, borderRadius, shadows } from '../../utils/styles';
+import { spacing } from '../../utils/styles';
+import { getAuthPromptMessage, AuthPromptReason } from '../../utils/requireAuth';
+import { cancelPendingPracticeAuth } from '../../utils/practiceTestDraft';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -15,7 +17,12 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const dispatch = useDispatch();
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
+  const route = useRoute();
+  const params = (route.params as { reason?: AuthPromptReason; allowDismiss?: boolean }) || {};
+  const allowDismiss = params.allowDismiss !== false;
+  const promptMessage = getAuthPromptMessage(params.reason);
+  const authParams = { reason: params.reason, allowDismiss };
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -28,10 +35,24 @@ export default function LoginScreen() {
 
     try {
       await dispatch(login({ email, password }) as any).unwrap();
+      // After login, dismiss Auth modal if presented on-demand
+      if (navigation.getParent()?.canGoBack?.()) {
+        navigation.getParent()?.goBack();
+      }
     } catch (err: any) {
       setError(err.message || 'Login failed');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleContinueAsGuest = async () => {
+    await cancelPendingPracticeAuth();
+    const parent = navigation.getParent();
+    if (parent?.canGoBack?.()) {
+      parent.goBack();
+    } else if (navigation.canGoBack()) {
+      navigation.goBack();
     }
   };
 
@@ -52,7 +73,7 @@ export default function LoginScreen() {
                 Welcome Back
               </Text>
               <Text variant="bodyLarge" style={styles.subtitle}>
-                Sign in to continue your PMP exam preparation
+                {params.reason ? promptMessage : 'Sign in to continue your PMP exam preparation'}
               </Text>
             </View>
 
@@ -102,16 +123,24 @@ export default function LoginScreen() {
               <View style={styles.linkContainer}>
                 <ActionButton
                   label="Don't have an account? Sign up"
-                  onPress={() => navigation.navigate('Register' as never)}
+                  onPress={() => navigation.navigate('Register', authParams)}
                   variant="text"
                   size="small"
                 />
                 <ActionButton
                   label="Forgot Password?"
-                  onPress={() => navigation.navigate('ForgotPassword' as never)}
+                  onPress={() => navigation.navigate('ForgotPassword', authParams)}
                   variant="text"
                   size="small"
                 />
+                {allowDismiss && (
+                  <ActionButton
+                    label="Continue browsing as guest"
+                    onPress={handleContinueAsGuest}
+                    variant="text"
+                    size="small"
+                  />
+                )}
               </View>
             </View>
           </View>

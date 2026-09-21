@@ -7,14 +7,14 @@ import {
   updateCertification,
   deleteCertification
 } from '../controllers/certificationController';
-import { authenticate, requireAdmin } from '../middleware/auth';
+import { authenticate, requireAdmin, optionalAuthenticate } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 
 const router = Router();
 
-// Public routes (authenticated users)
-router.get('/', authenticate, getCertifications);
-router.get('/:id', authenticate, getCertification);
+// Catalog GETs are public so guests can browse; admins may load inactive by id
+router.get('/', getCertifications);
+router.get('/:id', optionalAuthenticate, getCertification);
 
 // Admin routes
 router.post(

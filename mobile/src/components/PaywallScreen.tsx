@@ -23,6 +23,7 @@ import {
   isRevenueCatAvailable,
   isRevenueCatConfigured,
 } from '../services/revenueCatService';
+import { useRequireAuth } from '../utils/requireAuth';
 
 interface SubscriptionPlan {
   id: string;
@@ -101,7 +102,8 @@ export default function PaywallScreen({
   const navigation = useNavigation();
   const route = useRoute();
   const dispatch = useDispatch<AppDispatch>();
-  const { user } = useSelector((state: RootState) => state.auth);
+  const requireAuth = useRequireAuth();
+  const { user, isAuthenticated } = useSelector((state: RootState) => state.auth);
   const { offerings, isPurchasing, isLoading, error } = useSelector((state: RootState) => state.subscription);
   
   const [selectedPlan, setSelectedPlan] = useState<string>('premium_semi_annual');
@@ -150,6 +152,8 @@ export default function PaywallScreen({
   }, [error]);
 
   const handleSubscribe = async (planId: string) => {
+    if (!requireAuth('paywall')) return;
+
     if (!purchasesAvailable) {
       Alert.alert(
         'Development Build Required',
@@ -221,6 +225,7 @@ export default function PaywallScreen({
   };
 
   const handleRestorePurchases = async () => {
+    if (!requireAuth('paywall')) return;
     if (!purchasesAvailable) {
       Alert.alert(
         'Development Build Required',

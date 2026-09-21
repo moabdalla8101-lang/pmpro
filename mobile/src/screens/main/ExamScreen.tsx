@@ -11,12 +11,14 @@ import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { RootState, AppDispatch } from '../../store';
 import { fetchUserExams, deleteExam } from '../../store/slices/examSlice';
 import { hasPremiumAccess } from '../../utils/subscriptionUtils';
+import { useRequireAuth } from '../../utils/requireAuth';
 
 export default function ExamScreen() {
   const navigation = useNavigation();
   const dispatch = useDispatch<AppDispatch>();
+  const requireAuth = useRequireAuth();
   const { exams, isLoading } = useSelector((state: RootState) => state.exams);
-  const { user } = useSelector((state: RootState) => state.auth);
+  const { user, isAuthenticated } = useSelector((state: RootState) => state.auth);
   const [examStats, setExamStats] = useState({
     totalExams: 0,
     bestScore: 0,
@@ -26,14 +28,18 @@ export default function ExamScreen() {
   // Fetch exams when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
-      dispatch(fetchUserExams());
-    }, [dispatch])
+      if (isAuthenticated) {
+        dispatch(fetchUserExams());
+      }
+    }, [dispatch, isAuthenticated])
   );
 
   // Also fetch on initial mount
   useEffect(() => {
-    dispatch(fetchUserExams());
-  }, [dispatch]);
+    if (isAuthenticated) {
+      dispatch(fetchUserExams());
+    }
+  }, [dispatch, isAuthenticated]);
 
   // Calculate exam stats
   useEffect(() => {
@@ -72,7 +78,10 @@ export default function ExamScreen() {
     return hasCompletedAt && hasScore;
   });
 
+  const inProgressExams = exams.filter((exam) => !exam.completedAt);
+
   const handleStartMockExam = () => {
+    if (!requireAuth('exams')) return;
     if (!hasPremiumAccess(user?.subscriptionTier)) {
       (navigation as any).navigate('Paywall', { feature: 'mock_exams' });
       return;
@@ -83,6 +92,7 @@ export default function ExamScreen() {
   };
 
   const handleStartMiniPMP = () => {
+    if (!requireAuth('exams')) return;
     if (!hasPremiumAccess(user?.subscriptionTier)) {
       (navigation as any).navigate('Paywall', { feature: 'mock_exams' });
       return;
@@ -93,6 +103,7 @@ export default function ExamScreen() {
   };
 
   const handleStartDailyQuiz = () => {
+    if (!requireAuth('exams')) return;
     (navigation as any).navigate('DailyQuiz');
   };
 
@@ -290,6 +301,55 @@ export default function ExamScreen() {
             />
           </Card.Content>
         </Card>
+
+        {/* In-progress exams (resume) */}
+        {inProgressExams.length > 0 && (
+          <>
+            <SectionHeader
+              title="In Progress"
+              subtitle={`${inProgressExams.length} exam${inProgressExams.length === 1 ? '' : 's'}`}
+              icon="play-circle-outline"
+            />
+            <View style={styles.examsList}>
+              {inProgressExams.map((exam) => (
+                <Card key={exam.id} style={styles.examResultCard}>
+                  <Card.Content style={styles.examResultContent}>
+                    <View style={styles.examResultHeader}>
+                      <View style={styles.examResultHeaderLeft}>
+                        <Text variant="titleMedium" style={styles.examResultTitle}>
+                          {exam.examType === 'mini' ? 'Mini PMP' : 'Mock Exam'}
+                        </Text>
+                        <Text variant="bodySmall" style={styles.examResultDate}>
+                          Started{' '}
+                          {new Date(exam.startedAt).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </Text>
+                        <Text variant="bodySmall" style={styles.examResultDate}>
+                          {exam.totalQuestions} questions assigned
+                        </Text>
+                      </View>
+                    </View>
+                    <ActionButton
+                      label="Resume Exam"
+                      onPress={() =>
+                        (navigation as any).navigate('ExamStart', {
+                          examId: exam.id,
+                          examType: exam.examType === 'mini' ? 'mini' : 'mock',
+                        })
+                      }
+                      variant="primary"
+                      size="small"
+                      fullWidth
+                    />
+                  </Card.Content>
+                </Card>
+              ))}
+            </View>
+          </>
+        )}
 
         {/* Exam History Section */}
         <SectionHeader

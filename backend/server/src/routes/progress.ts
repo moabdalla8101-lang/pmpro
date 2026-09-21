@@ -27,7 +27,16 @@ router.post(
   '/answer',
   [
     body('questionId').notEmpty(),
-    body('answerId').notEmpty(),
+    body().custom((_, { req }) => {
+      const hasAnswer =
+        req.body.answerId ||
+        (Array.isArray(req.body.answerIds) && req.body.answerIds.length) ||
+        (req.body.dragMatches && typeof req.body.dragMatches === 'object');
+      if (!hasAnswer) {
+        throw new Error('answerId, answerIds, or dragMatches is required');
+      }
+      return true;
+    }),
     validate
   ],
   recordAnswer

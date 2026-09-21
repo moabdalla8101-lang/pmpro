@@ -122,8 +122,12 @@ app.get('/health', (req, res) => {
 // Error handling
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`🚀 PMP Exam Prep Server running on port ${PORT}`);
-  console.log(`📚 All services unified in monolith architecture`);
-});
+export { app };
+
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`🚀 PMP Exam Prep Server running on port ${PORT}`);
+    console.log(`📚 All services unified in monolith architecture`);
+  });
+}
 

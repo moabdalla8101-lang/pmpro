@@ -1,8 +1,9 @@
 import { Response, NextFunction } from 'express';
-import { NotFoundError } from '@pmp-app/shared';
+import { NotFoundError, ValidationError } from '@pmp-app/shared';
 import { AuthRequest } from '../middleware/auth';
 import { pool } from '../db/connection';
 import { v4 as uuidv4 } from 'uuid';
+import { LEARNER_ATTEMPTS_CTE } from '../utils/learnerAttempts';
 
 export async function startExam(req: AuthRequest, res: Response, next: NextFunction) {
   try {
@@ -22,12 +23,19 @@ export async function startExam(req: AuthRequest, res: Response, next: NextFunct
   }
 }
 
+/**
+ * Legacy microservice path — writes question_attempts only (no user_answers dual-write).
+ * Prefer the monolith examController for full assignment/grading.
+ */
 export async function submitExam(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const { id } = req.params;
     const { answers } = req.body;
 
-    // Get exam
+    if (!Array.isArray(answers) || answers.length === 0) {
+      return next(new ValidationError('answers are required'));
+    }
+
     const examResult = await pool.query(
       'SELECT * FROM mock_exams WHERE id = $1 AND user_id = $2',
       [id, req.user!.userId]
@@ -37,7 +45,17 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
       return next(new NotFoundError('Exam not found'));
     }
 
-    // Calculate score
+    const exam = examResult.rows[0];
+    if (exam.completed_at) {
+      return res.json({
+        examId: id,
+        score: exam.score,
+        correctAnswers: exam.correct_answers,
+        totalQuestions: exam.total_questions,
+        alreadySubmitted: true,
+      });
+    }
+
     let correctCount = 0;
     for (const answer of answers) {
       const answerResult = await pool.query(
@@ -45,28 +63,28 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
         [answer.answerId]
       );
 
-      if (answerResult.rows.length > 0 && answerResult.rows[0].is_correct) {
-        correctCount++;
-      }
+      const isCorrect = Boolean(answerResult.rows[0]?.is_correct);
+      if (isCorrect) correctCount++;
 
-      // Record answer
-      const userAnswerId = uuidv4();
+      const selectedIds = answer.answerId ? [answer.answerId] : [];
       await pool.query(
-        `INSERT INTO user_answers (id, user_id, question_id, answer_id, is_correct, answered_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())`,
+        `INSERT INTO question_attempts
+           (id, user_id, question_id, is_correct, selected_answer_ids, response_json, answered_at, exam_id)
+         VALUES ($1, $2, $3, $4, $5::uuid[], $6::jsonb, NOW(), $7)`,
         [
-          userAnswerId,
+          uuidv4(),
           req.user!.userId,
           answer.questionId,
-          answer.answerId,
-          (answerResult.rows[0] && answerResult.rows[0].is_correct) || false
+          isCorrect,
+          selectedIds,
+          JSON.stringify({ selectedAnswerIds: selectedIds, examId: id }),
+          id,
         ]
       );
     }
 
     const score = (correctCount / answers.length) * 100;
 
-    // Update exam
     await pool.query(
       `UPDATE mock_exams 
        SET completed_at = NOW(),
@@ -130,21 +148,17 @@ export async function getExamReview(req: AuthRequest, res: Response, next: NextF
       return next(new NotFoundError('Exam not found'));
     }
 
-    // Get all answers for this exam
     const answersResult = await pool.query(
-      `SELECT 
-         ua.*,
+      `WITH ${LEARNER_ATTEMPTS_CTE}
+       SELECT 
+         la.*,
          q.question_text,
-         q.explanation,
-         a.answer_text,
-         a.is_correct
-       FROM user_answers ua
-       JOIN questions q ON ua.question_id = q.id
-       JOIN answers a ON ua.answer_id = a.id
-       WHERE ua.user_id = $1
-       AND ua.answered_at >= (SELECT started_at FROM mock_exams WHERE id = $2)
-       AND ua.answered_at <= COALESCE((SELECT completed_at FROM mock_exams WHERE id = $2), NOW())
-       ORDER BY ua.answered_at`,
+         q.explanation
+       FROM learner_attempts la
+       JOIN questions q ON la.question_id = q.id
+       WHERE la.user_id = $1
+         AND la.exam_id = $2
+       ORDER BY la.answered_at`,
       [req.user!.userId, id]
     );
 
@@ -156,5 +170,3 @@ export async function getExamReview(req: AuthRequest, res: Response, next: NextF
     next(error);
   }
 }
-
-

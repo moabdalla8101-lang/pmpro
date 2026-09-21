@@ -76,15 +76,24 @@ export async function recordAnswer(req: AuthRequest, res: Response, next: NextFu
     }
 
     const isCorrect = answerResult.rows[0].is_correct;
-    const userAnswerId = uuidv4();
+    const attemptId = uuidv4();
 
+    // Attempts-only — do not dual-write user_answers.
     await pool.query(
-      `INSERT INTO user_answers (id, user_id, question_id, answer_id, is_correct, answered_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())`,
-      [userAnswerId, req.user!.userId, questionId, answerId, isCorrect]
+      `INSERT INTO question_attempts
+         (id, user_id, question_id, is_correct, selected_answer_ids, response_json, answered_at)
+       VALUES ($1, $2, $3, $4, $5::uuid[], $6::jsonb, NOW())`,
+      [
+        attemptId,
+        req.user!.userId,
+        questionId,
+        isCorrect,
+        [answerId],
+        JSON.stringify({ selectedAnswerIds: [answerId] }),
+      ]
     );
 
-    res.json({ isCorrect, userAnswerId });
+    res.json({ isCorrect, userAnswerId: attemptId, attemptId });
   } catch (error) {
     next(error);
   }
@@ -107,7 +116,20 @@ export async function getPerformanceByKnowledgeArea(req: AuthRequest, res: Respo
          END as accuracy
        FROM knowledge_areas ka
        LEFT JOIN questions q ON ka.id = q.knowledge_area_id
-       LEFT JOIN user_answers ua ON q.id = ua.question_id AND ua.user_id = $1
+       LEFT JOIN (
+         WITH learner_attempts AS (
+           SELECT user_id, question_id, is_correct FROM question_attempts
+           UNION ALL
+           SELECT ua.user_id, ua.question_id, ua.is_correct
+           FROM user_answers ua
+           WHERE NOT EXISTS (
+             SELECT 1 FROM question_attempts qa
+             WHERE qa.user_id = ua.user_id AND qa.question_id = ua.question_id
+               AND (qa.id = ua.id OR (qa.response_json->>'legacyUserAnswerId') = ua.id::text)
+           )
+         )
+         SELECT * FROM learner_attempts
+       ) ua ON q.id = ua.question_id AND ua.user_id = $1
        WHERE ka.certification_id = $2
        GROUP BY ka.id, ka.name
        ORDER BY ka."order"`,

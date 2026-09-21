@@ -10,6 +10,7 @@ interface Exam {
   totalQuestions: number;
   correctAnswers: number;
   score?: number;
+  examType?: string;
 }
 
 interface ExamState {
@@ -92,6 +93,7 @@ const examSlice = createSlice({
             totalQuestions: exam.totalQuestions || exam.total_questions || 0,
             correctAnswers: exam.correctAnswers || exam.correct_answers || 0,
             score: score,
+            examType: exam.examType || exam.exam_type,
           };
         });
       })

@@ -3,7 +3,8 @@ import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from 're
 import { TextInput, Button, Text, Snackbar } from 'react-native-paper';
 import { useDispatch } from 'react-redux';
 import { register } from '../../store/slices/authSlice';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { AuthPromptReason } from '../../utils/requireAuth';
 
 export default function RegisterScreen() {
   const [email, setEmail] = useState('');
@@ -13,7 +14,13 @@ export default function RegisterScreen() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const dispatch = useDispatch();
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
+  const route = useRoute();
+  const params = (route.params as { reason?: AuthPromptReason; allowDismiss?: boolean }) || {};
+  const authParams = {
+    reason: params.reason,
+    allowDismiss: params.allowDismiss !== false,
+  };
 
   const handleRegister = async () => {
     if (!email || !password) {
@@ -31,7 +38,11 @@ export default function RegisterScreen() {
 
     try {
       await dispatch(register({ email, password, firstName, lastName }) as any).unwrap();
-      // AppNavigator switches to the authenticated stack when registration succeeds.
+      // Dismiss Auth modal when presented on-demand over Main
+      const parent = (navigation as any).getParent?.();
+      if (parent?.canGoBack?.()) {
+        parent.goBack();
+      }
     } catch (err: any) {
       setError(err.message || 'Registration failed');
     } finally {
@@ -99,7 +110,7 @@ export default function RegisterScreen() {
 
           <Button
             mode="text"
-            onPress={() => navigation.navigate('Login' as never)}
+            onPress={() => navigation.navigate('Login', authParams)}
             style={styles.linkButton}
           >
             Already have an account? Sign in

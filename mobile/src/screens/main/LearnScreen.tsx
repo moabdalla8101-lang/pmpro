@@ -10,13 +10,15 @@ import { SectionHeader } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useRequireAuth } from '../../utils/requireAuth';
 
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
 
 export default function LearnScreen() {
   const navigation = useNavigation();
   const dispatch = useDispatch<AppDispatch>();
-  const { user } = useSelector((state: RootState) => state.auth);
+  const requireAuth = useRequireAuth();
+  const { user, isAuthenticated } = useSelector((state: RootState) => state.auth);
   const { markedFlashcards } = useSelector((state: RootState) => state.flashcards);
 
   const [flashcardStats, setFlashcardStats] = useState({
@@ -28,13 +30,15 @@ export default function LearnScreen() {
   useFocusEffect(
     React.useCallback(() => {
       loadLearnData();
-    }, [dispatch])
+    }, [dispatch, isAuthenticated])
   );
 
   const loadLearnData = async () => {
     setIsLoading(true);
     try {
-      await dispatch(fetchMarkedFlashcards() as any).unwrap();
+      if (isAuthenticated) {
+        await dispatch(fetchMarkedFlashcards() as any).unwrap();
+      }
     } catch (error) {
       console.error('Failed to load learn data:', error);
     } finally {
@@ -139,6 +143,7 @@ export default function LearnScreen() {
               <Card
                 style={[styles.actionCard, { backgroundColor: `${colors.warning}10` }]}
                 onPress={() => {
+                  if (!requireAuth('flashcards')) return;
                   (navigation as any).navigate('MarkedFlashcards');
                 }}
               >

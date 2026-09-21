@@ -1,12 +1,12 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { pool } from '../db/connection';
+import { LEARNER_ATTEMPTS_CTE } from '../utils/learnerAttempts';
 
 export async function getUserAnalytics(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const { certificationId } = req.query;
 
-    // Overall stats
     const progressResult = await pool.query(
       `SELECT 
          total_questions_answered,
@@ -18,16 +18,15 @@ export async function getUserAnalytics(req: AuthRequest, res: Response, next: Ne
       [req.user!.userId, certificationId]
     );
 
-    // Streak
     const streakResult = await pool.query(
       'SELECT current_streak, longest_streak FROM streaks WHERE user_id = $1',
       [req.user!.userId]
     );
 
-    // Recent activity
     const activityResult = await pool.query(
-      `SELECT DATE(answered_at) as date, COUNT(*) as count
-       FROM user_answers
+      `WITH ${LEARNER_ATTEMPTS_CTE}
+       SELECT DATE(answered_at) as date, COUNT(*) as count
+       FROM learner_attempts
        WHERE user_id = $1
        GROUP BY DATE(answered_at)
        ORDER BY date DESC
@@ -47,19 +46,18 @@ export async function getUserAnalytics(req: AuthRequest, res: Response, next: Ne
 
 export async function getAdminAnalytics(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    // Total users
     const usersResult = await pool.query('SELECT COUNT(*) as total FROM users');
     
-    // Active users (last 30 days)
     const activeUsersResult = await pool.query(
-      `SELECT COUNT(DISTINCT user_id) as active
-       FROM user_answers
+      `WITH ${LEARNER_ATTEMPTS_CTE}
+       SELECT COUNT(DISTINCT user_id) as active
+       FROM learner_attempts
        WHERE answered_at > NOW() - INTERVAL '30 days'`
     );
 
-    // Total questions answered
     const questionsResult = await pool.query(
-      'SELECT COUNT(*) as total FROM user_answers'
+      `WITH ${LEARNER_ATTEMPTS_CTE}
+       SELECT COUNT(*) as total FROM learner_attempts`
     );
 
     res.json({
@@ -77,11 +75,12 @@ export async function getUsageAnalytics(req: AuthRequest, res: Response, next: N
     const { startDate, endDate } = req.query;
 
     let query = `
+      WITH ${LEARNER_ATTEMPTS_CTE}
       SELECT 
         DATE(answered_at) as date,
         COUNT(*) as questions_answered,
         COUNT(DISTINCT user_id) as active_users
-      FROM user_answers
+      FROM learner_attempts
       WHERE 1=1
     `;
 
@@ -119,7 +118,6 @@ export async function getRevenueReport(req: AuthRequest, res: Response, next: Ne
        GROUP BY subscription_tier`
     );
 
-    // Calculate estimated revenue (simplified)
     const tierPricing: { [key: string]: number } = {
       premium_monthly: 12.49,
       premium_semi_annual: 49.99 / 6,
@@ -139,7 +137,3 @@ export async function getRevenueReport(req: AuthRequest, res: Response, next: Ne
     next(error);
   }
 }
-
-
-
-

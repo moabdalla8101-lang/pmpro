@@ -11,18 +11,21 @@ import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
 import { hasPremiumAccess } from '../../utils/subscriptionUtils';
+import { useRequireAuth } from '../../utils/requireAuth';
 
 export default function BookmarkedQuestionsScreen() {
   const dispatch = useDispatch<AppDispatch>();
   const navigation = useNavigation();
+  const requireAuth = useRequireAuth();
   const { bookmarks, isLoading } = useSelector((state: RootState) => state.bookmarks);
-  const { user } = useSelector((state: RootState) => state.auth);
+  const { user, isAuthenticated } = useSelector((state: RootState) => state.auth);
   
   const [selectedKnowledgeArea, setSelectedKnowledgeArea] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     dispatch(fetchBookmarks(selectedKnowledgeArea || undefined) as any);
-  }, [selectedKnowledgeArea, dispatch]);
+  }, [selectedKnowledgeArea, dispatch, isAuthenticated]);
 
   const handleQuestionPress = (questionId: string) => {
     (navigation as any).navigate('QuestionDetail', { questionId });
@@ -118,6 +121,20 @@ export default function BookmarkedQuestionsScreen() {
       </TouchableOpacity>
     );
   };
+
+  if (!isAuthenticated) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <EmptyState
+          icon="bookmark-outline"
+          title="Sign in to view bookmarks"
+          message="Save questions while you practice and sync them across devices."
+          actionLabel="Sign In"
+          onActionPress={() => requireAuth('bookmarks')}
+        />
+      </SafeAreaView>
+    );
+  }
 
   if (!hasPremiumAccess(user?.subscriptionTier)) {
     return (

@@ -120,29 +120,26 @@ const authSlice = createSlice({
   extraReducers: (builder) => {
     builder
       .addCase(login.pending, (state) => {
-        state.isLoading = true;
+        // Do not toggle isLoading — AppNavigator uses it for boot splash only.
+        // Flipping it on login remounts Main and wipes in-progress guest sessions.
       })
       .addCase(login.fulfilled, (state, action) => {
-        state.isLoading = false;
         state.isAuthenticated = true;
         state.user = action.payload.user;
         state.token = action.payload.token;
       })
       .addCase(login.rejected, (state) => {
-        state.isLoading = false;
         state.isAuthenticated = false;
       })
       .addCase(register.pending, (state) => {
-        state.isLoading = true;
+        // Keep boot splash loading separate from register UI loading
       })
       .addCase(register.fulfilled, (state, action) => {
-        state.isLoading = false;
         state.isAuthenticated = true;
         state.user = action.payload.user;
         state.token = action.payload.token;
       })
       .addCase(register.rejected, (state) => {
-        state.isLoading = false;
         state.isAuthenticated = false;
       })
       .addCase(logout.fulfilled, (state) => {

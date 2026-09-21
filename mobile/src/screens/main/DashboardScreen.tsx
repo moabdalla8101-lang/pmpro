@@ -17,13 +17,15 @@ import {
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { hasPremiumAccess } from '../../utils/subscriptionUtils';
+import { useRequireAuth } from '../../utils/requireAuth';
 
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
 
 export default function DashboardScreen() {
   const navigation = useNavigation();
   const dispatch = useDispatch<AppDispatch>();
-  const { user } = useSelector((state: RootState) => state.auth);
+  const requireAuth = useRequireAuth();
+  const { user, isAuthenticated } = useSelector((state: RootState) => state.auth);
   const { overallProgress, performanceByDomain, isLoading } = useSelector((state: RootState) => state.progress);
   const { dailyQuestionsGoal, dailyMinutesGoal } = useSelector((state: RootState) => state.settings);
   const [todayActivity, setTodayActivity] = useState({ questionsAnswered: 0, practiceMinutes: 0 });
@@ -36,15 +38,23 @@ export default function DashboardScreen() {
   useFocusEffect(
     React.useCallback(() => {
       loadDashboardData();
-    }, [dispatch])
+    }, [dispatch, isAuthenticated])
   );
 
   // Also fetch on initial mount
   useEffect(() => {
     loadDashboardData();
-  }, [dispatch]);
+  }, [dispatch, isAuthenticated]);
 
   const loadDashboardData = async () => {
+    if (!isAuthenticated) {
+      setTodayActivity({ questionsAnswered: 0, practiceMinutes: 0 });
+      setCurrentStreak(0);
+      setWeeklyCompletions([]);
+      setLoadingActivity(false);
+      return;
+    }
+
     dispatch(loadSettings() as any);
     dispatch(fetchProgress(PMP_CERTIFICATION_ID));
     
@@ -253,6 +263,7 @@ export default function DashboardScreen() {
             <Card
               style={[styles.actionCard, { backgroundColor: `${colors.warning}10` }]}
               onPress={() => {
+                if (!requireAuth('bookmarks')) return;
                 (navigation as any).navigate(
                   isPremium ? 'BookmarkedQuestions' : 'Paywall',
                   isPremium ? undefined : { feature: 'bookmarks' }
@@ -278,6 +289,7 @@ export default function DashboardScreen() {
             <Card
               style={[styles.actionCard, { backgroundColor: `${colors.info}10` }]}
               onPress={() => {
+                if (!requireAuth('missed_questions')) return;
                 (navigation as any).navigate(
                   isPremium ? 'MissedQuestions' : 'Paywall',
                   isPremium ? undefined : { feature: 'missed_questions' }

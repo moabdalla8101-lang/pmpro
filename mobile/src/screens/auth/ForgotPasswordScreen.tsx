@@ -2,14 +2,21 @@ import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { TextInput, Button, Text, Snackbar } from 'react-native-paper';
 import { authService } from '../../services/api/authService';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { AuthPromptReason } from '../../utils/requireAuth';
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
+  const route = useRoute();
+  const params = (route.params as { reason?: AuthPromptReason; allowDismiss?: boolean }) || {};
+  const authParams = {
+    reason: params.reason,
+    allowDismiss: params.allowDismiss !== false,
+  };
 
   const handleReset = async () => {
     if (!email) {
@@ -66,7 +73,7 @@ export default function ForgotPasswordScreen() {
 
           <Button
             mode="text"
-            onPress={() => navigation.navigate('Login' as never)}
+            onPress={() => navigation.navigate('Login', authParams)}
             style={styles.linkButton}
           >
             Back to Sign In

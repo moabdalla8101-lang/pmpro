@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, StyleSheet, FlatList, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
 import { Card, Text, ActivityIndicator } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
@@ -12,21 +12,27 @@ import { CategoryBadge, SectionHeader, EmptyState } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
+import { useRequireAuth } from '../../utils/requireAuth';
 
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
+const PRACTICE_PAGE_SIZE = 25;
 
 export default function PracticeScreen() {
   const dispatch = useDispatch<AppDispatch>();
   const navigation = useNavigation();
   const route = useRoute();
-  const { questions, isLoading } = useSelector((state: RootState) => state.questions);
-  
+  const requireAuth = useRequireAuth();
+  const { questions, isLoading, isLoadingMore, total, hasMore, offset } = useSelector(
+    (state: RootState) => state.questions
+  );
+  const { isAuthenticated } = useSelector((state: RootState) => state.auth);
+
   const [selectedQuestionFilter, setSelectedQuestionFilter] = useState<'all' | 'unanswered'>('all');
   const [selectedKnowledgeArea, setSelectedKnowledgeArea] = useState<string | null>(null);
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
   const [answeredQuestionIds, setAnsweredQuestionIds] = useState<Set<string>>(new Set());
+  const loadingMoreRef = useRef(false);
 
-  // Get initial filters from route params
   useEffect(() => {
     const params = route.params as any;
     if (params?.knowledgeAreaId) {
@@ -37,85 +43,70 @@ export default function PracticeScreen() {
     }
   }, [route.params]);
 
-  const loadQuestions = async () => {
-    const params = route.params as any;
-    // Use route params if state hasn't been set yet, otherwise use state
-    const knowledgeAreaId = selectedKnowledgeArea || params?.knowledgeAreaId;
-    const domain = selectedDomain || params?.domain;
-    
-    const filters: any = {
-      certificationId: PMP_CERTIFICATION_ID,
-      limit: 1000, // Fetch all questions
-    };
-    
-    if (knowledgeAreaId) {
-      filters.knowledgeAreaId = knowledgeAreaId;
-    }
+  const buildFilters = useCallback(
+    (pageOffset: number, append: boolean) => {
+      const filters: any = {
+        certificationId: PMP_CERTIFICATION_ID,
+        limit: PRACTICE_PAGE_SIZE,
+        offset: pageOffset,
+        append,
+      };
 
-    // Start loading questions immediately so the empty state does not flash
-    // while the answered-question filter is being fetched.
-    dispatch(fetchQuestions(filters));
-    
-    // Fetch answered question IDs
+      if (selectedKnowledgeArea) {
+        filters.knowledgeAreaId = selectedKnowledgeArea;
+      }
+      if (selectedDomain) {
+        filters.domain = selectedDomain;
+      }
+
+      return filters;
+    },
+    [selectedKnowledgeArea, selectedDomain]
+  );
+
+  const loadAnsweredIds = useCallback(async () => {
+    if (!isAuthenticated) {
+      setAnsweredQuestionIds(new Set());
+      return;
+    }
     try {
       const answeredData = await progressService.getAnsweredQuestionIds(PMP_CERTIFICATION_ID);
-      const answeredIds = new Set<string>(answeredData.questionIds || []);
-      setAnsweredQuestionIds(answeredIds);
+      setAnsweredQuestionIds(new Set<string>(answeredData.questionIds || []));
     } catch (error) {
       console.error('Failed to fetch answered question IDs:', error);
-      // Continue without filtering if this fails
     }
-    
-    // Domain filtering will be done client-side after fetching
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'PracticeScreen.tsx:37',message:'Dispatching fetchQuestions',data:{filters, knowledgeAreaId, selectedKnowledgeArea},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H3'})}).catch(()=>{});
-    // #endregion
-  };
-  
-  // Filter questions by domain, knowledge area, and answered status
-  const filteredQuestions = React.useMemo(() => {
-    let filtered = questions;
-    
-    // Filter by knowledge area if selected (fallback if API didn't filter)
-    const params = route.params as any;
-    const knowledgeAreaId = selectedKnowledgeArea || params?.knowledgeAreaId;
-    
-    if (knowledgeAreaId) {
-      filtered = filtered.filter((q: any) => {
-        // Check both camelCase and snake_case fields
-        const qKnowledgeAreaId = q.knowledgeAreaId || q.knowledge_area_id;
-        return qKnowledgeAreaId === knowledgeAreaId;
-      });
-    }
-    
-    // Filter by domain if selected
-    if (selectedDomain) {
-      filtered = filtered.filter((q: any) => {
-        const questionDomain = q.domain || q.Domain;
-        if (!questionDomain) return false;
-        
-        // Normalize domain value (handle prefixes like "1. People")
-        const normalizedDomain = questionDomain.replace(/^\d+\.\s*/, '').trim();
-        return normalizedDomain === selectedDomain || normalizedDomain === `${selectedDomain} Environment`;
-      });
-    }
-    
-    // Filter by answered status
-    if (selectedQuestionFilter === 'unanswered') {
-      filtered = filtered.filter((q: any) => {
-        const questionId = q.id || q.question_id;
-        return !answeredQuestionIds.has(questionId);
-      });
-    }
-    
-    return filtered;
-  }, [questions, selectedDomain, selectedKnowledgeArea, selectedQuestionFilter, answeredQuestionIds, route.params]);
+  }, [isAuthenticated]);
 
-  // Clear questions and reload when screen is focused (to avoid showing exam questions)
+  const loadQuestions = useCallback(async () => {
+    dispatch(fetchQuestions(buildFilters(0, false)));
+    await loadAnsweredIds();
+  }, [dispatch, buildFilters, loadAnsweredIds]);
+
+  const loadMore = useCallback(async () => {
+    if (!hasMore || isLoading || isLoadingMore || loadingMoreRef.current) {
+      return;
+    }
+    loadingMoreRef.current = true;
+    try {
+      await dispatch(fetchQuestions(buildFilters(offset, true)));
+    } finally {
+      loadingMoreRef.current = false;
+    }
+  }, [dispatch, buildFilters, hasMore, isLoading, isLoadingMore, offset]);
+
+  const filteredQuestions = React.useMemo(() => {
+    if (selectedQuestionFilter !== 'unanswered') {
+      return questions;
+    }
+    return questions.filter((q: any) => {
+      const questionId = q.id || q.question_id;
+      return !answeredQuestionIds.has(questionId);
+    });
+  }, [questions, selectedQuestionFilter, answeredQuestionIds]);
+
   useFocusEffect(
     React.useCallback(() => {
       dispatch(clearQuestions());
-      // Read route params directly to ensure we have the latest filter
       const params = route.params as any;
       if (params?.knowledgeAreaId && !selectedKnowledgeArea) {
         setSelectedKnowledgeArea(params.knowledgeAreaId);
@@ -128,35 +119,31 @@ export default function PracticeScreen() {
       return () => {
         dailyActivityService.endSession();
       };
-    }, [dispatch, selectedKnowledgeArea, selectedDomain, route.params])
+    }, [dispatch, selectedKnowledgeArea, selectedDomain, route.params, loadQuestions])
   );
-
-  useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'PracticeScreen.tsx:20',message:'PracticeScreen useEffect triggered',data:{selectedQuestionFilter,selectedKnowledgeArea},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
-    // #endregion
-    loadQuestions();
-  }, [selectedKnowledgeArea]);
 
   const handleQuestionPress = (questionId: string) => {
     (navigation as any).navigate('QuestionDetail', { questionId });
   };
 
   const toggleQuestionFilter = (filter: 'all' | 'unanswered') => {
+    if (filter === 'unanswered' && !requireAuth('progress')) {
+      return;
+    }
     setSelectedQuestionFilter(filter);
   };
 
-  const hasActiveFilters = selectedQuestionFilter !== 'all' || selectedKnowledgeArea;
+  const hasActiveFilters = selectedQuestionFilter !== 'all' || selectedKnowledgeArea || selectedDomain;
+  const subtitleCount = selectedQuestionFilter === 'unanswered'
+    ? filteredQuestions.length
+    : total || filteredQuestions.length;
 
   const renderQuestion = ({ item }: any) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'PracticeScreen.tsx:44',message:'Rendering question item',data:{itemId:item.id,hasQuestionText:!!item.questionText,hasQuestion_text:!!item.question_text,hasAnswers:!!item.answers,answersLength:item.answers?.length||0,itemKeys:Object.keys(item)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H4'})}).catch(()=>{});
-    // #endregion
     const knowledgeArea = item.knowledgeAreaName || item.knowledge_area_name;
     const displayKnowledgeArea = knowledgeArea ? removeProjectPrefix(knowledgeArea) : null;
     const questionId = item.id || item.question_id;
     const isAnswered = answeredQuestionIds.has(questionId);
-    
+
     return (
       <TouchableOpacity
         activeOpacity={0.7}
@@ -199,12 +186,6 @@ export default function PracticeScreen() {
     );
   };
 
-  // #region agent log
-  React.useEffect(() => {
-    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'PracticeScreen.tsx:67',message:'PracticeScreen render state',data:{isLoading,questionsLength:questions.length,questionsCount:questions?.length||0,firstQuestionId:questions[0]?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3,H5'})}).catch(()=>{});
-  }, [isLoading, questions.length]);
-  // #endregion
-
   if (isLoading && filteredQuestions.length === 0) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
@@ -216,16 +197,14 @@ export default function PracticeScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header Section */}
       <View style={styles.headerContainer}>
         <SectionHeader
           title="Practice Questions"
-          subtitle={`${filteredQuestions.length} questions available`}
+          subtitle={`${subtitleCount} questions available`}
           icon="book-open-variant"
         />
       </View>
-      
-      {/* Filter Section */}
+
       <View style={styles.filterWrapper}>
         <ScrollView
           horizontal
@@ -251,6 +230,11 @@ export default function PracticeScreen() {
               onPress={() => {
                 setSelectedQuestionFilter('all');
                 setSelectedKnowledgeArea(null);
+                setSelectedDomain(null);
+                (navigation as any).setParams?.({
+                  knowledgeAreaId: undefined,
+                  domain: undefined,
+                });
               }}
             >
               <Icon name="close-circle" size={20} color={colors.textSecondary} />
@@ -270,9 +254,18 @@ export default function PracticeScreen() {
           styles.list,
           filteredQuestions.length === 0 && styles.emptyList,
         ]}
-        refreshing={isLoading}
+        refreshing={isLoading && !isLoadingMore}
         onRefresh={loadQuestions}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.4}
         showsVerticalScrollIndicator={false}
+        ListFooterComponent={
+          isLoadingMore ? (
+            <View style={styles.footerLoader}>
+              <ActivityIndicator size="small" color={colors.primary} />
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           <EmptyState
             icon="book-outline"
@@ -282,6 +275,11 @@ export default function PracticeScreen() {
             onActionPress={() => {
               setSelectedQuestionFilter('all');
               setSelectedKnowledgeArea(null);
+              setSelectedDomain(null);
+              (navigation as any).setParams?.({
+                knowledgeAreaId: undefined,
+                domain: undefined,
+              });
             }}
           />
         }
@@ -343,6 +341,10 @@ const styles = StyleSheet.create({
   },
   emptyList: {
     flexGrow: 1,
+  },
+  footerLoader: {
+    paddingVertical: spacing.base,
+    alignItems: 'center',
   },
   card: {
     marginBottom: spacing.base,
