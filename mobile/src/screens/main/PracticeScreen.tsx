@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, StyleSheet, FlatList, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
 import { Card, Text, ActivityIndicator } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
@@ -22,15 +22,17 @@ export default function PracticeScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const requireAuth = useRequireAuth();
-  const { questions, isLoading } = useSelector((state: RootState) => state.questions);
+  const { questions, isLoading, isLoadingMore, total, hasMore, offset } = useSelector(
+    (state: RootState) => state.questions
+  );
   const { isAuthenticated } = useSelector((state: RootState) => state.auth);
-  
+
   const [selectedQuestionFilter, setSelectedQuestionFilter] = useState<'all' | 'unanswered'>('all');
   const [selectedKnowledgeArea, setSelectedKnowledgeArea] = useState<string | null>(null);
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
   const [answeredQuestionIds, setAnsweredQuestionIds] = useState<Set<string>>(new Set());
+  const loadingMoreRef = useRef(false);
 
-  // Get initial filters from route params
   useEffect(() => {
     const params = route.params as any;
     if (params?.knowledgeAreaId) {
@@ -41,75 +43,71 @@ export default function PracticeScreen() {
     }
   }, [route.params]);
 
-  const loadQuestions = async () => {
-    const params = route.params as any;
-    const knowledgeAreaId = selectedKnowledgeArea || params?.knowledgeAreaId;
-    
-    const filters: any = {
-      certificationId: PMP_CERTIFICATION_ID,
-      limit: PRACTICE_PAGE_SIZE,
-    };
-    
-    if (knowledgeAreaId) {
-      filters.knowledgeAreaId = knowledgeAreaId;
-    }
+  const buildFilters = useCallback(
+    (pageOffset: number, append: boolean) => {
+      const params = route.params as any;
+      const knowledgeAreaId = selectedKnowledgeArea || params?.knowledgeAreaId;
+      const domain = selectedDomain || params?.domain;
 
-    dispatch(fetchQuestions(filters));
-    
+      const filters: any = {
+        certificationId: PMP_CERTIFICATION_ID,
+        limit: PRACTICE_PAGE_SIZE,
+        offset: pageOffset,
+        append,
+      };
+
+      if (knowledgeAreaId) {
+        filters.knowledgeAreaId = knowledgeAreaId;
+      }
+      if (domain) {
+        filters.domain = domain;
+      }
+
+      return filters;
+    },
+    [route.params, selectedKnowledgeArea, selectedDomain]
+  );
+
+  const loadAnsweredIds = useCallback(async () => {
     if (!isAuthenticated) {
       setAnsweredQuestionIds(new Set());
       return;
     }
-
     try {
       const answeredData = await progressService.getAnsweredQuestionIds(PMP_CERTIFICATION_ID);
-      const answeredIds = new Set<string>(answeredData.questionIds || []);
-      setAnsweredQuestionIds(answeredIds);
+      setAnsweredQuestionIds(new Set<string>(answeredData.questionIds || []));
     } catch (error) {
       console.error('Failed to fetch answered question IDs:', error);
     }
-  };
-  
-  // Filter questions by domain, knowledge area, and answered status
-  const filteredQuestions = React.useMemo(() => {
-    let filtered = questions;
-    
-    // Filter by knowledge area if selected (fallback if API didn't filter)
-    const params = route.params as any;
-    const knowledgeAreaId = selectedKnowledgeArea || params?.knowledgeAreaId;
-    
-    if (knowledgeAreaId) {
-      filtered = filtered.filter((q: any) => {
-        // Check both camelCase and snake_case fields
-        const qKnowledgeAreaId = q.knowledgeAreaId || q.knowledge_area_id;
-        return qKnowledgeAreaId === knowledgeAreaId;
-      });
-    }
-    
-    // Filter by domain if selected
-    if (selectedDomain) {
-      filtered = filtered.filter((q: any) => {
-        const questionDomain = q.domain || q.Domain;
-        if (!questionDomain) return false;
-        
-        // Normalize domain value (handle prefixes like "1. People")
-        const normalizedDomain = questionDomain.replace(/^\d+\.\s*/, '').trim();
-        return normalizedDomain === selectedDomain || normalizedDomain === `${selectedDomain} Environment`;
-      });
-    }
-    
-    // Filter by answered status
-    if (selectedQuestionFilter === 'unanswered') {
-      filtered = filtered.filter((q: any) => {
-        const questionId = q.id || q.question_id;
-        return !answeredQuestionIds.has(questionId);
-      });
-    }
-    
-    return filtered;
-  }, [questions, selectedDomain, selectedKnowledgeArea, selectedQuestionFilter, answeredQuestionIds, route.params]);
+  }, [isAuthenticated]);
 
-  // Reload when screen focuses or filters/auth change (single entry point — no duplicate mount effect)
+  const loadQuestions = useCallback(async () => {
+    dispatch(fetchQuestions(buildFilters(0, false)));
+    await loadAnsweredIds();
+  }, [dispatch, buildFilters, loadAnsweredIds]);
+
+  const loadMore = useCallback(async () => {
+    if (!hasMore || isLoading || isLoadingMore || loadingMoreRef.current) {
+      return;
+    }
+    loadingMoreRef.current = true;
+    try {
+      await dispatch(fetchQuestions(buildFilters(offset, true)));
+    } finally {
+      loadingMoreRef.current = false;
+    }
+  }, [dispatch, buildFilters, hasMore, isLoading, isLoadingMore, offset]);
+
+  const filteredQuestions = React.useMemo(() => {
+    if (selectedQuestionFilter !== 'unanswered') {
+      return questions;
+    }
+    return questions.filter((q: any) => {
+      const questionId = q.id || q.question_id;
+      return !answeredQuestionIds.has(questionId);
+    });
+  }, [questions, selectedQuestionFilter, answeredQuestionIds]);
+
   useFocusEffect(
     React.useCallback(() => {
       dispatch(clearQuestions());
@@ -125,7 +123,7 @@ export default function PracticeScreen() {
       return () => {
         dailyActivityService.endSession();
       };
-    }, [dispatch, selectedKnowledgeArea, selectedDomain, route.params, isAuthenticated])
+    }, [dispatch, selectedKnowledgeArea, selectedDomain, route.params, loadQuestions])
   );
 
   const handleQuestionPress = (questionId: string) => {
@@ -139,14 +137,17 @@ export default function PracticeScreen() {
     setSelectedQuestionFilter(filter);
   };
 
-  const hasActiveFilters = selectedQuestionFilter !== 'all' || selectedKnowledgeArea;
+  const hasActiveFilters = selectedQuestionFilter !== 'all' || selectedKnowledgeArea || selectedDomain;
+  const subtitleCount = selectedQuestionFilter === 'unanswered'
+    ? filteredQuestions.length
+    : total || filteredQuestions.length;
 
   const renderQuestion = ({ item }: any) => {
     const knowledgeArea = item.knowledgeAreaName || item.knowledge_area_name;
     const displayKnowledgeArea = knowledgeArea ? removeProjectPrefix(knowledgeArea) : null;
     const questionId = item.id || item.question_id;
     const isAnswered = answeredQuestionIds.has(questionId);
-    
+
     return (
       <TouchableOpacity
         activeOpacity={0.7}
@@ -200,16 +201,14 @@ export default function PracticeScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header Section */}
       <View style={styles.headerContainer}>
         <SectionHeader
           title="Practice Questions"
-          subtitle={`${filteredQuestions.length} questions available`}
+          subtitle={`${subtitleCount} questions available`}
           icon="book-open-variant"
         />
       </View>
-      
-      {/* Filter Section */}
+
       <View style={styles.filterWrapper}>
         <ScrollView
           horizontal
@@ -235,6 +234,7 @@ export default function PracticeScreen() {
               onPress={() => {
                 setSelectedQuestionFilter('all');
                 setSelectedKnowledgeArea(null);
+                setSelectedDomain(null);
               }}
             >
               <Icon name="close-circle" size={20} color={colors.textSecondary} />
@@ -254,9 +254,18 @@ export default function PracticeScreen() {
           styles.list,
           filteredQuestions.length === 0 && styles.emptyList,
         ]}
-        refreshing={isLoading}
+        refreshing={isLoading && !isLoadingMore}
         onRefresh={loadQuestions}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.4}
         showsVerticalScrollIndicator={false}
+        ListFooterComponent={
+          isLoadingMore ? (
+            <View style={styles.footerLoader}>
+              <ActivityIndicator size="small" color={colors.primary} />
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           <EmptyState
             icon="book-outline"
@@ -266,6 +275,7 @@ export default function PracticeScreen() {
             onActionPress={() => {
               setSelectedQuestionFilter('all');
               setSelectedKnowledgeArea(null);
+              setSelectedDomain(null);
             }}
           />
         }
@@ -327,6 +337,10 @@ const styles = StyleSheet.create({
   },
   emptyList: {
     flexGrow: 1,
+  },
+  footerLoader: {
+    paddingVertical: spacing.base,
+    alignItems: 'center',
   },
   card: {
     marginBottom: spacing.base,

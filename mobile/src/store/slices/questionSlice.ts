@@ -5,14 +5,22 @@ import { LearnerQuestion, LearnerAnswer } from '../../types/question';
 interface QuestionState {
   questions: LearnerQuestion[];
   currentQuestion: LearnerQuestion | null;
+  total: number;
+  offset: number;
+  hasMore: boolean;
   isLoading: boolean;
+  isLoadingMore: boolean;
   error: string | null;
 }
 
 const initialState: QuestionState = {
   questions: [],
   currentQuestion: null,
+  total: 0,
+  offset: 0,
+  hasMore: false,
   isLoading: false,
+  isLoadingMore: false,
   error: null,
 };
 
@@ -60,16 +68,29 @@ function mapLearnerQuestion(question: any): LearnerQuestion {
   };
 }
 
+export type FetchQuestionsArgs = {
+  certificationId?: string;
+  knowledgeAreaId?: string;
+  difficulty?: string;
+  domain?: string;
+  limit?: string | number;
+  offset?: string | number;
+  random?: string | boolean;
+  distributeByKnowledgeArea?: string | boolean;
+  append?: boolean;
+};
+
 export const fetchQuestions = createAsyncThunk(
   'questions/fetch',
-  async (filters: {
-    certificationId?: string;
-    knowledgeAreaId?: string;
-    difficulty?: string;
-    limit?: string | number;
-    offset?: string | number;
-  }) => {
-    return questionService.getQuestions(filters);
+  async (filters: FetchQuestionsArgs) => {
+    const data = await questionService.getQuestions(filters);
+    return {
+      questions: data?.questions || [],
+      total: typeof data?.total === 'number' ? data.total : (data?.questions || []).length,
+      append: Boolean(filters.append),
+      offset: Number(filters.offset || 0),
+      limit: Number(filters.limit || 25),
+    };
   }
 );
 
@@ -87,20 +108,43 @@ const questionSlice = createSlice({
     clearQuestions: (state) => {
       state.questions = [];
       state.currentQuestion = null;
+      state.total = 0;
+      state.offset = 0;
+      state.hasMore = false;
     },
   },
   extraReducers: (builder) => {
     builder
-      .addCase(fetchQuestions.pending, (state) => {
-        state.isLoading = true;
+      .addCase(fetchQuestions.pending, (state, action) => {
+        const appending = Boolean(action.meta.arg?.append);
+        state.isLoading = !appending;
+        state.isLoadingMore = appending;
         state.error = null;
       })
       .addCase(fetchQuestions.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.questions = (action.payload?.questions || []).map(mapLearnerQuestion);
+        state.isLoadingMore = false;
+        const mapped = (action.payload.questions || []).map(mapLearnerQuestion);
+        if (action.payload.append) {
+          const seen = new Set(state.questions.map((q) => q.id));
+          const merged = [...state.questions];
+          for (const q of mapped) {
+            if (!seen.has(q.id)) {
+              seen.add(q.id);
+              merged.push(q);
+            }
+          }
+          state.questions = merged;
+        } else {
+          state.questions = mapped;
+        }
+        state.total = action.payload.total;
+        state.offset = action.payload.offset + mapped.length;
+        state.hasMore = state.questions.length < state.total;
       })
       .addCase(fetchQuestions.rejected, (state, action) => {
         state.isLoading = false;
+        state.isLoadingMore = false;
         state.error = action.error.message || 'Failed to fetch questions';
       })
       .addCase(fetchQuestion.pending, (state) => {

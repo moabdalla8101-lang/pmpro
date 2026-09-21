@@ -3,18 +3,21 @@ import { AuthRequest } from '../middleware/auth';
 import { pool } from '../db/connection';
 import { hydrateQuestions } from '../serializers/hydrateQuestion';
 import { assertNoLearnerLeaks } from '../serializers/questionSerializers';
+import { mapBookmarkRows } from '../utils/mapBookmarkRows';
 
 export async function getBookmarks(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const { knowledgeAreaId } = req.query;
 
+    // Alias bookmark columns so q.* cannot overwrite bookmark id / question_id / created_at.
     let query = `
-      SELECT 
-        b.id,
-        b.user_id,
-        b.question_id,
-        b.created_at,
-        q.*
+      SELECT
+        b.id AS bookmark_id,
+        b.user_id AS bookmark_user_id,
+        b.question_id AS bookmarked_question_id,
+        b.created_at AS bookmarked_at,
+        q.id AS question_pk,
+        to_jsonb(q) AS question_row
       FROM bookmarks b
       JOIN questions q ON b.question_id = q.id
       WHERE b.user_id = $1
@@ -31,16 +34,9 @@ export async function getBookmarks(req: AuthRequest, res: Response, next: NextFu
     query += ' ORDER BY b.created_at DESC';
 
     const result = await pool.query(query, params);
-    const questions = await hydrateQuestions(result.rows, { admin: false });
-    const questionById = new Map(questions.map((q) => [q.id, q]));
-
-    const bookmarks = result.rows.map((row: any) => ({
-      id: row.id,
-      userId: row.user_id,
-      questionId: row.question_id,
-      createdAt: row.created_at,
-      question: questionById.get(row.question_id) || null,
-    }));
+    const questionRows = result.rows.map((row: any) => row.question_row);
+    const questions = await hydrateQuestions(questionRows, { admin: false });
+    const bookmarks = mapBookmarkRows(result.rows, questions);
 
     const payload = { bookmarks };
     assertNoLearnerLeaks(payload, 'getBookmarks');

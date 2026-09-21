@@ -5,6 +5,26 @@ import { pool } from '../db/connection';
 import { v4 as uuidv4 } from 'uuid';
 import { serializeAnsweredQuestionFeedback, serializeAdminQuestion } from '../serializers/questionSerializers';
 import { gradeSelectedAnswers } from '../utils/gradeSelectedAnswers';
+import { LEARNER_ATTEMPTS_CTE } from '../utils/learnerAttempts';
+
+async function ensureQuestionAttemptsTable(client: { query: (sql: string) => Promise<any> }) {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS question_attempts (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      question_id UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+      is_correct BOOLEAN NOT NULL,
+      selected_answer_ids UUID[] NOT NULL DEFAULT '{}',
+      response_json JSONB,
+      answered_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      exam_id UUID REFERENCES mock_exams(id) ON DELETE SET NULL
+    )
+  `);
+  await client.query(`
+    ALTER TABLE question_attempts
+      ADD COLUMN IF NOT EXISTS exam_id UUID REFERENCES mock_exams(id) ON DELETE SET NULL
+  `);
+}
 
 export async function getUserProgress(req: AuthRequest, res: Response, next: NextFunction) {
   try {
@@ -99,17 +119,7 @@ export async function recordAnswer(req: AuthRequest, res: Response, next: NextFu
 
     await client.query('BEGIN');
 
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS question_attempts (
-        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        question_id UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
-        is_correct BOOLEAN NOT NULL,
-        selected_answer_ids UUID[] NOT NULL DEFAULT '{}',
-        response_json JSONB,
-        answered_at TIMESTAMP NOT NULL DEFAULT NOW()
-      )
-    `);
+    await ensureQuestionAttemptsTable(client);
 
     const questionResult = await client.query(
       'SELECT * FROM questions WHERE id = $1 AND is_active = true',
@@ -250,8 +260,9 @@ export async function getAnsweredQuestionIds(req: AuthRequest, res: Response, ne
     const { certificationId } = req.query;
 
     let query = `
-      SELECT DISTINCT question_id 
-      FROM question_attempts 
+      WITH ${LEARNER_ATTEMPTS_CTE}
+      SELECT DISTINCT question_id
+      FROM learner_attempts
       WHERE user_id = $1
     `;
     const params: any[] = [req.user!.userId];
@@ -263,34 +274,10 @@ export async function getAnsweredQuestionIds(req: AuthRequest, res: Response, ne
       params.push(certificationId);
     }
 
-    try {
-      const result = await pool.query(query, params);
-      res.json({
-        questionIds: result.rows.map((row: any) => row.question_id),
-      });
-    } catch (error: any) {
-      // Fallback if migration not applied yet
-      if (error.code === '42P01') {
-        let fallback = `
-          SELECT DISTINCT question_id 
-          FROM user_answers 
-          WHERE user_id = $1
-        `;
-        const fallbackParams: any[] = [req.user!.userId];
-        if (certificationId) {
-          fallback += ` AND question_id IN (
-            SELECT id FROM questions WHERE certification_id = $2
-          )`;
-          fallbackParams.push(certificationId);
-        }
-        const result = await pool.query(fallback, fallbackParams);
-        res.json({
-          questionIds: result.rows.map((row: any) => row.question_id),
-        });
-        return;
-      }
-      throw error;
-    }
+    const result = await pool.query(query, params);
+    res.json({
+      questionIds: result.rows.map((row: any) => row.question_id),
+    });
   } catch (error) {
     next(error);
   }
@@ -303,9 +290,10 @@ export async function getMissedQuestions(req: AuthRequest, res: Response, next: 
     // Get all incorrect answers from practice sessions
     // For now, we'll get all incorrect answers (exam exclusion can be added later if needed)
     let query = `
-      WITH missed_question_ids AS (
+      WITH ${LEARNER_ATTEMPTS_CTE},
+      missed_question_ids AS (
         SELECT DISTINCT q.id as question_id
-        FROM question_attempts qa
+        FROM learner_attempts qa
         JOIN questions q ON qa.question_id = q.id
         WHERE qa.user_id = $1
         AND qa.is_correct = false
@@ -336,15 +324,15 @@ export async function getMissedQuestions(req: AuthRequest, res: Response, next: 
         q.explanation,
         q.knowledge_area_id,
         ka.name as knowledge_area_name,
-        (SELECT MAX(answered_at) FROM question_attempts 
-         WHERE user_id = $1 
-         AND question_id = q.id 
+        (SELECT MAX(answered_at) FROM learner_attempts
+         WHERE user_id = $1
+         AND question_id = q.id
          AND is_correct = false) as answered_at,
-        (SELECT selected_answer_ids[1] FROM question_attempts 
-         WHERE user_id = $1 
-         AND question_id = q.id 
-         AND is_correct = false 
-         ORDER BY answered_at DESC 
+        (SELECT selected_answer_ids[1] FROM learner_attempts
+         WHERE user_id = $1
+         AND question_id = q.id
+         AND is_correct = false
+         ORDER BY answered_at DESC
          LIMIT 1) as user_answer_id,
         CASE 
           WHEN mr.id IS NOT NULL THEN true 
@@ -487,19 +475,20 @@ export async function getPerformanceByKnowledgeArea(req: AuthRequest, res: Respo
     const { certificationId } = req.query;
 
     const result = await pool.query(
-      `SELECT 
+      `WITH ${LEARNER_ATTEMPTS_CTE}
+       SELECT
          ka.id as knowledge_area_id,
          ka.name as knowledge_area_name,
          COUNT(qa.id) as total_answered,
          SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END) as correct_answers,
-         CASE 
-           WHEN COUNT(qa.id) > 0 
+         CASE
+           WHEN COUNT(qa.id) > 0
            THEN (SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END)::float / COUNT(qa.id)::float * 100)
-           ELSE 0 
+           ELSE 0
          END as accuracy
        FROM knowledge_areas ka
        LEFT JOIN questions q ON ka.id = q.knowledge_area_id
-       LEFT JOIN question_attempts qa ON q.id = qa.question_id AND qa.user_id = $1
+       LEFT JOIN learner_attempts qa ON q.id = qa.question_id AND qa.user_id = $1
        WHERE ka.certification_id = $2
        GROUP BY ka.id, ka.name
        ORDER BY ka."order"`,
@@ -564,12 +553,13 @@ export async function getPerformanceByDomain(req: AuthRequest, res: Response, ne
     let result;
     try {
       result = await pool.query(
-        `WITH normalized_domains AS (
-          SELECT 
+        `WITH ${LEARNER_ATTEMPTS_CTE},
+        normalized_domains AS (
+          SELECT
             q.id,
             q.certification_id,
             COALESCE(
-              CASE 
+              CASE
                 -- Normalize domain values with prefixes (e.g., "1. People" -> "People", "3. Business Environment" -> "Business")
                 WHEN TRIM(COALESCE(q.domain, '')) ~ '^[0-9]+\.\s*People' OR TRIM(COALESCE(q.domain, '')) = 'People' THEN 'People'
                 WHEN TRIM(COALESCE(q.domain, '')) ~ '^[0-9]+\.\s*Process' OR TRIM(COALESCE(q.domain, '')) = 'Process' THEN 'Process'
@@ -577,17 +567,17 @@ export async function getPerformanceByDomain(req: AuthRequest, res: Response, ne
                 WHEN q.domain IS NOT NULL AND TRIM(q.domain) IN ('People', 'Process', 'Business') THEN TRIM(q.domain)
                 ELSE NULL
               END,
-              CASE 
-                WHEN ka.name LIKE '%Resource Management%' OR 
-                     ka.name LIKE '%Communications Management%' OR 
-                     ka.name LIKE '%Stakeholder Management%' 
+              CASE
+                WHEN ka.name LIKE '%Resource Management%' OR
+                     ka.name LIKE '%Communications Management%' OR
+                     ka.name LIKE '%Stakeholder Management%'
                 THEN 'People'
-                WHEN ka.name LIKE '%Integration%' OR 
-                     ka.name LIKE '%Scope%' OR 
-                     ka.name LIKE '%Schedule%' OR 
-                     ka.name LIKE '%Cost%' OR 
-                     ka.name LIKE '%Quality%' OR 
-                     ka.name LIKE '%Risk%' OR 
+                WHEN ka.name LIKE '%Integration%' OR
+                     ka.name LIKE '%Scope%' OR
+                     ka.name LIKE '%Schedule%' OR
+                     ka.name LIKE '%Cost%' OR
+                     ka.name LIKE '%Quality%' OR
+                     ka.name LIKE '%Risk%' OR
                      ka.name LIKE '%Procurement%'
                 THEN 'Process'
                 ELSE NULL
@@ -598,42 +588,42 @@ export async function getPerformanceByDomain(req: AuthRequest, res: Response, ne
           WHERE q.certification_id = $2
             AND q.is_active = true
             AND COALESCE(
-              CASE 
+              CASE
                 WHEN TRIM(COALESCE(q.domain, '')) ~ '^[0-9]+\.\s*People' OR TRIM(COALESCE(q.domain, '')) = 'People' THEN 'People'
                 WHEN TRIM(COALESCE(q.domain, '')) ~ '^[0-9]+\.\s*Process' OR TRIM(COALESCE(q.domain, '')) = 'Process' THEN 'Process'
                 WHEN TRIM(COALESCE(q.domain, '')) ~ '^[0-9]+\.\s*Business' OR TRIM(COALESCE(q.domain, '')) IN ('Business', 'Business Environment') THEN 'Business'
                 WHEN q.domain IS NOT NULL AND TRIM(q.domain) IN ('People', 'Process', 'Business') THEN TRIM(q.domain)
                 ELSE NULL
               END,
-              CASE 
-                WHEN ka.name LIKE '%Resource Management%' OR 
-                     ka.name LIKE '%Communications Management%' OR 
-                     ka.name LIKE '%Stakeholder Management%' 
+              CASE
+                WHEN ka.name LIKE '%Resource Management%' OR
+                     ka.name LIKE '%Communications Management%' OR
+                     ka.name LIKE '%Stakeholder Management%'
                 THEN 'People'
-                WHEN ka.name LIKE '%Integration%' OR 
-                     ka.name LIKE '%Scope%' OR 
-                     ka.name LIKE '%Schedule%' OR 
-                     ka.name LIKE '%Cost%' OR 
-                     ka.name LIKE '%Quality%' OR 
-                     ka.name LIKE '%Risk%' OR 
+                WHEN ka.name LIKE '%Integration%' OR
+                     ka.name LIKE '%Scope%' OR
+                     ka.name LIKE '%Schedule%' OR
+                     ka.name LIKE '%Cost%' OR
+                     ka.name LIKE '%Quality%' OR
+                     ka.name LIKE '%Risk%' OR
                      ka.name LIKE '%Procurement%'
                 THEN 'Process'
                 ELSE NULL
               END
             ) IN ('People', 'Process', 'Business')
         )
-        SELECT 
+        SELECT
           nd.domain,
           COUNT(DISTINCT nd.id) as total_questions,
           COUNT(DISTINCT qa.id) as total_answered,
           SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END) as correct_answers,
-          CASE 
-            WHEN COUNT(DISTINCT qa.id) > 0 
+          CASE
+            WHEN COUNT(DISTINCT qa.id) > 0
             THEN (SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END)::float / COUNT(DISTINCT qa.id)::float * 100)
-            ELSE 0 
+            ELSE 0
           END as accuracy
         FROM normalized_domains nd
-        LEFT JOIN question_attempts qa ON nd.id = qa.question_id AND qa.user_id = $1
+        LEFT JOIN learner_attempts qa ON nd.id = qa.question_id AND qa.user_id = $1
         GROUP BY nd.domain
         ORDER BY nd.domain`,
         [req.user!.userId, certificationId]

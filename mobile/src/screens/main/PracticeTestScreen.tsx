@@ -40,6 +40,7 @@ export default function PracticeTestScreen() {
   const [testQuestions, setTestQuestions] = useState<any[]>([]);
   const [pendingSubmit, setPendingSubmit] = useState(false);
   const restoringRef = useRef(false);
+  const pendingAttemptIdRef = useRef<string | null>(null);
   const selectedAnswersRef = useRef(selectedAnswers);
   const testQuestionsRef = useRef(testQuestions);
 
@@ -56,11 +57,13 @@ export default function PracticeTestScreen() {
   }, []);
 
   const savePendingDraft = useCallback(async () => {
-    await savePracticeDraft({
+    const draft = await savePracticeDraft({
       selectedAnswers: selectedAnswersRef.current,
       testQuestions: testQuestionsRef.current,
       currentQuestionIndex,
     });
+    pendingAttemptIdRef.current = draft.attemptId;
+    return draft;
   }, [currentQuestionIndex]);
 
   const loadPracticeQuestions = async () => {
@@ -162,7 +165,7 @@ export default function PracticeTestScreen() {
     }
   }, [clearPendingDraft, examId, isSubmitting, navigation]);
 
-  // After intentional "Sign In & View Results": restore draft and submit
+  // After intentional "Sign In & View Results": submit only an awaiting persisted draft
   useEffect(() => {
     if (!isAuthenticated || !pendingSubmit) return;
     if (restoringRef.current) return;
@@ -171,22 +174,25 @@ export default function PracticeTestScreen() {
     (async () => {
       try {
         const draft = await loadPracticeDraft();
-        if (draft && isDraftAwaitingAuth(draft)) {
+        if (
+          draft &&
+          isDraftAwaitingAuth(draft) &&
+          pendingAttemptIdRef.current &&
+          draft.attemptId === pendingAttemptIdRef.current
+        ) {
           setSelectedAnswers(draft.selectedAnswers || {});
           setTestQuestions(draft.testQuestions || []);
           setCurrentQuestionIndex(draft.currentQuestionIndex || 0);
           setIsTestStarted(true);
           setPendingSubmit(false);
+          pendingAttemptIdRef.current = null;
           await finalizeAndShowResults(draft.selectedAnswers);
           return;
         }
 
-        if (Object.keys(selectedAnswersRef.current).length > 0) {
-          setPendingSubmit(false);
-          await finalizeAndShowResults();
-        } else {
-          setPendingSubmit(false);
-        }
+        // Cancelled / expired / missing / mismatched draft: never fall back to in-memory answers
+        setPendingSubmit(false);
+        pendingAttemptIdRef.current = null;
       } catch (error) {
         console.error('Failed to finish pending practice test:', error);
         setPendingSubmit(false);
@@ -195,6 +201,25 @@ export default function PracticeTestScreen() {
       }
     })();
   }, [isAuthenticated, pendingSubmit, finalizeAndShowResults]);
+
+  // If auth was dismissed while pendingSubmit, clear the in-memory flag
+  useEffect(() => {
+    if (!pendingSubmit || isAuthenticated) return;
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const draft = await loadPracticeDraft();
+      if (cancelled) return;
+      if (!draft || !isDraftAwaitingAuth(draft)) {
+        setPendingSubmit(false);
+      }
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [pendingSubmit, isAuthenticated]);
 
   // Unrelated later login / remount: never auto-submit — offer resume instead
   useEffect(() => {

@@ -1,8 +1,9 @@
 import { Response, NextFunction } from 'express';
-import { NotFoundError } from '@pmp-app/shared';
+import { NotFoundError, ValidationError } from '@pmp-app/shared';
 import { AuthRequest } from '../middleware/auth';
 import { pool } from '../db/connection';
 import { v4 as uuidv4 } from 'uuid';
+import { LEARNER_ATTEMPTS_CTE } from '../utils/learnerAttempts';
 
 export async function startExam(req: AuthRequest, res: Response, next: NextFunction) {
   try {
@@ -194,52 +195,87 @@ export async function getWeeklyDailyQuizCompletions(req: AuthRequest, res: Respo
 }
 
 export async function submitExam(req: AuthRequest, res: Response, next: NextFunction) {
+  const client = await pool.connect();
   try {
     const { id } = req.params;
     const { answers } = req.body;
 
-    // Get exam
-    const examResult = await pool.query(
-      'SELECT * FROM mock_exams WHERE id = $1 AND user_id = $2',
+    if (!Array.isArray(answers) || answers.length === 0) {
+      return next(new ValidationError('answers are required'));
+    }
+
+    await client.query('BEGIN');
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS question_attempts (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        question_id UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+        is_correct BOOLEAN NOT NULL,
+        selected_answer_ids UUID[] NOT NULL DEFAULT '{}',
+        response_json JSONB,
+        answered_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        exam_id UUID REFERENCES mock_exams(id) ON DELETE SET NULL
+      )
+    `);
+    await client.query(`
+      ALTER TABLE question_attempts
+        ADD COLUMN IF NOT EXISTS exam_id UUID REFERENCES mock_exams(id) ON DELETE SET NULL
+    `);
+
+    const examResult = await client.query(
+      'SELECT * FROM mock_exams WHERE id = $1 AND user_id = $2 FOR UPDATE',
       [id, req.user!.userId]
     );
 
     if (examResult.rows.length === 0) {
+      await client.query('ROLLBACK');
       return next(new NotFoundError('Exam not found'));
     }
 
-    // Calculate score
     let correctCount = 0;
     for (const answer of answers) {
-      const answerResult = await pool.query(
-        'SELECT is_correct FROM answers WHERE id = $1',
-        [answer.answerId]
+      const answerResult = await client.query(
+        'SELECT is_correct FROM answers WHERE id = $1 AND question_id = $2',
+        [answer.answerId, answer.questionId]
       );
 
-      if (answerResult.rows.length > 0 && answerResult.rows[0].is_correct) {
+      const isCorrect = Boolean(answerResult.rows[0]?.is_correct);
+      if (isCorrect) {
         correctCount++;
       }
 
-      // Record answer
-      const userAnswerId = uuidv4();
-      await pool.query(
-        `INSERT INTO user_answers (id, user_id, question_id, answer_id, is_correct, answered_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())`,
+      const attemptId = uuidv4();
+      await client.query(
+        `INSERT INTO question_attempts
+           (id, user_id, question_id, is_correct, selected_answer_ids, response_json, answered_at, exam_id)
+         VALUES ($1, $2, $3, $4, $5::uuid[], $6::jsonb, NOW(), $7)`,
         [
-          userAnswerId,
+          attemptId,
           req.user!.userId,
           answer.questionId,
-          answer.answerId,
-          (answerResult.rows[0] && answerResult.rows[0].is_correct) || false
+          isCorrect,
+          [answer.answerId],
+          JSON.stringify({
+            selectedAnswerIds: [answer.answerId],
+            examId: id,
+          }),
+          id,
         ]
+      );
+
+      const userAnswerId = uuidv4();
+      await client.query(
+        `INSERT INTO user_answers (id, user_id, question_id, answer_id, is_correct, answered_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())`,
+        [userAnswerId, req.user!.userId, answer.questionId, answer.answerId, isCorrect]
       );
     }
 
     const score = (correctCount / answers.length) * 100;
 
-    // Update exam
-    await pool.query(
-      `UPDATE mock_exams 
+    await client.query(
+      `UPDATE mock_exams
        SET completed_at = NOW(),
            score = $1,
            correct_answers = $2
@@ -247,34 +283,35 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
       [score, correctCount, id]
     );
 
-    // Update user progress
     const exam = examResult.rows[0];
     const certificationId = exam.certification_id;
-    
-    // Get current progress totals
-    const progressResult = await pool.query(
-      `SELECT 
+
+    const progressResult = await client.query(
+      `WITH ${LEARNER_ATTEMPTS_CTE}
+       SELECT
          COUNT(*) as total_answered,
          SUM(CASE WHEN is_correct THEN 1 ELSE 0 END) as correct_count
-       FROM user_answers
-       WHERE user_id = $1`,
-      [req.user!.userId]
+       FROM learner_attempts
+       WHERE user_id = $1
+         AND question_id IN (
+           SELECT id FROM questions WHERE certification_id = $2
+         )`,
+      [req.user!.userId, certificationId]
     );
 
     const firstRow = progressResult.rows[0] || {};
     const totalAnswered = parseInt(firstRow.total_answered || '0', 10);
     const totalCorrect = parseInt(firstRow.correct_count || '0', 10);
-    const overallAccuracy = totalAnswered > 0 ? (totalCorrect / totalAnswered) : 0;
+    const overallAccuracy = totalAnswered > 0 ? totalCorrect / totalAnswered : 0;
 
-    // Update or create user progress
-    const existingProgress = await pool.query(
+    const existingProgress = await client.query(
       'SELECT id FROM user_progress WHERE user_id = $1 AND certification_id = $2',
       [req.user!.userId, certificationId]
     );
 
     if (existingProgress.rows.length > 0) {
-      await pool.query(
-        `UPDATE user_progress 
+      await client.query(
+        `UPDATE user_progress
          SET total_questions_answered = $1,
              correct_answers = $2,
              accuracy = $3,
@@ -285,16 +322,24 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
       );
     } else {
       const progressId = uuidv4();
-      await pool.query(
+      await client.query(
         `INSERT INTO user_progress (id, user_id, certification_id, total_questions_answered, correct_answers, accuracy, last_activity_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
         [progressId, req.user!.userId, certificationId, totalAnswered, totalCorrect, overallAccuracy]
       );
     }
 
+    await client.query('COMMIT');
     res.json({ examId: id, score, correctAnswers: correctCount, totalQuestions: answers.length });
   } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      // ignore
+    }
     next(error);
+  } finally {
+    client.release();
   }
 }
 
