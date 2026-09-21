@@ -4,6 +4,7 @@ import { AuthRequest } from '../middleware/auth';
 import { pool } from '../db/connection';
 import { v4 as uuidv4 } from 'uuid';
 import { serializeAnsweredQuestionFeedback, serializeAdminQuestion } from '../serializers/questionSerializers';
+import { gradeSelectedAnswers } from '../utils/gradeSelectedAnswers';
 
 export async function getUserProgress(req: AuthRequest, res: Response, next: NextFunction) {
   try {
@@ -92,16 +93,35 @@ export async function updateUserProgress(req: AuthRequest, res: Response, next: 
 }
 
 export async function recordAnswer(req: AuthRequest, res: Response, next: NextFunction) {
+  const client = await pool.connect();
   try {
     const { questionId, answerId, answerIds, dragMatches } = req.body;
 
-    const questionResult = await pool.query('SELECT * FROM questions WHERE id = $1', [questionId]);
+    await client.query('BEGIN');
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS question_attempts (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        question_id UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+        is_correct BOOLEAN NOT NULL,
+        selected_answer_ids UUID[] NOT NULL DEFAULT '{}',
+        response_json JSONB,
+        answered_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    const questionResult = await client.query(
+      'SELECT * FROM questions WHERE id = $1 AND is_active = true',
+      [questionId]
+    );
     if (questionResult.rows.length === 0) {
+      await client.query('ROLLBACK');
       return next(new NotFoundError('Question not found'));
     }
     const question = questionResult.rows[0];
 
-    const answersResult = await pool.query(
+    const answersResult = await client.query(
       'SELECT * FROM answers WHERE question_id = $1 ORDER BY "order"',
       [questionId]
     );
@@ -109,7 +129,8 @@ export async function recordAnswer(req: AuthRequest, res: Response, next: NextFu
 
     const questionType = question.question_type;
     let isCorrect = false;
-    const userAnswerIds: string[] = [];
+    let selectedIds: string[] = [];
+    let responseJson: any = null;
 
     if (questionType === 'drag_and_match' && dragMatches && typeof dragMatches === 'object') {
       let metadata = question.question_metadata;
@@ -120,73 +141,107 @@ export async function recordAnswer(req: AuthRequest, res: Response, next: NextFu
           metadata = null;
         }
       }
-      const correctMatches = metadata?.matches || metadata?.correctMatches || {};
+      let correctMatches: Record<string, string> =
+        metadata?.matches || metadata?.correctMatches || {};
+      if (
+        Object.keys(correctMatches).length === 0 &&
+        Array.isArray(metadata?.dragDropPairs || metadata?.drag_drop_pairs)
+      ) {
+        correctMatches = {};
+        for (const pair of metadata.dragDropPairs || metadata.drag_drop_pairs) {
+          const left = pair?.left_item ?? pair?.left ?? pair?.leftItem;
+          const right = pair?.right_item ?? pair?.right ?? pair?.rightItem;
+          if (left != null && right != null) {
+            correctMatches[String(left)] = String(right);
+          }
+        }
+      }
       const leftKeys = Object.keys(correctMatches);
       isCorrect =
         leftKeys.length > 0 &&
         leftKeys.every((key) => String(dragMatches[key]) === String(correctMatches[key]));
-
-      // Persist a placeholder user_answer row using first answer if present
-      if (answers[0]) {
-        const userAnswerId = uuidv4();
-        await pool.query(
-          `INSERT INTO user_answers (id, user_id, question_id, answer_id, is_correct, answered_at)
-           VALUES ($1, $2, $3, $4, $5, NOW())`,
-          [userAnswerId, req.user!.userId, questionId, answers[0].id, isCorrect]
-        );
-        userAnswerIds.push(userAnswerId);
-      }
+      responseJson = { dragMatches };
+      selectedIds = answers[0] ? [answers[0].id] : [];
     } else {
-      const selectedIds: string[] = Array.isArray(answerIds)
+      const rawIds: string[] = Array.isArray(answerIds)
         ? answerIds
         : answerId
           ? [answerId]
           : [];
 
-      if (!questionId || selectedIds.length === 0) {
+      if (!questionId || rawIds.length === 0) {
+        await client.query('ROLLBACK');
         return next(new ValidationError('questionId and answerId(s) are required'));
       }
 
       if (answers.length === 0) {
+        await client.query('ROLLBACK');
         return next(new NotFoundError('Answers not found'));
       }
 
       const answerById = new Map(answers.map((a: any) => [a.id, a]));
-      for (const id of selectedIds) {
+      for (const id of rawIds) {
         if (!answerById.has(id)) {
+          await client.query('ROLLBACK');
           return next(new NotFoundError('Answer not found'));
         }
       }
 
       const correctIds = answers.filter((a: any) => a.is_correct).map((a: any) => a.id);
-      const selectedSet = new Set(selectedIds);
-      const correctSet = new Set(correctIds);
-      isCorrect =
-        selectedIds.length === correctIds.length &&
-        selectedIds.every((id) => correctSet.has(id)) &&
-        correctIds.every((id) => selectedSet.has(id));
-
-      for (const id of selectedIds) {
-        const row = answerById.get(id)!;
-        const userAnswerId = uuidv4();
-        await pool.query(
-          `INSERT INTO user_answers (id, user_id, question_id, answer_id, is_correct, answered_at)
-           VALUES ($1, $2, $3, $4, $5, NOW())`,
-          [userAnswerId, req.user!.userId, questionId, id, Boolean(row.is_correct)]
-        );
-        userAnswerIds.push(userAnswerId);
+      const graded = gradeSelectedAnswers(rawIds.map(String), correctIds);
+      if (graded.hasDuplicates) {
+        await client.query('ROLLBACK');
+        return next(new ValidationError('Duplicate answer IDs are not allowed'));
       }
+
+      selectedIds = graded.uniqueSelectedIds;
+      isCorrect = graded.isCorrect;
+      responseJson = { selectedAnswerIds: selectedIds };
     }
+
+    const attemptId = uuidv4();
+    await client.query(
+      `INSERT INTO question_attempts
+         (id, user_id, question_id, is_correct, selected_answer_ids, response_json, answered_at)
+       VALUES ($1, $2, $3, $4, $5::uuid[], $6::jsonb, NOW())`,
+      [
+        attemptId,
+        req.user!.userId,
+        questionId,
+        isCorrect,
+        selectedIds,
+        JSON.stringify(responseJson),
+      ]
+    );
+
+    // Single audit row with overall attempt correctness (not per-option rows).
+    if (selectedIds.length > 0) {
+      await client.query(
+        `INSERT INTO user_answers (id, user_id, question_id, answer_id, is_correct, answered_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())`,
+        [uuidv4(), req.user!.userId, questionId, selectedIds[0], isCorrect]
+      );
+    }
+
+    await client.query('COMMIT');
 
     const feedback = serializeAnsweredQuestionFeedback(question, answers, {
       isCorrect,
-      userAnswerId: userAnswerIds[0],
-      userAnswerIds,
+      attemptId,
+      userAnswerId: attemptId,
+      userAnswerIds: [attemptId],
     });
 
     res.json(feedback);
   } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      // ignore rollback errors
+    }
     next(error);
+  } finally {
+    client.release();
   }
 }
 
@@ -196,7 +251,7 @@ export async function getAnsweredQuestionIds(req: AuthRequest, res: Response, ne
 
     let query = `
       SELECT DISTINCT question_id 
-      FROM user_answers 
+      FROM question_attempts 
       WHERE user_id = $1
     `;
     const params: any[] = [req.user!.userId];
@@ -208,11 +263,34 @@ export async function getAnsweredQuestionIds(req: AuthRequest, res: Response, ne
       params.push(certificationId);
     }
 
-    const result = await pool.query(query, params);
-
-    res.json({
-      questionIds: result.rows.map((row: any) => row.question_id),
-    });
+    try {
+      const result = await pool.query(query, params);
+      res.json({
+        questionIds: result.rows.map((row: any) => row.question_id),
+      });
+    } catch (error: any) {
+      // Fallback if migration not applied yet
+      if (error.code === '42P01') {
+        let fallback = `
+          SELECT DISTINCT question_id 
+          FROM user_answers 
+          WHERE user_id = $1
+        `;
+        const fallbackParams: any[] = [req.user!.userId];
+        if (certificationId) {
+          fallback += ` AND question_id IN (
+            SELECT id FROM questions WHERE certification_id = $2
+          )`;
+          fallbackParams.push(certificationId);
+        }
+        const result = await pool.query(fallback, fallbackParams);
+        res.json({
+          questionIds: result.rows.map((row: any) => row.question_id),
+        });
+        return;
+      }
+      throw error;
+    }
   } catch (error) {
     next(error);
   }
@@ -227,10 +305,10 @@ export async function getMissedQuestions(req: AuthRequest, res: Response, next: 
     let query = `
       WITH missed_question_ids AS (
         SELECT DISTINCT q.id as question_id
-        FROM user_answers ua
-        JOIN questions q ON ua.question_id = q.id
-        WHERE ua.user_id = $1
-        AND ua.is_correct = false
+        FROM question_attempts qa
+        JOIN questions q ON qa.question_id = q.id
+        WHERE qa.user_id = $1
+        AND qa.is_correct = false
     `;
     
     const params: any[] = [req.user!.userId];
@@ -258,11 +336,11 @@ export async function getMissedQuestions(req: AuthRequest, res: Response, next: 
         q.explanation,
         q.knowledge_area_id,
         ka.name as knowledge_area_name,
-        (SELECT MAX(answered_at) FROM user_answers 
+        (SELECT MAX(answered_at) FROM question_attempts 
          WHERE user_id = $1 
          AND question_id = q.id 
          AND is_correct = false) as answered_at,
-        (SELECT answer_id FROM user_answers 
+        (SELECT selected_answer_ids[1] FROM question_attempts 
          WHERE user_id = $1 
          AND question_id = q.id 
          AND is_correct = false 
@@ -412,16 +490,16 @@ export async function getPerformanceByKnowledgeArea(req: AuthRequest, res: Respo
       `SELECT 
          ka.id as knowledge_area_id,
          ka.name as knowledge_area_name,
-         COUNT(ua.id) as total_answered,
-         SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END) as correct_answers,
+         COUNT(qa.id) as total_answered,
+         SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END) as correct_answers,
          CASE 
-           WHEN COUNT(ua.id) > 0 
-           THEN (SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END)::float / COUNT(ua.id)::float * 100)
+           WHEN COUNT(qa.id) > 0 
+           THEN (SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END)::float / COUNT(qa.id)::float * 100)
            ELSE 0 
          END as accuracy
        FROM knowledge_areas ka
        LEFT JOIN questions q ON ka.id = q.knowledge_area_id
-       LEFT JOIN user_answers ua ON q.id = ua.question_id AND ua.user_id = $1
+       LEFT JOIN question_attempts qa ON q.id = qa.question_id AND qa.user_id = $1
        WHERE ka.certification_id = $2
        GROUP BY ka.id, ka.name
        ORDER BY ka."order"`,
@@ -547,15 +625,15 @@ export async function getPerformanceByDomain(req: AuthRequest, res: Response, ne
         SELECT 
           nd.domain,
           COUNT(DISTINCT nd.id) as total_questions,
-          COUNT(DISTINCT ua.id) as total_answered,
-          SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END) as correct_answers,
+          COUNT(DISTINCT qa.id) as total_answered,
+          SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END) as correct_answers,
           CASE 
-            WHEN COUNT(DISTINCT ua.id) > 0 
-            THEN (SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END)::float / COUNT(DISTINCT ua.id)::float * 100)
+            WHEN COUNT(DISTINCT qa.id) > 0 
+            THEN (SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END)::float / COUNT(DISTINCT qa.id)::float * 100)
             ELSE 0 
           END as accuracy
         FROM normalized_domains nd
-        LEFT JOIN user_answers ua ON nd.id = ua.question_id AND ua.user_id = $1
+        LEFT JOIN question_attempts qa ON nd.id = qa.question_id AND qa.user_id = $1
         GROUP BY nd.domain
         ORDER BY nd.domain`,
         [req.user!.userId, certificationId]

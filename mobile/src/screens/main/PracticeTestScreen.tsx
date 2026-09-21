@@ -3,7 +3,6 @@ import { View, StyleSheet, ScrollView, Alert, SafeAreaView, TouchableOpacity } f
 import { Text, ProgressBar, ActivityIndicator } from 'react-native-paper';
 import { useNavigation, CommonActions } from '@react-navigation/native';
 import { useSelector, useDispatch } from 'react-redux';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { examService } from '../../services/api/examService';
 import { RootState, AppDispatch } from '../../store';
 import { fetchQuestions } from '../../store/slices/questionSlice';
@@ -15,16 +14,15 @@ import { ActionButton } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { useRequireAuth } from '../../utils/requireAuth';
+import {
+  clearPracticeDraft,
+  isDraftAwaitingAuth,
+  loadPracticeDraft,
+  savePracticeDraft,
+} from '../../utils/practiceTestDraft';
 
 const TOTAL_QUESTIONS = 10;
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
-const PENDING_PRACTICE_KEY = 'pendingPracticeTest';
-
-type PendingPracticeDraft = {
-  selectedAnswers: { [key: string]: string };
-  testQuestions: any[];
-  currentQuestionIndex: number;
-};
 
 export default function PracticeTestScreen() {
   const navigation = useNavigation();
@@ -54,16 +52,15 @@ export default function PracticeTestScreen() {
   const progress = displayQuestions.length > 0 ? (currentQuestionIndex + 1) / displayQuestions.length : 0;
 
   const clearPendingDraft = useCallback(async () => {
-    await AsyncStorage.removeItem(PENDING_PRACTICE_KEY);
+    await clearPracticeDraft();
   }, []);
 
   const savePendingDraft = useCallback(async () => {
-    const draft: PendingPracticeDraft = {
+    await savePracticeDraft({
       selectedAnswers: selectedAnswersRef.current,
       testQuestions: testQuestionsRef.current,
       currentQuestionIndex,
-    };
-    await AsyncStorage.setItem(PENDING_PRACTICE_KEY, JSON.stringify(draft));
+    });
   }, [currentQuestionIndex]);
 
   const loadPracticeQuestions = async () => {
@@ -165,7 +162,7 @@ export default function PracticeTestScreen() {
     }
   }, [clearPendingDraft, examId, isSubmitting, navigation]);
 
-  // After sign-in: restore saved guest answers (if any) and submit for results
+  // After intentional "Sign In & View Results": restore draft and submit
   useEffect(() => {
     if (!isAuthenticated || !pendingSubmit) return;
     if (restoringRef.current) return;
@@ -173,9 +170,8 @@ export default function PracticeTestScreen() {
 
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(PENDING_PRACTICE_KEY);
-        if (raw) {
-          const draft: PendingPracticeDraft = JSON.parse(raw);
+        const draft = await loadPracticeDraft();
+        if (draft && isDraftAwaitingAuth(draft)) {
           setSelectedAnswers(draft.selectedAnswers || {});
           setTestQuestions(draft.testQuestions || []);
           setCurrentQuestionIndex(draft.currentQuestionIndex || 0);
@@ -200,29 +196,59 @@ export default function PracticeTestScreen() {
     })();
   }, [isAuthenticated, pendingSubmit, finalizeAndShowResults]);
 
-  // Cold start / remount after login: pick up draft even if pendingSubmit state was lost
+  // Unrelated later login / remount: never auto-submit — offer resume instead
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || pendingSubmit) return;
     if (restoringRef.current || isSubmitting || isTestStarted) return;
 
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(PENDING_PRACTICE_KEY);
-        if (!raw) return;
+        const draft = await loadPracticeDraft();
+        if (!draft || !isDraftAwaitingAuth(draft)) return;
+
         restoringRef.current = true;
-        const draft: PendingPracticeDraft = JSON.parse(raw);
-        setSelectedAnswers(draft.selectedAnswers || {});
-        setTestQuestions(draft.testQuestions || []);
-        setCurrentQuestionIndex(draft.currentQuestionIndex || 0);
-        setIsTestStarted(true);
-        await finalizeAndShowResults(draft.selectedAnswers);
+        Alert.alert(
+          'Resume practice test?',
+          'You have a saved practice test waiting for results. Submit it now?',
+          [
+            {
+              text: 'Discard',
+              style: 'destructive',
+              onPress: async () => {
+                await clearPendingDraft();
+                restoringRef.current = false;
+              },
+            },
+            {
+              text: 'Submit results',
+              onPress: async () => {
+                setSelectedAnswers(draft.selectedAnswers || {});
+                setTestQuestions(draft.testQuestions || []);
+                setCurrentQuestionIndex(draft.currentQuestionIndex || 0);
+                setIsTestStarted(true);
+                try {
+                  await finalizeAndShowResults(draft.selectedAnswers);
+                } finally {
+                  restoringRef.current = false;
+                }
+              },
+            },
+          ],
+          { cancelable: true, onDismiss: () => { restoringRef.current = false; } }
+        );
       } catch (error) {
-        console.error('Failed to restore pending practice test:', error);
-      } finally {
+        console.error('Failed to offer practice draft resume:', error);
         restoringRef.current = false;
       }
     })();
-  }, [isAuthenticated, finalizeAndShowResults, isSubmitting, isTestStarted]);
+  }, [
+    isAuthenticated,
+    pendingSubmit,
+    finalizeAndShowResults,
+    isSubmitting,
+    isTestStarted,
+    clearPendingDraft,
+  ]);
 
   const handleSubmitTest = () => {
     Alert.alert(

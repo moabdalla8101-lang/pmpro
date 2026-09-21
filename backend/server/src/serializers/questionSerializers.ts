@@ -26,7 +26,12 @@ export const LEARNER_FORBIDDEN_KEYS = [
   'matches', // drag_and_match answer key in question_metadata
   'correctMatches',
   'correct_matches',
+  'dragDropPairs',
+  'drag_drop_pairs',
 ] as const;
+
+export const MAX_LEARNER_QUESTION_PAGE_SIZE = 50;
+export const DEFAULT_LEARNER_QUESTION_PAGE_SIZE = 25;
 
 export type LearnerAnswer = {
   id: string;
@@ -76,6 +81,7 @@ export type AdminQuestion = Omit<LearnerQuestion, 'answers' | 'questionMetadata'
 
 export type AnsweredQuestionFeedback = {
   questionId: string;
+  attemptId?: string;
   userAnswerId?: string;
   userAnswerIds?: string[];
   isCorrect: boolean;
@@ -105,18 +111,69 @@ function parseJsonField(value: any): any {
   return value;
 }
 
+function shuffleInPlace<T>(items: T[]): T[] {
+  for (let i = items.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [items[i], items[j]] = [items[j], items[i]];
+  }
+  return items;
+}
+
+/**
+ * Convert paired drag/drop answer keys into unpaired prompt lists.
+ * Preserves left/right item text for UI without revealing which pairs match.
+ */
+export function transformDragDropPairsForLearner(pairs: any[]): {
+  leftItems: string[];
+  rightItems: string[];
+} {
+  const leftItems = pairs
+    .map((pair) => pair?.left_item ?? pair?.left ?? pair?.leftItem)
+    .filter((v) => v != null)
+    .map(String);
+  const rightItems = pairs
+    .map((pair) => pair?.right_item ?? pair?.right ?? pair?.rightItem)
+    .filter((v) => v != null)
+    .map(String);
+
+  return {
+    leftItems: shuffleInPlace([...leftItems]),
+    rightItems: shuffleInPlace([...rightItems]),
+  };
+}
+
 /** Strip answer-key material from drag_and_match metadata for learners. */
 export function sanitizeLearnerQuestionMetadata(metadata: any): any {
   const parsed = parseJsonField(metadata);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return parsed;
   }
+
   const {
     matches,
     correctMatches,
     correct_matches,
-    ...safe
+    dragDropPairs,
+    drag_drop_pairs,
+    ...rest
   } = parsed;
+
+  const safe: Record<string, any> = { ...rest };
+  const pairs = dragDropPairs ?? drag_drop_pairs;
+
+  if (Array.isArray(pairs) && pairs.length > 0) {
+    const { leftItems, rightItems } = transformDragDropPairsForLearner(pairs);
+    // Prefer transformed unpaired lists; keep existing lists only if pairs absent
+    if (!safe.leftItems && !safe.left_items) {
+      safe.leftItems = leftItems;
+      safe.left_items = leftItems;
+    }
+    if (!safe.rightItems && !safe.right_items) {
+      safe.rightItems = rightItems;
+      safe.right_items = rightItems;
+    }
+  }
+
   return safe;
 }
 
@@ -219,6 +276,7 @@ export function serializeAnsweredQuestionFeedback(
   answers: AnswerRow[],
   options: {
     isCorrect: boolean;
+    attemptId?: string;
     userAnswerId?: string;
     userAnswerIds?: string[];
   }
@@ -231,13 +289,28 @@ export function serializeAnsweredQuestionFeedback(
     question.explanation_images ?? question.explanationImages
   );
   const metadata = parseJsonField(question.question_metadata ?? question.questionMetadata);
-  const correctMatches =
-    metadata && typeof metadata === 'object' && !Array.isArray(metadata)
-      ? metadata.matches ?? metadata.correctMatches ?? null
-      : null;
+  let correctMatches: Record<string, string> | null = null;
+  if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+    correctMatches =
+      metadata.matches ??
+      metadata.correctMatches ??
+      null;
+    if (!correctMatches && Array.isArray(metadata.dragDropPairs ?? metadata.drag_drop_pairs)) {
+      const pairs = metadata.dragDropPairs ?? metadata.drag_drop_pairs;
+      correctMatches = {};
+      for (const pair of pairs) {
+        const left = pair?.left_item ?? pair?.left ?? pair?.leftItem;
+        const right = pair?.right_item ?? pair?.right ?? pair?.rightItem;
+        if (left != null && right != null) {
+          correctMatches[String(left)] = String(right);
+        }
+      }
+    }
+  }
 
   return {
     questionId: question.id,
+    attemptId: options.attemptId,
     userAnswerId: options.userAnswerId,
     userAnswerIds: options.userAnswerIds,
     isCorrect: options.isCorrect,
@@ -289,4 +362,14 @@ export function assertNoLearnerLeaks(payload: unknown, context: string): void {
       `Learner payload leak in ${context}: ${leaks.slice(0, 20).join(', ')}`
     );
   }
+}
+
+export function clampLearnerPageSize(limit: unknown): number {
+  const parsed = typeof limit === 'string' || typeof limit === 'number'
+    ? parseInt(String(limit), 10)
+    : NaN;
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_LEARNER_QUESTION_PAGE_SIZE;
+  }
+  return Math.min(parsed, MAX_LEARNER_QUESTION_PAGE_SIZE);
 }

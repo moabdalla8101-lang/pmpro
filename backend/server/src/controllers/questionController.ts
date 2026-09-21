@@ -4,7 +4,10 @@ import { AuthRequest } from '../middleware/auth';
 import { pool } from '../db/connection';
 import { v4 as uuidv4 } from 'uuid';
 import { hydrateQuestion, hydrateQuestions } from '../serializers/hydrateQuestion';
-import { assertNoLearnerLeaks } from '../serializers/questionSerializers';
+import {
+  assertNoLearnerLeaks,
+  clampLearnerPageSize,
+} from '../serializers/questionSerializers';
 import { UserRole } from '@pmp-app/shared';
 
 function isAdminRequest(req: AuthRequest): boolean {
@@ -29,7 +32,10 @@ async function respondWithQuestions(
 export async function getQuestions(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const { certificationId, knowledgeAreaId, difficulty, limit, offset = 0, random, distributeByKnowledgeArea } = req.query;
-    const queryLimit = limit ? parseInt(limit as string, 10) : 1000;
+    const admin = isAdminRequest(req);
+    const queryLimit = admin
+      ? (limit ? parseInt(limit as string, 10) : 1000)
+      : clampLearnerPageSize(limit);
     const isRandom = random === 'true' || random === '1';
     const shouldDistribute =
       distributeByKnowledgeArea === 'true' ||
@@ -177,14 +183,19 @@ export async function getQuestionsByIds(req: AuthRequest, res: Response, next: N
 export async function getQuestion(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const { id } = req.params;
+    const admin = isAdminRequest(req);
 
-    const questionResult = await pool.query('SELECT * FROM questions WHERE id = $1', [id]);
+    const questionResult = await pool.query(
+      admin
+        ? 'SELECT * FROM questions WHERE id = $1'
+        : 'SELECT * FROM questions WHERE id = $1 AND is_active = true',
+      [id]
+    );
 
     if (questionResult.rows.length === 0) {
       return next(new NotFoundError('Question not found'));
     }
 
-    const admin = isAdminRequest(req);
     const payload = await hydrateQuestion(questionResult.rows[0], { admin });
     if (!admin) {
       assertNoLearnerLeaks(payload, 'getQuestion');
@@ -321,7 +332,10 @@ export async function getQuestionsByKnowledgeArea(
   try {
     const { knowledgeAreaId } = req.params;
     const { limit, offset = 0 } = req.query;
-    const queryLimit = limit ? parseInt(limit as string, 10) : 1000;
+    const admin = isAdminRequest(req);
+    const queryLimit = admin
+      ? (limit ? parseInt(limit as string, 10) : 1000)
+      : clampLearnerPageSize(limit);
 
     const result = await pool.query(
       `SELECT * FROM questions 

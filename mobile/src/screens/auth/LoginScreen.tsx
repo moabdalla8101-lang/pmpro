@@ -8,6 +8,7 @@ import { ActionButton } from '../../components';
 import { colors } from '../../theme';
 import { spacing } from '../../utils/styles';
 import { getAuthPromptMessage, AuthPromptReason } from '../../utils/requireAuth';
+import { cancelPendingPracticeAuth } from '../../utils/practiceTestDraft';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -21,6 +22,7 @@ export default function LoginScreen() {
   const params = (route.params as { reason?: AuthPromptReason; allowDismiss?: boolean }) || {};
   const allowDismiss = params.allowDismiss !== false;
   const promptMessage = getAuthPromptMessage(params.reason);
+  const authParams = { reason: params.reason, allowDismiss };
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -44,7 +46,8 @@ export default function LoginScreen() {
     }
   };
 
-  const handleContinueAsGuest = () => {
+  const handleContinueAsGuest = async () => {
+    await cancelPendingPracticeAuth();
     const parent = navigation.getParent();
     if (parent?.canGoBack?.()) {
       parent.goBack();
@@ -120,18 +123,13 @@ export default function LoginScreen() {
               <View style={styles.linkContainer}>
                 <ActionButton
                   label="Don't have an account? Sign up"
-                  onPress={() =>
-                    navigation.navigate('Register', {
-                      reason: params.reason,
-                      allowDismiss,
-                    })
-                  }
+                  onPress={() => navigation.navigate('Register', authParams)}
                   variant="text"
                   size="small"
                 />
                 <ActionButton
                   label="Forgot Password?"
-                  onPress={() => navigation.navigate('ForgotPassword')}
+                  onPress={() => navigation.navigate('ForgotPassword', authParams)}
                   variant="text"
                   size="small"
                 />

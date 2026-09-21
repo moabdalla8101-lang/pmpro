@@ -15,6 +15,7 @@ import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
 import { useRequireAuth } from '../../utils/requireAuth';
 
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
+const PRACTICE_PAGE_SIZE = 25;
 
 export default function PracticeScreen() {
   const dispatch = useDispatch<AppDispatch>();
@@ -42,24 +43,19 @@ export default function PracticeScreen() {
 
   const loadQuestions = async () => {
     const params = route.params as any;
-    // Use route params if state hasn't been set yet, otherwise use state
     const knowledgeAreaId = selectedKnowledgeArea || params?.knowledgeAreaId;
-    const domain = selectedDomain || params?.domain;
     
     const filters: any = {
       certificationId: PMP_CERTIFICATION_ID,
-      limit: 1000, // Fetch all questions
+      limit: PRACTICE_PAGE_SIZE,
     };
     
     if (knowledgeAreaId) {
       filters.knowledgeAreaId = knowledgeAreaId;
     }
 
-    // Start loading questions immediately so the empty state does not flash
-    // while the answered-question filter is being fetched.
     dispatch(fetchQuestions(filters));
     
-    // Answered status is account-scoped — skip for guests
     if (!isAuthenticated) {
       setAnsweredQuestionIds(new Set());
       return;
@@ -71,13 +67,7 @@ export default function PracticeScreen() {
       setAnsweredQuestionIds(answeredIds);
     } catch (error) {
       console.error('Failed to fetch answered question IDs:', error);
-      // Continue without filtering if this fails
     }
-    
-    // Domain filtering will be done client-side after fetching
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'PracticeScreen.tsx:37',message:'Dispatching fetchQuestions',data:{filters, knowledgeAreaId, selectedKnowledgeArea},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H3'})}).catch(()=>{});
-    // #endregion
   };
   
   // Filter questions by domain, knowledge area, and answered status
@@ -119,11 +109,10 @@ export default function PracticeScreen() {
     return filtered;
   }, [questions, selectedDomain, selectedKnowledgeArea, selectedQuestionFilter, answeredQuestionIds, route.params]);
 
-  // Clear questions and reload when screen is focused (to avoid showing exam questions)
+  // Reload when screen focuses or filters/auth change (single entry point — no duplicate mount effect)
   useFocusEffect(
     React.useCallback(() => {
       dispatch(clearQuestions());
-      // Read route params directly to ensure we have the latest filter
       const params = route.params as any;
       if (params?.knowledgeAreaId && !selectedKnowledgeArea) {
         setSelectedKnowledgeArea(params.knowledgeAreaId);
@@ -139,13 +128,6 @@ export default function PracticeScreen() {
     }, [dispatch, selectedKnowledgeArea, selectedDomain, route.params, isAuthenticated])
   );
 
-  useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'PracticeScreen.tsx:20',message:'PracticeScreen useEffect triggered',data:{selectedQuestionFilter,selectedKnowledgeArea},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
-    // #endregion
-    loadQuestions();
-  }, [selectedKnowledgeArea, isAuthenticated]);
-
   const handleQuestionPress = (questionId: string) => {
     (navigation as any).navigate('QuestionDetail', { questionId });
   };
@@ -160,9 +142,6 @@ export default function PracticeScreen() {
   const hasActiveFilters = selectedQuestionFilter !== 'all' || selectedKnowledgeArea;
 
   const renderQuestion = ({ item }: any) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'PracticeScreen.tsx:44',message:'Rendering question item',data:{itemId:item.id,hasQuestionText:!!item.questionText,hasQuestion_text:!!item.question_text,hasAnswers:!!item.answers,answersLength:item.answers?.length||0,itemKeys:Object.keys(item)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H4'})}).catch(()=>{});
-    // #endregion
     const knowledgeArea = item.knowledgeAreaName || item.knowledge_area_name;
     const displayKnowledgeArea = knowledgeArea ? removeProjectPrefix(knowledgeArea) : null;
     const questionId = item.id || item.question_id;
@@ -209,12 +188,6 @@ export default function PracticeScreen() {
       </TouchableOpacity>
     );
   };
-
-  // #region agent log
-  React.useEffect(() => {
-    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'PracticeScreen.tsx:67',message:'PracticeScreen render state',data:{isLoading,questionsLength:questions.length,questionsCount:questions?.length||0,firstQuestionId:questions[0]?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3,H5'})}).catch(()=>{});
-  }, [isLoading, questions.length]);
-  // #endregion
 
   if (isLoading && filteredQuestions.length === 0) {
     return (

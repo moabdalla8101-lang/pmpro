@@ -2,6 +2,12 @@ import { Request, Response, NextFunction } from 'express';
 import { NotFoundError } from '@pmp-app/shared';
 import { pool } from '../db/connection';
 import { v4 as uuidv4 } from 'uuid';
+import { AuthRequest } from '../middleware/auth';
+import { UserRole } from '@pmp-app/shared';
+
+function isAdminRequest(req: AuthRequest): boolean {
+  return req.user?.role === UserRole.ADMIN || req.user?.role === 'admin';
+}
 
 export async function getCertifications(req: Request, res: Response, next: NextFunction) {
   try {
@@ -14,12 +20,15 @@ export async function getCertifications(req: Request, res: Response, next: NextF
   }
 }
 
-export async function getCertification(req: Request, res: Response, next: NextFunction) {
+export async function getCertification(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const { id } = req.params;
+    const admin = isAdminRequest(req);
 
     const result = await pool.query(
-      'SELECT * FROM certifications WHERE id = $1',
+      admin
+        ? 'SELECT * FROM certifications WHERE id = $1'
+        : 'SELECT * FROM certifications WHERE id = $1 AND is_active = true',
       [id]
     );
 
