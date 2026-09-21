@@ -175,6 +175,7 @@ export async function recordAnswer(req: AuthRequest, res: Response, next: NextFu
     }
 
     const attemptId = uuidv4();
+    // Single attempt row — do not dual-write user_answers (corrupts drag/delete analytics).
     await client.query(
       `INSERT INTO question_attempts
          (id, user_id, question_id, is_correct, selected_answer_ids, response_json, answered_at)
@@ -188,15 +189,6 @@ export async function recordAnswer(req: AuthRequest, res: Response, next: NextFu
         JSON.stringify(responseJson),
       ]
     );
-
-    // Single audit row with overall attempt correctness (not per-option rows).
-    if (selectedIds.length > 0) {
-      await client.query(
-        `INSERT INTO user_answers (id, user_id, question_id, answer_id, is_correct, answered_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())`,
-        [uuidv4(), req.user!.userId, questionId, selectedIds[0], isCorrect]
-      );
-    }
 
     await client.query('COMMIT');
 

@@ -3,6 +3,8 @@
  * Learner pre-answer payloads must never leak correctness or teaching material.
  */
 
+import { learnerDragPromptFromMetadata, normalizeDragMetadata } from '../utils/normalizeDragMetadata';
+
 export type QuestionRow = Record<string, any>;
 export type AnswerRow = Record<string, any>;
 
@@ -120,8 +122,8 @@ function shuffleInPlace<T>(items: T[]): T[] {
 }
 
 /**
- * Convert paired drag/drop answer keys into unpaired prompt lists.
- * Preserves left/right item text for UI without revealing which pairs match.
+ * @deprecated Prefer normalizeDragMetadata / learnerDragPromptFromMetadata.
+ * Kept for tests that assert unpaired string lists from pair objects.
  */
 export function transformDragDropPairsForLearner(pairs: any[]): {
   leftItems: string[];
@@ -155,23 +157,23 @@ export function sanitizeLearnerQuestionMetadata(metadata: any): any {
     correct_matches,
     dragDropPairs,
     drag_drop_pairs,
+    leftItems: _leftItems,
+    left_items: _left_items,
+    rightItems: _rightItems,
+    right_items: _right_items,
     ...rest
   } = parsed;
 
+  const prompt = learnerDragPromptFromMetadata(parsed);
   const safe: Record<string, any> = { ...rest };
-  const pairs = dragDropPairs ?? drag_drop_pairs;
 
-  if (Array.isArray(pairs) && pairs.length > 0) {
-    const { leftItems, rightItems } = transformDragDropPairsForLearner(pairs);
-    // Prefer transformed unpaired lists; keep existing lists only if pairs absent
-    if (!safe.leftItems && !safe.left_items) {
-      safe.leftItems = leftItems;
-      safe.left_items = leftItems;
-    }
-    if (!safe.rightItems && !safe.right_items) {
-      safe.rightItems = rightItems;
-      safe.right_items = rightItems;
-    }
+  if (prompt.usable) {
+    safe.leftItems = prompt.leftItems;
+    safe.rightItems = prompt.rightItems;
+  } else {
+    safe.leftItems = [];
+    safe.rightItems = [];
+    safe.dragUnusable = true;
   }
 
   return safe;
@@ -289,24 +291,11 @@ export function serializeAnsweredQuestionFeedback(
     question.explanation_images ?? question.explanationImages
   );
   const metadata = parseJsonField(question.question_metadata ?? question.questionMetadata);
-  let correctMatches: Record<string, string> | null = null;
-  if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
-    correctMatches =
-      metadata.matches ??
-      metadata.correctMatches ??
-      null;
-    if (!correctMatches && Array.isArray(metadata.dragDropPairs ?? metadata.drag_drop_pairs)) {
-      const pairs = metadata.dragDropPairs ?? metadata.drag_drop_pairs;
-      correctMatches = {};
-      for (const pair of pairs) {
-        const left = pair?.left_item ?? pair?.left ?? pair?.leftItem;
-        const right = pair?.right_item ?? pair?.right ?? pair?.rightItem;
-        if (left != null && right != null) {
-          correctMatches[String(left)] = String(right);
-        }
-      }
-    }
-  }
+  const normalizedDrag = normalizeDragMetadata(metadata);
+  const correctMatches =
+    normalizedDrag.usable && Object.keys(normalizedDrag.correctMatches).length > 0
+      ? normalizedDrag.correctMatches
+      : null;
 
   return {
     questionId: question.id,

@@ -78,6 +78,8 @@ export default function ExamScreen() {
     return hasCompletedAt && hasScore;
   });
 
+  const inProgressExams = exams.filter((exam) => !exam.completedAt);
+
   const handleStartMockExam = () => {
     if (!requireAuth('exams')) return;
     if (!hasPremiumAccess(user?.subscriptionTier)) {
@@ -299,6 +301,55 @@ export default function ExamScreen() {
             />
           </Card.Content>
         </Card>
+
+        {/* In-progress exams (resume) */}
+        {inProgressExams.length > 0 && (
+          <>
+            <SectionHeader
+              title="In Progress"
+              subtitle={`${inProgressExams.length} exam${inProgressExams.length === 1 ? '' : 's'}`}
+              icon="play-circle-outline"
+            />
+            <View style={styles.examsList}>
+              {inProgressExams.map((exam) => (
+                <Card key={exam.id} style={styles.examResultCard}>
+                  <Card.Content style={styles.examResultContent}>
+                    <View style={styles.examResultHeader}>
+                      <View style={styles.examResultHeaderLeft}>
+                        <Text variant="titleMedium" style={styles.examResultTitle}>
+                          {exam.examType === 'mini' ? 'Mini PMP' : 'Mock Exam'}
+                        </Text>
+                        <Text variant="bodySmall" style={styles.examResultDate}>
+                          Started{' '}
+                          {new Date(exam.startedAt).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </Text>
+                        <Text variant="bodySmall" style={styles.examResultDate}>
+                          {exam.totalQuestions} questions assigned
+                        </Text>
+                      </View>
+                    </View>
+                    <ActionButton
+                      label="Resume Exam"
+                      onPress={() =>
+                        (navigation as any).navigate('ExamStart', {
+                          examId: exam.id,
+                          examType: exam.examType === 'mini' ? 'mini' : 'mock',
+                        })
+                      }
+                      variant="primary"
+                      size="small"
+                      fullWidth
+                    />
+                  </Card.Content>
+                </Card>
+              ))}
+            </View>
+          </>
+        )}
 
         {/* Exam History Section */}
         <SectionHeader

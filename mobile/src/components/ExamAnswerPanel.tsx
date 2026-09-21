@@ -9,20 +9,24 @@ import { spacing, borderRadius } from '../utils/styles';
 export type ExamAnswerValue = {
   answerId?: string;
   answerIds?: string[];
-  dragMatches?: { [leftItem: string]: string };
+  /** leftId -> rightId */
+  dragMatches?: { [leftId: string]: string };
 };
+
+type DragItem = { id: string; label: string };
 
 type Props = {
   question: any;
   value?: ExamAnswerValue;
   onChange: (value: ExamAnswerValue) => void;
+  disabled?: boolean;
 };
 
 function getQuestionType(question: any): string {
   return question?.questionType || question?.question_type || 'select_one';
 }
 
-function extractDragItems(question: any): { leftItems: string[]; rightItems: string[] } {
+function extractDragItems(question: any): { leftItems: DragItem[]; rightItems: DragItem[]; usable: boolean } {
   let metadata = question?.questionMetadata || question?.question_metadata;
   if (typeof metadata === 'string') {
     try {
@@ -31,17 +35,46 @@ function extractDragItems(question: any): { leftItems: string[]; rightItems: str
       metadata = null;
     }
   }
-  const leftItems = (metadata?.leftItems || metadata?.left_items || []).map(String);
-  const rightItems = (metadata?.rightItems || metadata?.right_items || []).map(String);
-  return { leftItems, rightItems };
+  const leftRaw = metadata?.leftItems || metadata?.left_items || [];
+  const rightRaw = metadata?.rightItems || metadata?.right_items || [];
+
+  const coerce = (raw: any, fallbackId: string): DragItem | null => {
+    if (raw == null) return null;
+    if (typeof raw === 'object' && raw.id != null && raw.label != null) {
+      return { id: String(raw.id), label: String(raw.label) };
+    }
+    if (typeof raw === 'string' || typeof raw === 'number') {
+      return { id: String(raw), label: String(raw) };
+    }
+    if (typeof raw === 'object') {
+      const label = raw.text ?? raw.label ?? raw.name;
+      const id = raw.id ?? raw.letter ?? raw.index ?? label;
+      if (label == null || id == null) return null;
+      return { id: String(id), label: String(label) };
+    }
+    return { id: fallbackId, label: String(raw) };
+  };
+
+  const leftItems = leftRaw
+    .map((item: any, i: number) => coerce(item, `L${i}`))
+    .filter(Boolean) as DragItem[];
+  const rightItems = rightRaw
+    .map((item: any, i: number) => coerce(item, `R${i}`))
+    .filter(Boolean) as DragItem[];
+
+  return {
+    leftItems,
+    rightItems,
+    usable: leftItems.length > 0 && rightItems.length > 0 && !metadata?.dragUnusable,
+  };
 }
 
 export function isExamAnswerComplete(question: any, value?: ExamAnswerValue): boolean {
   const type = getQuestionType(question);
   if (type === 'drag_and_match') {
-    const { leftItems } = extractDragItems(question);
-    if (leftItems.length === 0) return false;
-    return leftItems.every((left) => Boolean(value?.dragMatches?.[left]));
+    const { leftItems, usable } = extractDragItems(question);
+    if (!usable || leftItems.length === 0) return false;
+    return leftItems.every((left) => Boolean(value?.dragMatches?.[left.id]));
   }
   if (type === 'select_multiple') {
     return (value?.answerIds || []).length > 0;
@@ -49,13 +82,15 @@ export function isExamAnswerComplete(question: any, value?: ExamAnswerValue): bo
   return Boolean(value?.answerId);
 }
 
-export function toExamSubmitAnswer(questionId: string, value: ExamAnswerValue) {
+export function toExamSubmitAnswer(questionId: string, value?: ExamAnswerValue) {
   const payload: {
     questionId: string;
     answerId?: string;
     answerIds?: string[];
-    dragMatches?: { [leftItem: string]: string };
+    dragMatches?: { [leftId: string]: string };
   } = { questionId };
+
+  if (!value) return payload;
 
   if (value.dragMatches && Object.keys(value.dragMatches).length > 0) {
     payload.dragMatches = value.dragMatches;
@@ -71,22 +106,58 @@ export function toExamSubmitAnswer(questionId: string, value: ExamAnswerValue) {
   return payload;
 }
 
-export default function ExamAnswerPanel({ question, value, onChange }: Props) {
+export default function ExamAnswerPanel({ question, value, onChange, disabled }: Props) {
   const questionType = getQuestionType(question);
   const isMultiple = questionType === 'select_multiple';
   const isDrag = questionType === 'drag_and_match';
-  const { leftItems, rightItems } = useMemo(() => extractDragItems(question), [question]);
+  const { leftItems, rightItems, usable } = useMemo(() => extractDragItems(question), [question]);
 
-  if (isDrag && leftItems.length > 0 && rightItems.length > 0) {
+  if (isDrag && usable) {
+    const leftLabels = leftItems.map((i) => i.label);
+    const rightLabels = rightItems.map((i) => i.label);
+    const labelToLeftId = new Map(leftItems.map((i) => [i.label, i.id]));
+    const labelToRightId = new Map(rightItems.map((i) => [i.label, i.id]));
+    const leftIdToLabel = new Map(leftItems.map((i) => [i.id, i.label]));
+    const rightIdToLabel = new Map(rightItems.map((i) => [i.id, i.label]));
+
+    const userMatchesByLabel: { [label: string]: string } = {};
+    for (const [leftId, rightId] of Object.entries(value?.dragMatches || {})) {
+      const leftLabel = leftIdToLabel.get(leftId);
+      const rightLabel = rightIdToLabel.get(rightId);
+      if (leftLabel && rightLabel) {
+        userMatchesByLabel[leftLabel] = rightLabel;
+      }
+    }
+
     return (
       <DragAndMatch
-        leftItems={leftItems}
-        rightItems={rightItems}
+        leftItems={leftLabels}
+        rightItems={rightLabels}
         correctMatches={{}}
-        userMatches={value?.dragMatches || {}}
-        onMatchChange={(dragMatches) => onChange({ dragMatches })}
+        userMatches={userMatchesByLabel}
         showExplanation={false}
+        onMatchChange={(labelMatches) => {
+          if (disabled) return;
+          const byId: { [leftId: string]: string } = {};
+          for (const [leftLabel, rightLabel] of Object.entries(labelMatches)) {
+            const leftId = labelToLeftId.get(leftLabel);
+            const rightId = labelToRightId.get(rightLabel);
+            if (leftId && rightId) {
+              byId[leftId] = rightId;
+            }
+          }
+          onChange({ dragMatches: byId });
+        }}
       />
+    );
+  }
+
+  if (isDrag && !usable) {
+    return (
+      <Text variant="bodyMedium" style={styles.unusable}>
+        This matching question cannot be answered (content incomplete). It will be marked incorrect if
+        submitted.
+      </Text>
     );
   }
 
@@ -109,7 +180,9 @@ export default function ExamAnswerPanel({ question, value, onChange }: Props) {
           <TouchableOpacity
             key={answer.id}
             style={[styles.answerOption, selected && styles.answerOptionSelected]}
+            disabled={disabled}
             onPress={() => {
+              if (disabled) return;
               if (isMultiple) {
                 const current = new Set(value?.answerIds || []);
                 if (current.has(answer.id)) {
@@ -165,6 +238,10 @@ const styles = StyleSheet.create({
   hint: {
     color: colors.textSecondary,
     marginBottom: spacing.xs,
+  },
+  unusable: {
+    color: colors.error,
+    marginVertical: spacing.md,
   },
   answerOption: {
     flexDirection: 'row',

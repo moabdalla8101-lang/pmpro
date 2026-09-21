@@ -1,6 +1,7 @@
 /**
- * Shared attempt-source SQL for analytics.
- * Prefer question_attempts; include legacy user_answers only when not yet backfilled.
+ * Authoritative attempt source for analytics.
+ * Do not union legacy user_answers for exam-linked history — dual-writes were removed.
+ * Legacy practice rows remain only when no matching question_attempts row exists.
  */
 export const LEARNER_ATTEMPTS_CTE = `
   learner_attempts AS (
@@ -28,13 +29,17 @@ export const LEARNER_ATTEMPTS_CTE = `
     WHERE NOT EXISTS (
       SELECT 1
       FROM question_attempts qa2
-      WHERE qa2.id = ua.id
-         OR (
-           qa2.user_id = ua.user_id
-           AND qa2.question_id = ua.question_id
-           AND qa2.answered_at = ua.answered_at
-           AND ua.answer_id = ANY (qa2.selected_answer_ids)
-         )
+      WHERE qa2.user_id = ua.user_id
+        AND qa2.question_id = ua.question_id
+        AND (
+          qa2.id = ua.id
+          OR (qa2.response_json->>'legacyUserAnswerId') = ua.id::text
+          OR (
+            qa2.exam_id IS NULL
+            AND qa2.answered_at = ua.answered_at
+            AND ua.answer_id = ANY (qa2.selected_answer_ids)
+          )
+        )
     )
   )
 `;

@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { LEARNER_ATTEMPTS_CTE } from '../utils/learnerAttempts';
 import { hydrateQuestions } from '../serializers/hydrateQuestion';
 import { assertNoLearnerLeaks } from '../serializers/questionSerializers';
+import { normalizeDragMetadata } from '../utils/normalizeDragMetadata';
 import { gradeQuestionResponse } from '../utils/gradeQuestionResponse';
 
 async function ensureExamSchema(client: { query: (sql: string, params?: any[]) => Promise<any> }) {
@@ -43,15 +44,46 @@ async function ensureExamSchema(client: { query: (sql: string, params?: any[]) =
 }
 
 async function selectRandomQuestionRows(certificationId: string, limit: number) {
+  // Over-fetch so we can skip unusable drag_and_match content.
+  const fetchLimit = Math.max(limit * 3, limit + 30);
   const result = await pool.query(
     `SELECT * FROM questions
      WHERE certification_id = $1
        AND is_active = true
      ORDER BY RANDOM()
      LIMIT $2`,
-    [certificationId, limit]
+    [certificationId, fetchLimit]
   );
-  return result.rows;
+
+  const usable = result.rows.filter((row: any) => {
+    if (row.question_type !== 'drag_and_match') return true;
+    return normalizeDragMetadata(row.question_metadata).usable;
+  });
+
+  if (usable.length < limit) {
+    // One more pass without RANDOM for remaining seats
+    const exclude = usable.map((q: any) => q.id);
+    const fill = await pool.query(
+      `SELECT * FROM questions
+       WHERE certification_id = $1
+         AND is_active = true
+         AND ($2::uuid[] IS NULL OR NOT (id = ANY($2::uuid[])))
+       ORDER BY RANDOM()
+       LIMIT $3`,
+      [certificationId, exclude.length ? exclude : null, limit * 2]
+    );
+    for (const row of fill.rows) {
+      if (usable.length >= limit) break;
+      if (row.question_type === 'drag_and_match' && !normalizeDragMetadata(row.question_metadata).usable) {
+        continue;
+      }
+      if (!usable.some((q: any) => q.id === row.id)) {
+        usable.push(row);
+      }
+    }
+  }
+
+  return usable.slice(0, limit);
 }
 
 async function persistExamQuestions(
@@ -59,14 +91,19 @@ async function persistExamQuestions(
   examId: string,
   questionRows: any[]
 ) {
-  for (let i = 0; i < questionRows.length; i++) {
-    await client.query(
-      `INSERT INTO exam_questions (id, exam_id, question_id, position)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (exam_id, question_id) DO NOTHING`,
-      [uuidv4(), examId, questionRows[i].id, i]
-    );
-  }
+  if (questionRows.length === 0) return;
+  const ids = questionRows.map(() => uuidv4());
+  const examIds = questionRows.map(() => examId);
+  const questionIds = questionRows.map((q) => q.id);
+  const positions = questionRows.map((_, i) => i);
+
+  await client.query(
+    `INSERT INTO exam_questions (id, exam_id, question_id, position)
+     SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::uuid[], $4::int[])
+     AS t(id, exam_id, question_id, position)
+     ON CONFLICT (exam_id, question_id) DO NOTHING`,
+    [ids, examIds, questionIds, positions]
+  );
 }
 
 async function loadAssignedQuestionRows(examId: string) {
@@ -336,14 +373,14 @@ export async function getWeeklyDailyQuizCompletions(
         [req.user!.userId, certificationId, start, end]
       ),
       pool.query(
-        `SELECT DATE(ua.answered_at) as date
-         FROM user_answers ua
-         JOIN questions q ON ua.question_id = q.id
-         WHERE ua.user_id = $1
-         AND q.certification_id = $2
-         AND ua.answered_at >= $3
-         AND ua.answered_at <= $4
-         GROUP BY DATE(ua.answered_at)`,
+        `WITH ${LEARNER_ATTEMPTS_CTE}
+         SELECT DATE(answered_at) as date
+         FROM learner_attempts
+         WHERE user_id = $1
+         AND question_id IN (SELECT id FROM questions WHERE certification_id = $2)
+         AND answered_at >= $3
+         AND answered_at <= $4
+         GROUP BY DATE(answered_at)`,
         [req.user!.userId, certificationId, start, end]
       ),
     ]);
@@ -392,11 +429,18 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
     const exam = examResult.rows[0];
     if (exam.completed_at) {
       await client.query('ROLLBACK');
-      return next(new ValidationError('Exam has already been submitted'));
+      // Idempotent: return the existing result instead of failing a timed-out retry.
+      return res.json({
+        examId: id,
+        score: exam.score,
+        correctAnswers: exam.correct_answers,
+        totalQuestions: exam.total_questions,
+        alreadySubmitted: true,
+      });
     }
 
     const assignedResult = await client.query(
-      `SELECT eq.question_id, eq.position, q.question_type, q.question_metadata
+      `SELECT eq.question_id, eq.position, q.question_type, q.question_metadata, q.explanation, q.question_text
        FROM exam_questions eq
        JOIN questions q ON q.id = eq.question_id
        WHERE eq.exam_id = $1
@@ -414,43 +458,55 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
     const assignedMeta = new Map(
       assignedResult.rows.map((r: any) => [
         r.question_id,
-        { questionType: r.question_type, questionMetadata: r.question_metadata },
+        {
+          questionType: r.question_type,
+          questionMetadata: r.question_metadata,
+        },
       ])
     );
 
-    const seenQuestionIds = new Set<string>();
+    const answerByQuestion = new Map<string, any>();
     for (const answer of answers) {
       if (!answer?.questionId) {
         await client.query('ROLLBACK');
         return next(new ValidationError('Each answer requires questionId'));
       }
-      if (seenQuestionIds.has(answer.questionId)) {
+      if (answerByQuestion.has(answer.questionId)) {
         await client.query('ROLLBACK');
         return next(new ValidationError('Duplicate question IDs are not allowed'));
       }
-      seenQuestionIds.add(answer.questionId);
       if (!assignedSet.has(answer.questionId)) {
         await client.query('ROLLBACK');
         return next(new ValidationError(`Question ${answer.questionId} is not part of this exam`));
       }
+      answerByQuestion.set(answer.questionId, answer);
     }
 
-    if (seenQuestionIds.size !== assignedIds.length) {
-      await client.query('ROLLBACK');
-      return next(
-        new ValidationError(
-          `Expected answers for ${assignedIds.length} questions, received ${seenQuestionIds.size}`
-        )
-      );
+    // Fill missing assigned questions as unanswered (timeout / partial client payloads)
+    const normalizedAnswers = assignedIds.map((questionId) => {
+      return answerByQuestion.get(questionId) || { questionId };
+    });
+
+    const allAnswersResult = await client.query(
+      `SELECT * FROM answers
+       WHERE question_id = ANY($1::uuid[])
+       ORDER BY question_id, "order"`,
+      [assignedIds]
+    );
+    const answersByQuestion = new Map<string, any[]>();
+    for (const row of allAnswersResult.rows) {
+      const list = answersByQuestion.get(row.question_id) || [];
+      list.push(row);
+      answersByQuestion.set(row.question_id, list);
     }
 
     let correctCount = 0;
+    const valueSql: string[] = [];
+    const params: any[] = [];
+    let p = 1;
 
-    for (const answer of answers) {
-      const answersResult = await client.query(
-        'SELECT * FROM answers WHERE question_id = $1 ORDER BY "order"',
-        [answer.questionId]
-      );
+    for (const answer of normalizedAnswers) {
+      const optionRows = answersByQuestion.get(answer.questionId) || [];
       const meta = assignedMeta.get(answer.questionId)!;
 
       let graded;
@@ -458,10 +514,11 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
         graded = gradeQuestionResponse({
           questionType: meta.questionType,
           questionMetadata: meta.questionMetadata,
-          answers: answersResult.rows,
+          answers: optionRows,
           answerId: answer.answerId,
           answerIds: answer.answerIds,
           dragMatches: answer.dragMatches,
+          allowUnanswered: true,
         });
       } catch (err: any) {
         await client.query('ROLLBACK');
@@ -470,42 +527,35 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
 
       if (graded.selectedIds.length > 0) {
         for (const selectedId of graded.selectedIds) {
-          if (!answersResult.rows.some((a: any) => a.id === selectedId)) {
+          if (!optionRows.some((a: any) => a.id === selectedId)) {
             await client.query('ROLLBACK');
             return next(new ValidationError('Answer does not belong to question'));
           }
         }
       }
 
-      if (graded.isCorrect) {
-        correctCount++;
-      }
+      if (graded.isCorrect) correctCount++;
 
-      const attemptId = uuidv4();
-      await client.query(
-        `INSERT INTO question_attempts
-           (id, user_id, question_id, is_correct, selected_answer_ids, response_json, answered_at, exam_id)
-         VALUES ($1, $2, $3, $4, $5::uuid[], $6::jsonb, NOW(), $7)`,
-        [
-          attemptId,
-          req.user!.userId,
-          answer.questionId,
-          graded.isCorrect,
-          graded.selectedIds,
-          JSON.stringify({ ...graded.responseJson, examId: id }),
-          id,
-        ]
+      valueSql.push(
+        `($${p++}, $${p++}, $${p++}, $${p++}, $${p++}::uuid[], $${p++}::jsonb, NOW(), $${p++})`
       );
-
-      const auditAnswerId = graded.selectedIds[0] || answersResult.rows[0]?.id;
-      if (auditAnswerId) {
-        await client.query(
-          `INSERT INTO user_answers (id, user_id, question_id, answer_id, is_correct, answered_at)
-           VALUES ($1, $2, $3, $4, $5, NOW())`,
-          [uuidv4(), req.user!.userId, answer.questionId, auditAnswerId, graded.isCorrect]
-        );
-      }
+      params.push(
+        uuidv4(),
+        req.user!.userId,
+        answer.questionId,
+        graded.isCorrect,
+        graded.selectedIds,
+        JSON.stringify({ ...graded.responseJson, examId: id }),
+        id
+      );
     }
+
+    await client.query(
+      `INSERT INTO question_attempts
+         (id, user_id, question_id, is_correct, selected_answer_ids, response_json, answered_at, exam_id)
+       VALUES ${valueSql.join(', ')}`,
+      params
+    );
 
     const totalQuestions = assignedIds.length;
     const score = (correctCount / totalQuestions) * 100;
@@ -671,6 +721,7 @@ export async function getExamReview(req: AuthRequest, res: Response, next: NextF
          q.explanation,
          q.difficulty,
          q.question_type,
+         q.question_metadata,
          q.knowledge_area_id,
          ka.name as knowledge_area_name
        FROM question_attempts qa
@@ -683,27 +734,127 @@ export async function getExamReview(req: AuthRequest, res: Response, next: NextF
       [id, req.user!.userId]
     );
 
-    const answers = attemptsResult.rows.map((row: any) => ({
-      id: row.id,
-      userId: row.user_id,
-      questionId: row.question_id,
-      answerId: row.selected_answer_ids?.[0] || null,
-      answerIds: row.selected_answer_ids || [],
-      responseJson: row.response_json,
-      isCorrect: row.is_correct,
-      answeredAt: row.answered_at,
-      questionText: row.question_text,
-      explanation: row.explanation,
-      knowledgeAreaId: row.knowledge_area_id,
-      knowledgeAreaName: row.knowledge_area_name,
-      difficulty: row.difficulty,
-      questionType: row.question_type,
-      position: row.position,
-    }));
+    let rows = attemptsResult.rows;
+    let legacyReview = false;
+
+    // Legacy completed exams without exam_questions / exam_id linkage
+    if (rows.length === 0) {
+      legacyReview = true;
+      const legacy = await pool.query(
+        `SELECT
+           ua.id,
+           ua.user_id,
+           ua.question_id,
+           ua.is_correct,
+           ARRAY[ua.answer_id]::uuid[] as selected_answer_ids,
+           jsonb_build_object('selectedAnswerIds', jsonb_build_array(ua.answer_id), 'legacy', true) as response_json,
+           ua.answered_at,
+           NULL::uuid as exam_id,
+           ROW_NUMBER() OVER (ORDER BY ua.answered_at) - 1 as position,
+           q.question_text,
+           q.explanation,
+           q.difficulty,
+           q.question_type,
+           q.question_metadata,
+           q.knowledge_area_id,
+           ka.name as knowledge_area_name
+         FROM user_answers ua
+         JOIN questions q ON ua.question_id = q.id
+         LEFT JOIN knowledge_areas ka ON q.knowledge_area_id = ka.id
+         WHERE ua.user_id = $1
+           AND ua.answered_at >= $2
+           AND ua.answered_at <= $3
+         ORDER BY ua.answered_at`,
+        [req.user!.userId, exam.started_at, exam.completed_at]
+      );
+      rows = legacy.rows;
+    }
+
+    const questionIds = rows.map((r: any) => r.question_id);
+    const optionsResult = questionIds.length
+      ? await pool.query(
+          `SELECT * FROM answers WHERE question_id = ANY($1::uuid[]) ORDER BY question_id, "order"`,
+          [questionIds]
+        )
+      : { rows: [] };
+    const optionsByQuestion = new Map<string, any[]>();
+    for (const row of optionsResult.rows) {
+      const list = optionsByQuestion.get(row.question_id) || [];
+      list.push(row);
+      optionsByQuestion.set(row.question_id, list);
+    }
+
+    const answers = rows.map((row: any) => {
+      const options = optionsByQuestion.get(row.question_id) || [];
+      const selectedIds: string[] = row.selected_answer_ids || [];
+      const correctOptions = options.filter((a: any) => a.is_correct);
+      const selectedOptions = options.filter((a: any) => selectedIds.includes(a.id));
+      const normalized = normalizeDragMetadata(row.question_metadata);
+      const responseJson = row.response_json || {};
+      const dragMatches = responseJson.dragMatches || {};
+
+      const selectedDragLabels = Object.entries(dragMatches).map(([leftId, rightId]) => {
+        const left = normalized.leftItems.find((i) => i.id === leftId);
+        const right = normalized.rightItems.find((i) => i.id === String(rightId));
+        return {
+          leftId,
+          rightId: String(rightId),
+          leftLabel: left?.label || leftId,
+          rightLabel: right?.label || String(rightId),
+        };
+      });
+
+      const correctDragLabels = Object.entries(normalized.correctMatches).map(([leftId, rightId]) => {
+        const left = normalized.leftItems.find((i) => i.id === leftId);
+        const right = normalized.rightItems.find((i) => i.id === rightId);
+        return {
+          leftId,
+          rightId,
+          leftLabel: left?.label || leftId,
+          rightLabel: right?.label || rightId,
+        };
+      });
+
+      const selectedLabels = selectedOptions.map((a: any) => a.answer_text);
+      const correctLabels = correctOptions.map((a: any) => a.answer_text);
+
+      return {
+        id: row.id,
+        userId: row.user_id,
+        questionId: row.question_id,
+        answerId: selectedIds[0] || null,
+        answerIds: selectedIds,
+        answerText: selectedLabels[0] || (selectedDragLabels.length ? selectedDragLabels.map((m) => `${m.leftLabel} → ${m.rightLabel}`).join('; ') : null),
+        answerLabels: selectedLabels,
+        correctAnswerLabels: correctLabels,
+        selectedDragMatches: selectedDragLabels,
+        correctDragMatches: correctDragLabels,
+        responseJson,
+        isCorrect: row.is_correct,
+        unanswered: Boolean(responseJson.unanswered) || (selectedIds.length === 0 && selectedDragLabels.length === 0),
+        answeredAt: row.answered_at,
+        questionText: row.question_text,
+        explanation: row.explanation,
+        knowledgeAreaId: row.knowledge_area_id,
+        knowledgeAreaName: row.knowledge_area_name,
+        difficulty: row.difficulty,
+        questionType: row.question_type,
+        position: row.position,
+        options: options.map((a: any) => ({
+          id: a.id,
+          answerText: a.answer_text,
+          isCorrect: Boolean(a.is_correct),
+          rationale: a.rationale || null,
+          order: a.order,
+          selected: selectedIds.includes(a.id),
+        })),
+      };
+    });
 
     res.json({
       exam: mapExam(exam),
       answers,
+      legacyReview,
     });
   } catch (error) {
     next(error);

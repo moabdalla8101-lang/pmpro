@@ -1,4 +1,5 @@
 import { gradeSelectedAnswers } from './gradeSelectedAnswers';
+import { normalizeDragMetadata } from './normalizeDragMetadata';
 
 export type GradeQuestionInput = {
   questionType?: string | null;
@@ -7,72 +8,51 @@ export type GradeQuestionInput = {
   answerId?: string;
   answerIds?: string[];
   dragMatches?: Record<string, string>;
+  /** When true, empty answers are recorded as incorrect instead of rejected. */
+  allowUnanswered?: boolean;
 };
 
 export type GradeQuestionResult = {
   isCorrect: boolean;
   selectedIds: string[];
   responseJson: Record<string, unknown>;
+  unanswered?: boolean;
 };
-
-function parseMetadata(metadata: any): any {
-  if (metadata == null) return null;
-  if (typeof metadata === 'string') {
-    try {
-      return JSON.parse(metadata);
-    } catch {
-      return null;
-    }
-  }
-  return metadata;
-}
-
-function correctMatchesFromMetadata(metadata: any): Record<string, string> {
-  const parsed = parseMetadata(metadata);
-  if (!parsed || typeof parsed !== 'object') return {};
-
-  let correctMatches: Record<string, string> =
-    parsed.matches || parsed.correctMatches || parsed.correct_matches || {};
-
-  if (
-    Object.keys(correctMatches).length === 0 &&
-    Array.isArray(parsed.dragDropPairs || parsed.drag_drop_pairs)
-  ) {
-    correctMatches = {};
-    for (const pair of parsed.dragDropPairs || parsed.drag_drop_pairs) {
-      const left = pair?.left_item ?? pair?.left ?? pair?.leftItem;
-      const right = pair?.right_item ?? pair?.right ?? pair?.rightItem;
-      if (left != null && right != null) {
-        correctMatches[String(left)] = String(right);
-      }
-    }
-  }
-
-  return Object.fromEntries(
-    Object.entries(correctMatches).map(([k, v]) => [String(k), String(v)])
-  );
-}
 
 /**
  * Shared grader for practice and exam submissions.
- * Supports select_one / select_multiple (exact set) and drag_and_match (exact mapping).
+ * Supports select_one / select_multiple (exact set) and drag_and_match (exact ID mapping).
  */
 export function gradeQuestionResponse(input: GradeQuestionInput): GradeQuestionResult {
   const questionType = input.questionType || 'select_one';
 
   if (questionType === 'drag_and_match') {
     const dragMatches = input.dragMatches || {};
-    const correctMatches = correctMatchesFromMetadata(input.questionMetadata);
-    const leftKeys = Object.keys(correctMatches);
+    const normalized = normalizeDragMetadata(input.questionMetadata);
+
+    if (Object.keys(dragMatches).length === 0) {
+      return {
+        isCorrect: false,
+        selectedIds: [],
+        unanswered: true,
+        responseJson: { dragMatches: {}, questionType, unanswered: true },
+      };
+    }
+
+    const leftKeys = Object.keys(normalized.correctMatches);
     const isCorrect =
+      normalized.usable &&
       leftKeys.length > 0 &&
-      leftKeys.every((key) => String(dragMatches[key]) === String(correctMatches[key])) &&
+      leftKeys.every((key) => String(dragMatches[key]) === String(normalized.correctMatches[key])) &&
       Object.keys(dragMatches).length === leftKeys.length;
 
     return {
       isCorrect,
       selectedIds: [],
-      responseJson: { dragMatches, questionType },
+      responseJson: {
+        dragMatches,
+        questionType,
+      },
     };
   }
 
@@ -81,6 +61,15 @@ export function gradeQuestionResponse(input: GradeQuestionInput): GradeQuestionR
     : input.answerId
       ? [input.answerId]
       : [];
+
+  if (rawIds.length === 0) {
+    return {
+      isCorrect: false,
+      selectedIds: [],
+      unanswered: true,
+      responseJson: { selectedAnswerIds: [], questionType, unanswered: true },
+    };
+  }
 
   const correctIds = input.answers
     .filter((a) => Boolean(a.is_correct ?? a.isCorrect))

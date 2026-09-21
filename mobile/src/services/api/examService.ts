@@ -9,21 +9,29 @@ export type ExamSubmitAnswer = {
 
 export const examService = {
   async startExam(certificationId: string, totalQuestions: number, questionIds?: string[]) {
-    const response = await client.post('/api/exams/start', {
-      certificationId,
-      totalQuestions,
-      ...(questionIds ? { questionIds } : {}),
-    });
+    const response = await client.post(
+      '/api/exams/start',
+      {
+        certificationId,
+        totalQuestions,
+        ...(questionIds ? { questionIds } : {}),
+      },
+      { timeout: 60000 }
+    );
     return response.data;
   },
 
   async submitExam(examId: string, answers: ExamSubmitAnswer[]) {
-    const response = await client.post(`/api/exams/${examId}/submit`, { answers });
+    const response = await client.post(
+      `/api/exams/${examId}/submit`,
+      { answers },
+      { timeout: 60000 }
+    );
     return response.data;
   },
 
   async getExam(examId: string) {
-    const response = await client.get(`/api/exams/${examId}`);
+    const response = await client.get(`/api/exams/${examId}`, { timeout: 60000 });
     return response.data;
   },
 

@@ -101,10 +101,19 @@ describe('question serializers', () => {
       expect(learner.questionMetadata?.dragDropPairs).toBeUndefined();
       expect(learner.questionMetadata?.drag_drop_pairs).toBeUndefined();
       expect(learner.questionMetadata?.leftItems).toEqual(
-        expect.arrayContaining(['Charter', 'WBS'])
+        expect.arrayContaining([
+          expect.objectContaining({ id: expect.any(String), label: 'Charter' }),
+          expect.objectContaining({ id: expect.any(String), label: 'WBS' }),
+        ])
       );
       expect(learner.questionMetadata?.rightItems).toEqual(
-        expect.arrayContaining(['Authorize the project', 'Decompose scope'])
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: expect.any(String),
+            label: 'Authorize the project',
+          }),
+          expect.objectContaining({ id: expect.any(String), label: 'Decompose scope' }),
+        ])
       );
       // Pair relationships must not survive as objects with both sides
       const serialized = JSON.stringify(learner);
@@ -125,7 +134,13 @@ describe('question serializers', () => {
       expect(learner.questionMetadata?.drag_drop_pairs).toBeUndefined();
       expect(learner.questionMetadata?.dragDropPairs).toBeUndefined();
       expect(learner.questionMetadata?.leftItems).toEqual(
-        expect.arrayContaining(['Risk register', 'Stakeholder register'])
+        expect.arrayContaining([
+          expect.objectContaining({ id: expect.any(String), label: 'Risk register' }),
+          expect.objectContaining({
+            id: expect.any(String),
+            label: 'Stakeholder register',
+          }),
+        ])
       );
     });
 
@@ -189,7 +204,7 @@ describe('question serializers', () => {
       expect(feedback.correctAnswerIds).toEqual(['a-2']);
       expect(feedback.explanation).toBe('Secret teaching material');
       expect(feedback.answers.find((a) => a.id === 'a-2')?.isCorrect).toBe(true);
-      expect(feedback.correctMatches).toEqual({ A: 1 });
+      expect(feedback.correctMatches).toEqual({ A: '1' });
     });
 
     it('reconstructs correctMatches from dragDropPairs after submission', () => {
@@ -203,21 +218,28 @@ describe('question serializers', () => {
         userAnswerIds: [],
       });
       expect(feedback.correctMatches).toEqual({
-        Charter: 'Authorize the project',
-        WBS: 'Decompose scope',
+        L0: 'R0',
+        L1: 'R1',
       });
     });
   });
 
   describe('sanitizeLearnerQuestionMetadata', () => {
-    it('strips matches while keeping prompt items', () => {
+    it('strips matches while keeping prompt items as id/label', () => {
       const safe = sanitizeLearnerQuestionMetadata({
         leftItems: ['A'],
         rightItems: ['B'],
         matches: { A: 'B' },
         correctMatches: { A: 'B' },
       });
-      expect(safe).toEqual({ leftItems: ['A'], rightItems: ['B'] });
+      expect(safe.matches).toBeUndefined();
+      expect(safe.correctMatches).toBeUndefined();
+      expect(safe.leftItems).toEqual([
+        expect.objectContaining({ id: expect.any(String), label: 'A' }),
+      ]);
+      expect(safe.rightItems).toEqual([
+        expect.objectContaining({ id: expect.any(String), label: 'B' }),
+      ]);
     });
 
     it('transforms dragDropPairs into unpaired lists without pair objects', () => {

@@ -52,7 +52,7 @@ describe('gradeQuestionResponse', () => {
     ).toBe(false);
   });
 
-  it('grades drag_and_match by exact mapping', () => {
+  it('grades drag_and_match by exact opaque-id mapping', () => {
     const metadata = {
       dragDropPairs: [
         { left_item: 'A', right_item: '1' },
@@ -64,7 +64,7 @@ describe('gradeQuestionResponse', () => {
         questionType: 'drag_and_match',
         questionMetadata: metadata,
         answers: [],
-        dragMatches: { A: '1', B: '2' },
+        dragMatches: { L0: 'R0', L1: 'R1' },
       }).isCorrect
     ).toBe(true);
     expect(
@@ -72,7 +72,16 @@ describe('gradeQuestionResponse', () => {
         questionType: 'drag_and_match',
         questionMetadata: metadata,
         answers: [],
-        dragMatches: { A: '1' },
+        dragMatches: { L0: 'R0' },
+      }).isCorrect
+    ).toBe(false);
+    // Display-text keys must not pass under the ID contract
+    expect(
+      gradeQuestionResponse({
+        questionType: 'drag_and_match',
+        questionMetadata: metadata,
+        answers: [],
+        dragMatches: { A: '1', B: '2' },
       }).isCorrect
     ).toBe(false);
   });
