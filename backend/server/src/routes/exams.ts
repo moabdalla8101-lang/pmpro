@@ -13,6 +13,7 @@ import {
   deleteExam
 } from '../controllers/examController';
 import { authenticate } from '../middleware/auth';
+import { requirePremium } from '../middleware/subscription';
 import { validate } from '../middleware/validate';
 
 const router = Router();
@@ -22,6 +23,7 @@ router.use(authenticate);
 router.post(
   '/start',
   [
+    requirePremium,
     body('certificationId').notEmpty(),
     body('totalQuestions').isInt({ min: 1 }),
     validate

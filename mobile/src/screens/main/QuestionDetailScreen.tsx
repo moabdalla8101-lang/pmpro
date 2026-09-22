@@ -107,20 +107,11 @@ export default function QuestionDetailScreen() {
   const prevQuestionIdRef = React.useRef<string | undefined>(questionId);
 
   useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QuestionDetailScreen.tsx:28',message:'QuestionDetailScreen useEffect - questionId changed',data:{questionId,prevQuestionId:prevQuestionIdRef.current,currentQuestionId:currentQuestion?.id,shouldFetch:questionId && currentQuestion?.id !== questionId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H2'})}).catch(()=>{});
-    // #endregion
     // Always fetch if questionId changes or if currentQuestion doesn't match questionId
     if (questionId && (currentQuestion?.id !== questionId)) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QuestionDetailScreen.tsx:32',message:'Dispatching fetchQuestion',data:{questionId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
       dispatch(fetchQuestion(questionId));
       // Reset local state when question changes to a DIFFERENT question
       if (prevQuestionIdRef.current && prevQuestionIdRef.current !== questionId) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QuestionDetailScreen.tsx:40',message:'Resetting state - question changed',data:{prevQuestionId:prevQuestionIdRef.current,newQuestionId:questionId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
-        // #endregion
         setSelectedAnswer(null);
         setSelectedAnswers([]);
         setDragMatches({});
@@ -131,12 +122,6 @@ export default function QuestionDetailScreen() {
       prevQuestionIdRef.current = questionId;
     }
   }, [questionId, currentQuestion?.id, dispatch]);
-
-  // #region agent log
-  useEffect(() => {
-    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QuestionDetailScreen.tsx:48',message:'Render state check',data:{isLoading,hasCurrentQuestion:!!currentQuestion,currentQuestionId:currentQuestion?.id,questionId,matches:currentQuestion?.id === questionId,showExplanation},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2,H3'})}).catch(()=>{});
-  }, [isLoading, currentQuestion, questionId, showExplanation]);
-  // #endregion
 
   useEffect(() => {
     if (questionId && isAuthenticated) {
@@ -338,9 +323,6 @@ export default function QuestionDetailScreen() {
 
   // Show loading if fetching or if current question doesn't match route questionId
   if (isLoading || !currentQuestion || currentQuestion.id !== questionId) {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/375d5935-5725-4cd0-9cf3-045adae340c7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'QuestionDetailScreen.tsx:144',message:'Render check - showing loading',data:{isLoading,hasCurrentQuestion:!!currentQuestion,currentQuestionId:currentQuestion?.id,questionId,matches:currentQuestion?.id === questionId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2,H3'})}).catch(()=>{});
-    // #endregion
     return (
       <SafeAreaView style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary} />

@@ -7,7 +7,8 @@ export enum SubscriptionTier {
   FREE = 'free',
   PREMIUM_MONTHLY = 'premium_monthly',
   PREMIUM_SEMI_ANNUAL = 'premium_semi_annual',
-  CRAM_TIME = 'cram_time'
+  PREMIUM_ANNUAL = 'premium_annual',
+  CRAM_TIME = 'cram_time',
 }
 
 export enum CertificationType {

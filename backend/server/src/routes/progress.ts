@@ -11,6 +11,7 @@ import {
   markMissedQuestionAsReviewed,
 } from '../controllers/progressController';
 import { authenticate } from '../middleware/auth';
+import { requirePremium } from '../middleware/subscription';
 import { validate } from '../middleware/validate';
 
 const router = Router();
@@ -18,10 +19,10 @@ const router = Router();
 router.use(authenticate);
 
 router.get('/', getUserProgress);
-router.get('/knowledge-area', getPerformanceByKnowledgeArea);
-router.get('/domain', getPerformanceByDomain);
+router.get('/knowledge-area', requirePremium, getPerformanceByKnowledgeArea);
+router.get('/domain', requirePremium, getPerformanceByDomain);
 router.get('/answered-questions', getAnsweredQuestionIds);
-router.get('/missed-questions', getMissedQuestions);
+router.get('/missed-questions', requirePremium, getMissedQuestions);
 router.put(
   '/',
   [
@@ -71,7 +72,7 @@ router.post(
   ],
   recordAnswer
 );
-router.post('/missed-questions/reviewed', markMissedQuestionAsReviewed);
+router.post('/missed-questions/reviewed', requirePremium, markMissedQuestionAsReviewed);
 
 export default router;
 
