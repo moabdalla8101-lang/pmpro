@@ -32,9 +32,16 @@ export const progressService = {
   async recordAnswer(
     questionId: string,
     answerId?: string,
-    options?: { answerIds?: string[]; dragMatches?: Record<string, string> }
+    options?: {
+      answerIds?: string[];
+      dragMatches?: Record<string, string>;
+      idempotencyKey?: string;
+      certificationId?: string;
+    }
   ) {
-    const body: any = { questionId };
+    const certificationId =
+      options?.certificationId || '550e8400-e29b-41d4-a716-446655440000';
+    const body: any = { questionId, certificationId };
     if (options?.answerIds?.length) {
       body.answerIds = options.answerIds;
     } else if (answerId) {
@@ -43,7 +50,13 @@ export const progressService = {
     if (options?.dragMatches) {
       body.dragMatches = options.dragMatches;
     }
-    const response = await client.post('/api/progress/answer', body);
+    // Stable per submit action so axios/network retries cannot double-insert.
+    const idempotencyKey =
+      options?.idempotencyKey ||
+      `practice:${questionId}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+    const response = await client.post('/api/progress/answer', body, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    });
     return response.data;
   },
 

@@ -49,6 +49,24 @@ router.post(
   '/:id/submit',
   [
     body('answers').isArray(),
+    body().custom((_, { req }) => {
+      const forbidden = ['isCorrect', 'score', 'correctAnswers', 'accuracy', 'totalQuestions'];
+      for (const key of forbidden) {
+        if (req.body?.[key] !== undefined) {
+          throw new Error(`Client must not send ${key}`);
+        }
+      }
+      if (Array.isArray(req.body?.answers)) {
+        for (const row of req.body.answers) {
+          for (const key of forbidden) {
+            if (row?.[key] !== undefined) {
+              throw new Error(`Client must not send ${key} on answer entries`);
+            }
+          }
+        }
+      }
+      return true;
+    }),
     validate
   ],
   submitExam

@@ -203,19 +203,33 @@ export default function QuestionDetailScreen() {
     }
 
     setSubmitting(true);
+    const idempotencyKey = `practice:${questionId}:${Date.now()}:${Math.random()
+      .toString(36)
+      .slice(2, 10)}`;
+    const certificationId =
+      currentQuestion?.certificationId ||
+      currentQuestion?.certification_id ||
+      '550e8400-e29b-41d4-a716-446655440000';
     try {
       let feedback: AnsweredQuestionFeedback;
 
       if (isDragAndMatch) {
         feedback = await progressService.recordAnswer(questionId, undefined, {
           dragMatches,
+          idempotencyKey,
+          certificationId,
         });
       } else if (isMultipleSelection) {
         feedback = await progressService.recordAnswer(questionId, undefined, {
           answerIds: selectedAnswers,
+          idempotencyKey,
+          certificationId,
         });
       } else {
-        feedback = await progressService.recordAnswer(questionId, selectedAnswer!);
+        feedback = await progressService.recordAnswer(questionId, selectedAnswer!, {
+          idempotencyKey,
+          certificationId,
+        });
       }
 
       setAnswerFeedback(feedback);

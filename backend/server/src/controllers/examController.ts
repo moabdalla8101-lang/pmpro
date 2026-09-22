@@ -8,6 +8,10 @@ import { hydrateQuestions } from '../serializers/hydrateQuestion';
 import { assertNoLearnerLeaks } from '../serializers/questionSerializers';
 import { normalizeDragMetadata } from '../utils/normalizeDragMetadata';
 import { gradeQuestionResponse } from '../utils/gradeQuestionResponse';
+import {
+  assertNoClientAuthoritativeScoreFields,
+  safeExamScore,
+} from '../utils/authoritativeScoring';
 
 async function ensureExamSchema(client: { query: (sql: string, params?: any[]) => Promise<any> }) {
   await client.query(`
@@ -44,6 +48,15 @@ async function ensureExamSchema(client: { query: (sql: string, params?: any[]) =
   await client.query(`
     ALTER TABLE mock_exams
       ADD COLUMN IF NOT EXISTS draft_answers JSONB NOT NULL DEFAULT '{}'::jsonb
+  `);
+  await client.query(`
+    ALTER TABLE question_attempts
+      ADD COLUMN IF NOT EXISTS idempotency_key TEXT
+  `);
+  await client.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_question_attempts_user_idempotency
+      ON question_attempts (user_id, idempotency_key)
+      WHERE idempotency_key IS NOT NULL
   `);
 }
 
@@ -414,8 +427,14 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
     const { id } = req.params;
     const { answers } = req.body;
 
-    if (!Array.isArray(answers) || answers.length === 0) {
-      return next(new ValidationError('answers are required'));
+    try {
+      assertNoClientAuthoritativeScoreFields(req.body, 'Exam submission');
+    } catch (err: any) {
+      return next(new ValidationError(err.message));
+    }
+
+    if (!Array.isArray(answers)) {
+      return next(new ValidationError('answers must be an array'));
     }
 
     await client.query('BEGIN');
@@ -437,15 +456,16 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
       // Idempotent: return the existing result instead of failing a timed-out retry.
       return res.json({
         examId: id,
-        score: exam.score,
-        correctAnswers: exam.correct_answers,
-        totalQuestions: exam.total_questions,
+        score: Number(exam.score) || 0,
+        correctAnswers: exam.correct_answers || 0,
+        totalQuestions: exam.total_questions || 0,
         alreadySubmitted: true,
       });
     }
 
     const assignedResult = await client.query(
-      `SELECT eq.question_id, eq.position, q.question_type, q.question_metadata, q.explanation, q.question_text
+      `SELECT eq.question_id, eq.position, q.question_type, q.question_metadata, q.explanation,
+              q.question_text, q.is_active, q.certification_id
        FROM exam_questions eq
        JOIN questions q ON q.id = eq.question_id
        WHERE eq.exam_id = $1
@@ -458,6 +478,15 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
       return next(new ValidationError('Exam has no assigned questions'));
     }
 
+    // Every assigned question must belong to the exam certification.
+    const mismatched = assignedResult.rows.find(
+      (r: any) => r.certification_id !== exam.certification_id
+    );
+    if (mismatched) {
+      await client.query('ROLLBACK');
+      return next(new ValidationError('Exam assignment contains questions from another certification'));
+    }
+
     const assignedIds = assignedResult.rows.map((r: any) => r.question_id as string);
     const assignedSet = new Set(assignedIds);
     const assignedMeta = new Map(
@@ -466,6 +495,7 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
         {
           questionType: r.question_type,
           questionMetadata: r.question_metadata,
+          isActive: Boolean(r.is_active),
         },
       ])
     );
@@ -487,7 +517,8 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
       answerByQuestion.set(answer.questionId, answer);
     }
 
-    // Fill missing assigned questions as unanswered (timeout / partial client payloads)
+    // Fill missing assigned questions as unanswered (timeout / empty / partial payloads).
+    // Denominator is always the assigned set — never the submitted answer count.
     const normalizedAnswers = assignedIds.map((questionId) => {
       return answerByQuestion.get(questionId) || { questionId };
     });
@@ -514,6 +545,33 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
       const optionRows = answersByQuestion.get(answer.questionId) || [];
       const meta = assignedMeta.get(answer.questionId)!;
 
+      // Assigned questions that were deactivated after start cannot score as correct.
+      // Record them as incorrect so the assigned denominator stays intact.
+      if (!meta.isActive) {
+        correctCount += 0;
+        valueSql.push(
+          `($${p++}, $${p++}, $${p++}, $${p++}, $${p++}::uuid[], $${p++}::jsonb, NOW(), $${p++})`
+        );
+        params.push(
+          uuidv4(),
+          req.user!.userId,
+          answer.questionId,
+          false,
+          [],
+          JSON.stringify({
+            questionType: meta.questionType,
+            unanswered: true,
+            inactiveQuestion: true,
+            examId: id,
+          }),
+          id
+        );
+        continue;
+      }
+
+      // Assigned questions must still belong to this exam's certification.
+      // (Defense in depth — exam_questions should already enforce this.)
+
       let graded;
       try {
         graded = gradeQuestionResponse({
@@ -528,15 +586,6 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
       } catch (err: any) {
         await client.query('ROLLBACK');
         return next(new ValidationError(err.message || 'Invalid answer payload'));
-      }
-
-      if (graded.selectedIds.length > 0) {
-        for (const selectedId of graded.selectedIds) {
-          if (!optionRows.some((a: any) => a.id === selectedId)) {
-            await client.query('ROLLBACK');
-            return next(new ValidationError('Answer does not belong to question'));
-          }
-        }
       }
 
       if (graded.isCorrect) correctCount++;
@@ -555,15 +604,36 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
       );
     }
 
-    await client.query(
-      `INSERT INTO question_attempts
-         (id, user_id, question_id, is_correct, selected_answer_ids, response_json, answered_at, exam_id)
-       VALUES ${valueSql.join(', ')}`,
-      params
-    );
+    try {
+      await client.query(
+        `INSERT INTO question_attempts
+           (id, user_id, question_id, is_correct, selected_answer_ids, response_json, answered_at, exam_id)
+         VALUES ${valueSql.join(', ')}`,
+        params
+      );
+    } catch (err: any) {
+      // Concurrent submit lost the race after FOR UPDATE release edge cases / unique index
+      if (err?.code === '23505') {
+        await client.query('ROLLBACK');
+        const finalized = await pool.query(
+          'SELECT * FROM mock_exams WHERE id = $1 AND user_id = $2',
+          [id, req.user!.userId]
+        );
+        if (finalized.rows[0]?.completed_at) {
+          const row = finalized.rows[0];
+          return res.json({
+            examId: id,
+            score: Number(row.score) || 0,
+            correctAnswers: row.correct_answers || 0,
+            totalQuestions: row.total_questions || 0,
+            alreadySubmitted: true,
+          });
+        }
+      }
+      throw err;
+    }
 
-    const totalQuestions = assignedIds.length;
-    const score = (correctCount / totalQuestions) * 100;
+    const scored = safeExamScore(correctCount, assignedIds.length);
 
     await client.query(
       `UPDATE mock_exams
@@ -573,7 +643,7 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
            total_questions = $3,
            draft_answers = '{}'::jsonb
        WHERE id = $4`,
-      [score, correctCount, totalQuestions, id]
+      [scored.score, scored.correctAnswers, scored.totalQuestions, id]
     );
 
     const certificationId = exam.certification_id;
@@ -622,9 +692,9 @@ export async function submitExam(req: AuthRequest, res: Response, next: NextFunc
     await client.query('COMMIT');
     res.json({
       examId: id,
-      score,
-      correctAnswers: correctCount,
-      totalQuestions,
+      score: scored.score,
+      correctAnswers: scored.correctAnswers,
+      totalQuestions: scored.totalQuestions,
     });
   } catch (error) {
     try {
