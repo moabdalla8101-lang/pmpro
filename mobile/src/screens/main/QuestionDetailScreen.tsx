@@ -193,7 +193,6 @@ export default function QuestionDetailScreen() {
       .slice(2, 10)}`;
     const certificationId =
       currentQuestion?.certificationId ||
-      currentQuestion?.certification_id ||
       '550e8400-e29b-41d4-a716-446655440000';
     try {
       let feedback: AnsweredQuestionFeedback;
