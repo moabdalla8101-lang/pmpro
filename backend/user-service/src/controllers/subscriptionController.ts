@@ -1,5 +1,5 @@
 import { Response, NextFunction } from 'express';
-import { NotFoundError } from '@pmp-app/shared';
+import { NotFoundError, ForbiddenError } from '@pmp-app/shared';
 import { AuthRequest } from '../middleware/auth';
 import { pool } from '../db/connection';
 
@@ -26,23 +26,20 @@ export async function getSubscription(req: AuthRequest, res: Response, next: Nex
   }
 }
 
-export async function updateSubscription(req: AuthRequest, res: Response, next: NextFunction) {
-  try {
-    const { tier, expiresAt } = req.body;
-
-    await pool.query(
-      `UPDATE users 
-       SET subscription_tier = $1, 
-           subscription_expires_at = $2,
-           updated_at = NOW()
-       WHERE id = $3`,
-      [tier, expiresAt, req.user!.userId]
-    );
-
-    res.json({ message: 'Subscription updated successfully' });
-  } catch (error) {
-    next(error);
-  }
+/**
+ * Self-service tier escalation is forbidden.
+ * Premium status is updated only via the RevenueCat webhook (monolith).
+ */
+export async function updateSubscription(
+  _req: AuthRequest,
+  _res: Response,
+  next: NextFunction
+) {
+  return next(
+    new ForbiddenError(
+      'Subscriptions cannot be updated by the client; purchases are applied via webhook'
+    )
+  );
 }
 
 export async function cancelSubscription(req: AuthRequest, res: Response, next: NextFunction) {
@@ -61,7 +58,3 @@ export async function cancelSubscription(req: AuthRequest, res: Response, next: 
     next(error);
   }
 }
-
-
-
-

@@ -1,4 +1,3 @@
-import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Grid, Paper, Typography, Box } from '@mui/material';
 import { analyticsService } from '../services/api/analyticsService';

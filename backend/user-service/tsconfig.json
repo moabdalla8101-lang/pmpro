@@ -13,7 +13,8 @@
     "moduleResolution": "node",
     "baseUrl": ".",
     "paths": {
-      "@pmp-app/shared": ["../shared/src"]
+      "@pmp-app/shared": ["../shared/dist"],
+      "@pmp-app/shared/*": ["../shared/dist/*"]
     }
   },
   "include": ["src/**/*"],
