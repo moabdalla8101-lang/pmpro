@@ -22,6 +22,7 @@
   "submit": {
     "production": {
       "ios": {
+        "ascAppId": "6814282852",
         "companyName": "PMP Exam Prep"
       }
     }
