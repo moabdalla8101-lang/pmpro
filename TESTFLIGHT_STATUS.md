@@ -2,15 +2,16 @@
 
 ## Done
 
-- Railway project: [pmpro-production](https://railway.com/project/9d3f1a41-b7a0-40e8-a248-13f19a3d1ca6)
-- Public API: `https://api-production-92d8.up.railway.app`
+- Railway project: [pmpro-production](https://railway.com/project/bf4334bd-990f-45ef-92b7-542bebd9bc90) (account `m.masoud81@gmail.com`)
+- Public API: `https://api-production-45c5f.up.railway.app`
 - Health: `/health` returns ok
 - Database migrated and seeded: 925 questions, 457 flashcards
 - EAS production env:
-  - `EXPO_PUBLIC_API_URL=https://api-production-92d8.up.railway.app`
+  - `EXPO_PUBLIC_API_URL=https://api-production-45c5f.up.railway.app`
   - `EXPO_PUBLIC_REVENUECAT_IOS_API_KEY=appl_…` (set)
   - Do **not** set `EXPO_PUBLIC_REVENUECAT_TEST_API_KEY` on production (TestFlight rejects test keys)
 - Test account on Railway: `testflight@pmpapp.com` / `TestFlight123!`
+- **Action required:** update RevenueCat webhook URL to the new API host and set Authorization to the new `REVENUECAT_WEBHOOK_SECRET` (saved in `~/.pmpro-secrets/railway-pmpro-production.env`)
 - Apple Developer Bundle ID: `com.pmpapp.examprep` (IAP + Push)
 - App Store Connect app: [PMPro® - PMP® Exam Prep 2026](https://appstoreconnect.apple.com/apps/6814282852) (`6814282852`)
 - Version 1.0 metadata saved (Prepare for Submission)
@@ -21,7 +22,7 @@
   - Test Store key: `test_GBuMzf0YeDJtjKhPcqBSwReJhZx`
   - Entitlements: `premium` + existing `PMPrp app Pro` (app accepts both)
   - Default offering with Monthly / Yearly / Lifetime packages
-  - Webhook **PMPro Production API** → `https://api-production-92d8.up.railway.app/api/webhooks/revenuecat` (auth matches Railway `REVENUECAT_WEBHOOK_SECRET`)
+  - Webhook **PMPro Production API** → must point to `https://api-production-45c5f.up.railway.app/api/webhooks/revenuecat` (update Authorization to match new Railway `REVENUECAT_WEBHOOK_SECRET`)
 
 ## Still required before live IAP / App Review
 
