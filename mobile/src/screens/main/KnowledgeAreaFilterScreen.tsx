@@ -1,15 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity } from 'react-native';
 import { Card, Text, ActivityIndicator } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { fetchKnowledgeAreas } from '../../store/slices/flashcardSlice';
-import { SectionHeader, ActionButton } from '../../components';
+import { SectionHeader } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
+import { userHasActivePremium } from '../../utils/subscriptionUtils';
 
 // Icon mapping for knowledge areas
 const getKnowledgeAreaIcon = (name: string): string => {
@@ -30,25 +31,18 @@ const getKnowledgeAreaIcon = (name: string): string => {
 export default function KnowledgeAreaFilterScreen() {
   const dispatch = useDispatch<AppDispatch>();
   const navigation = useNavigation();
-  const route = useRoute();
+  const { user } = useSelector((state: RootState) => state.auth);
   const { knowledgeAreas, isLoading } = useSelector((state: RootState) => state.flashcards);
-
-  const [selectedArea, setSelectedArea] = useState<string | null>(null);
+  const isPremium = userHasActivePremium(user);
 
   useEffect(() => {
     dispatch(fetchKnowledgeAreas() as any);
   }, [dispatch]);
 
   const handleSelectArea = (areaId: string) => {
-    setSelectedArea(selectedArea === areaId ? null : areaId);
-  };
-
-  const handleStartPractice = () => {
-    if (selectedArea) {
-      (navigation as any).navigate('PracticeList', {
-        knowledgeAreaId: selectedArea,
-      });
-    }
+    (navigation as any).navigate('PracticeList', {
+      knowledgeAreaId: areaId,
+    });
   };
 
   if (isLoading) {
@@ -69,16 +63,18 @@ export default function KnowledgeAreaFilterScreen() {
       >
         <SectionHeader
           title="Select Knowledge Area"
-          subtitle="Choose a knowledge area to practice"
+          subtitle={
+            isPremium
+              ? 'Choose a knowledge area to practice'
+              : 'Free: first 10 questions in each area'
+          }
           icon="book-open-variant"
         />
 
         <View style={styles.areasContainer}>
           {knowledgeAreas && knowledgeAreas.length > 0 ? (
-            // Sort knowledge areas by id (as requested by user)
             [...knowledgeAreas]
               .sort((a: any, b: any) => {
-                // Sort by id field
                 const aId = (a.id || a || '').toString();
                 const bId = (b.id || b || '').toString();
                 return aId.localeCompare(bId);
@@ -87,7 +83,6 @@ export default function KnowledgeAreaFilterScreen() {
               const areaId = area.id || area;
               const areaName = area.name || area;
               const displayName = removeProjectPrefix(areaName);
-              const isSelected = selectedArea === areaId;
               const iconName = getKnowledgeAreaIcon(areaName);
 
               return (
@@ -96,25 +91,20 @@ export default function KnowledgeAreaFilterScreen() {
                   onPress={() => handleSelectArea(areaId)}
                   activeOpacity={0.7}
                 >
-                  <Card
-                    style={[
-                      styles.areaCard,
-                      isSelected && { borderColor: colors.primary, borderWidth: 2 },
-                    ]}
-                  >
+                  <Card style={styles.areaCard}>
                     <Card.Content style={styles.areaCardContent}>
                       <View style={styles.areaContent}>
                         <View style={styles.areaLeft}>
                           <View
                             style={[
                               styles.areaIconCircle,
-                              { backgroundColor: isSelected ? colors.primary : `${colors.primary}20` },
+                              { backgroundColor: `${colors.primary}20` },
                             ]}
                           >
                             <Icon
                               name={iconName as any}
                               size={24}
-                              color={isSelected ? '#FFFFFF' : colors.primary}
+                              color={colors.primary}
                             />
                           </View>
                           <View style={styles.areaTextContainer}>
@@ -122,13 +112,11 @@ export default function KnowledgeAreaFilterScreen() {
                               {displayName}
                             </Text>
                             <Text variant="bodySmall" style={styles.areaSubtitle}>
-                              Knowledge Area
+                              {isPremium ? 'Knowledge Area' : '10 free questions'}
                             </Text>
                           </View>
                         </View>
-                        {isSelected && (
-                          <Icon name="check-circle" size={28} color={colors.primary} />
-                        )}
+                        <Icon name="chevron-right" size={28} color={colors.primary} />
                       </View>
                     </Card.Content>
                   </Card>
@@ -145,16 +133,6 @@ export default function KnowledgeAreaFilterScreen() {
             </Card>
           )}
         </View>
-
-        <ActionButton
-          label="Start Practice"
-          onPress={handleStartPractice}
-          disabled={!selectedArea}
-          variant="primary"
-          size="large"
-          fullWidth
-          style={styles.startButton}
-        />
       </ScrollView>
     </SafeAreaView>
   );
@@ -234,8 +212,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     padding: spacing.base,
   },
-  startButton: {
-    marginTop: spacing.base,
-  },
 });
-

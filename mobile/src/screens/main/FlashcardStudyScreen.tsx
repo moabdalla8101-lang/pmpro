@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, SafeAreaView, TouchableOpacity, Animated, Dimensions } from 'react-native';
+import { View, StyleSheet, SafeAreaView, TouchableOpacity, Animated } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useDispatch, useSelector } from 'react-redux';
@@ -18,8 +18,6 @@ import { ActionButton } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { useRequireAuth } from '../../utils/requireAuth';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function FlashcardStudyScreen() {
   const route = useRoute();
@@ -367,7 +365,7 @@ const styles = StyleSheet.create({
     padding: spacing.base,
   },
   cardTouchable: {
-    width: SCREEN_WIDTH - spacing.base * 2,
+    width: '100%',
     height: 400,
   },
   card: {

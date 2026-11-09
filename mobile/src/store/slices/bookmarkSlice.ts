@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { bookmarkService } from '../../services/api/bookmarkService';
+import { logout } from './authSlice';
 
 interface Bookmark {
   id: string;
@@ -66,6 +67,7 @@ const bookmarkSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
+      .addCase(logout.fulfilled, () => initialState)
       .addCase(fetchBookmarks.pending, (state) => {
         state.isLoading = true;
         state.error = null;

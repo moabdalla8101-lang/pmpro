@@ -1,12 +1,14 @@
 import { Response, NextFunction } from 'express';
-import { NotFoundError, ValidationError } from '@pmp-app/shared';
+import { ForbiddenError, NotFoundError, ValidationError } from '@pmp-app/shared';
 import { AuthRequest } from '../middleware/auth';
+import { isSubscriptionActive } from '../middleware/subscription';
 import { pool } from '../db/connection';
 import { v4 as uuidv4 } from 'uuid';
 import { serializeAnsweredQuestionFeedback, serializeAdminQuestion } from '../serializers/questionSerializers';
 import { gradeQuestionResponse } from '../utils/gradeQuestionResponse';
 import { LEARNER_ATTEMPTS_CTE } from '../utils/learnerAttempts';
 import { assertNoClientAuthoritativeScoreFields } from '../utils/authoritativeScoring';
+import { isQuestionInFreePool } from '../utils/freeQuestionPool';
 
 async function ensureQuestionAttemptsTable(client: { query: (sql: string) => Promise<any> }) {
   await client.query(`
@@ -222,6 +224,29 @@ export async function recordAnswer(req: AuthRequest, res: Response, next: NextFu
       );
     }
     const question = questionResult.rows[0];
+
+    // Free users may only answer questions in the free pool (first N per knowledge area).
+    {
+      const userRow = await client.query(
+        `SELECT subscription_tier, subscription_expires_at, role FROM users WHERE id = $1`,
+        [req.user!.userId]
+      );
+      const u = userRow.rows[0];
+      const isPremium =
+        u?.role === 'admin' ||
+        isSubscriptionActive(u?.subscription_tier, u?.subscription_expires_at);
+      if (!isPremium) {
+        const allowed = await isQuestionInFreePool(questionId, certificationId);
+        if (!allowed) {
+          await client.query('ROLLBACK');
+          return next(
+            new ForbiddenError(
+              'Upgrade to Premium to access more questions in this knowledge area'
+            )
+          );
+        }
+      }
+    }
 
     const answersResult = await client.query(
       'SELECT * FROM answers WHERE question_id = $1 ORDER BY "order"',

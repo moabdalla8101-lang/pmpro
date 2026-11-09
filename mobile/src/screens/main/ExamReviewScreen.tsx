@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Alert } from 'react-native';
 import { Card, Text, ActivityIndicator, ProgressBar } from 'react-native-paper';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { examService } from '../../services/api/examService';
@@ -13,6 +13,7 @@ import {
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 export default function ExamReviewScreen() {
   const route = useRoute();
@@ -21,6 +22,7 @@ export default function ExamReviewScreen() {
   
   const [examData, setExamData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [expandedQuestions, setExpandedQuestions] = useState<Set<number>>(new Set());
 
   useEffect(() => {
@@ -29,10 +31,14 @@ export default function ExamReviewScreen() {
 
   const loadExamReview = async () => {
     try {
+      setLoadError(null);
       const data = await examService.getExamReview(examId);
       setExamData(data);
     } catch (error: any) {
       console.error('Failed to load exam review:', error);
+      const message = getApiErrorMessage(error, 'Failed to load exam review');
+      setLoadError(message);
+      Alert.alert('Error', message);
     } finally {
       setLoading(false);
     }
@@ -65,10 +71,24 @@ export default function ExamReviewScreen() {
           <Text variant="titleLarge" style={styles.errorText}>
             Failed to load exam review
           </Text>
+          {loadError ? (
+            <Text variant="bodyMedium" style={styles.errorText}>
+              {loadError}
+            </Text>
+          ) : null}
+          <ActionButton
+            label="Try Again"
+            onPress={() => {
+              setLoading(true);
+              loadExamReview();
+            }}
+            variant="primary"
+            size="medium"
+          />
           <ActionButton
             label="Go Back"
             onPress={() => navigation.goBack()}
-            variant="primary"
+            variant="outlined"
             size="medium"
           />
         </View>
@@ -83,20 +103,24 @@ export default function ExamReviewScreen() {
   console.log('Exam Review - Answers Count:', answers?.length);
   console.log('Exam Review - First Answer:', answers?.[0]);
   
-  const score = typeof exam?.score === 'number' && !isNaN(exam.score) 
-    ? exam.score 
+  const score = typeof exam?.score === 'number' && !isNaN(exam.score)
+    ? exam.score
     : (typeof exam?.score === 'string' ? parseFloat(exam.score) || 0 : 0);
-  // Handle both camelCase and snake_case
   const correctCount = exam?.correctAnswers || exam?.correct_answers || 0;
   const totalQuestions = exam?.totalQuestions || exam?.total_questions || 0;
   const incorrectCount = totalQuestions - correctCount;
-  const passThreshold = 61; // PMP passing score
-  const hasPassed = score >= passThreshold;
+  const examType = String(exam?.examType || exam?.exam_type || '').toLowerCase();
+  const sessionLabel =
+    examType === 'mock_exam' || examType === 'mock'
+      ? 'mock'
+      : examType === 'mini'
+        ? 'mini exam'
+        : examType === 'daily_quiz'
+          ? 'quiz'
+          : 'practice';
 
-  // Calculate performance by knowledge area
   const knowledgeAreaStats: { [key: string]: { correct: number; total: number } } = {};
   answers?.forEach((item: any) => {
-    // Get knowledge area name, fallback to 'Other' if not available
     const area = removeProjectPrefix(item.knowledgeAreaName || item.knowledge_area_name || 'Other');
     if (!knowledgeAreaStats[area]) {
       knowledgeAreaStats[area] = { correct: 0, total: 0 };
@@ -106,9 +130,45 @@ export default function ExamReviewScreen() {
       knowledgeAreaStats[area].correct++;
     }
   });
-  
-  // Debug: Log knowledge area stats
-  console.log('Knowledge Area Stats:', knowledgeAreaStats);
+
+  const areaResults = Object.entries(knowledgeAreaStats)
+    .map(([area, stats]) => ({
+      area,
+      ...stats,
+      accuracy: stats.total > 0 ? (stats.correct / stats.total) * 100 : 0,
+    }))
+    .sort((a, b) => a.accuracy - b.accuracy || a.area.localeCompare(b.area));
+  const reviewNext = areaResults.filter((item) => item.accuracy < 70);
+  const stronger = areaResults
+    .filter((item) => item.accuracy >= 70)
+    .sort((a, b) => b.accuracy - a.accuracy || a.area.localeCompare(b.area));
+
+  const renderAreaCard = (item: (typeof areaResults)[number]) => {
+    const barColor =
+      item.accuracy >= 70 ? colors.success : item.accuracy >= 50 ? colors.warning : colors.error;
+    return (
+      <Card key={item.area} style={styles.areaCard}>
+        <Card.Content style={styles.areaContent}>
+          <View style={styles.areaHeader}>
+            <Text variant="titleMedium" style={styles.areaName}>
+              {item.area}
+            </Text>
+            <Text variant="headlineSmall" style={[styles.areaScore, { color: barColor }]}>
+              {item.accuracy.toFixed(0)}%
+            </Text>
+          </View>
+          <ProgressBar
+            progress={item.accuracy / 100}
+            color={barColor}
+            style={styles.areaProgressBar}
+          />
+          <Text variant="bodySmall" style={styles.areaDetails}>
+            {item.correct} of {item.total} correct
+          </Text>
+        </Card.Content>
+      </Card>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -119,27 +179,24 @@ export default function ExamReviewScreen() {
       >
         {/* Hero Score Section */}
         <LinearGradient
-          colors={hasPassed ? [colors.success, colors.successLight] : [colors.error, colors.errorLight]}
+          colors={[colors.primary, colors.primaryDark]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.scoreHero}
         >
           <View style={styles.scoreContent}>
-            <View style={styles.scoreIconContainer}>
-              <Icon
-                name={hasPassed ? 'trophy' : 'alert-circle'}
-                size={48}
-                color="#ffffff"
-              />
-            </View>
             <Text variant="displaySmall" style={styles.scoreText}>
-              {score.toFixed(1)}%
+              {Math.round(score)}%
             </Text>
             <Text variant="titleLarge" style={styles.scoreLabel}>
-              {hasPassed ? 'Congratulations! You Passed!' : 'Keep Practicing'}
+              Practice score
             </Text>
             <Text variant="bodyLarge" style={styles.scoreSubtext}>
-              {correctCount} out of {totalQuestions} questions correct
+              {correctCount} of {totalQuestions} correct
+            </Text>
+            <Text variant="bodyMedium" style={styles.scoreNote}>
+              Every question on this {sessionLabel} was scored. PMI does not publish a passing
+              percentage, so this result is only a measure of this practice.
             </Text>
           </View>
         </LinearGradient>
@@ -196,41 +253,20 @@ export default function ExamReviewScreen() {
         </View>
 
         {/* Performance by Knowledge Area */}
-        {Object.keys(knowledgeAreaStats).length > 0 && (
+        {reviewNext.length > 0 && (
           <>
-            <SectionHeader
-              title="Performance by Knowledge Area"
-              icon="chart-box"
-            />
+            <SectionHeader title="Review next" icon="book-open-variant" />
             <View style={styles.knowledgeAreaContainer}>
-              {Object.entries(knowledgeAreaStats).map(([area, stats]) => {
-                const areaAccuracy = (stats.correct / stats.total) * 100;
-                return (
-                  <Card key={area} style={styles.areaCard}>
-                    <Card.Content style={styles.areaContent}>
-                      <View style={styles.areaHeader}>
-                        <Text variant="titleMedium" style={styles.areaName}>
-                          {area}
-                        </Text>
-                        <Text variant="headlineSmall" style={[
-                          styles.areaScore,
-                          { color: areaAccuracy >= 70 ? colors.success : areaAccuracy >= 50 ? colors.warning : colors.error }
-                        ]}>
-                          {areaAccuracy.toFixed(0)}%
-                        </Text>
-                      </View>
-                      <ProgressBar
-                        progress={areaAccuracy / 100}
-                        color={areaAccuracy >= 70 ? colors.success : areaAccuracy >= 50 ? colors.warning : colors.error}
-                        style={styles.areaProgressBar}
-                      />
-                      <Text variant="bodySmall" style={styles.areaDetails}>
-                        {stats.correct} / {stats.total} correct
-                      </Text>
-                    </Card.Content>
-                  </Card>
-                );
-              })}
+              {reviewNext.map(renderAreaCard)}
+            </View>
+          </>
+        )}
+
+        {stronger.length > 0 && (
+          <>
+            <SectionHeader title={`Stronger on this ${sessionLabel}`} icon="chart-box" />
+            <View style={styles.knowledgeAreaContainer}>
+              {stronger.map(renderAreaCard)}
             </View>
           </>
         )}
@@ -247,8 +283,6 @@ export default function ExamReviewScreen() {
           const isExpanded = expandedQuestions.has(index);
           const knowledgeArea = item.knowledgeAreaName || item.knowledge_area_name;
           const displayKnowledgeArea = knowledgeArea ? removeProjectPrefix(knowledgeArea) : null;
-          const difficulty = item.difficulty || 'medium';
-
           return (
             <Card
               key={item.id || index}
@@ -282,15 +316,6 @@ export default function ExamReviewScreen() {
                             variant="outlined"
                           />
                         )}
-                        <CategoryBadge
-                          label={difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}
-                          color={
-                            difficulty === 'easy' ? colors.success :
-                            difficulty === 'medium' ? colors.warning :
-                            colors.error
-                          }
-                          variant="pill"
-                        />
                       </View>
                     </View>
                   </View>
@@ -470,9 +495,6 @@ const styles = StyleSheet.create({
   scoreContent: {
     alignItems: 'center',
   },
-  scoreIconContainer: {
-    marginBottom: spacing.base,
-  },
   scoreText: {
     fontWeight: '700',
     color: '#ffffff',
@@ -488,6 +510,13 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     opacity: 0.9,
     textAlign: 'center',
+    marginBottom: spacing.base,
+  },
+  scoreNote: {
+    color: '#ffffff',
+    opacity: 0.9,
+    textAlign: 'center',
+    lineHeight: 22,
   },
   quickStats: {
     flexDirection: 'row',

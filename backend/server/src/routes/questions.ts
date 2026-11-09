@@ -14,11 +14,16 @@ import { validate } from '../middleware/validate';
 
 const router = Router();
 
-// Catalog GETs: learner shape by default; admin token gets full AdminQuestion
+// Catalog GETs: learner shape by default; admin token gets full AdminQuestion.
+// Free/guest callers are limited to the free pool (first N per knowledge area) inside controllers.
 router.get('/', optionalAuthenticate, getQuestions);
 router.get('/by-ids', optionalAuthenticate, getQuestionsByIds);
 router.get('/:id', optionalAuthenticate, getQuestion);
-router.get('/knowledge-area/:knowledgeAreaId', optionalAuthenticate, getQuestionsByKnowledgeArea);
+router.get(
+  '/knowledge-area/:knowledgeAreaId',
+  optionalAuthenticate,
+  getQuestionsByKnowledgeArea
+);
 
 // Admin routes
 router.post(

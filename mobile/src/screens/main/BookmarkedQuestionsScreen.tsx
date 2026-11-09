@@ -10,7 +10,7 @@ import { CategoryBadge, SectionHeader, EmptyState } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
-import { hasPremiumAccess } from '../../utils/subscriptionUtils';
+import { userHasActivePremium } from '../../utils/subscriptionUtils';
 import { useRequireAuth } from '../../utils/requireAuth';
 
 export default function BookmarkedQuestionsScreen() {
@@ -63,8 +63,6 @@ export default function BookmarkedQuestionsScreen() {
 
     const knowledgeArea = question.knowledgeAreaName || question.knowledge_area_name;
     const displayKnowledgeArea = knowledgeArea ? removeProjectPrefix(knowledgeArea) : null;
-    const difficulty = question.difficulty || 'medium';
-
     return (
       <TouchableOpacity
         activeOpacity={0.7}
@@ -80,15 +78,6 @@ export default function BookmarkedQuestionsScreen() {
                     variant="outlined"
                   />
                 )}
-                <CategoryBadge
-                  label={difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}
-                  color={
-                    difficulty === 'easy' ? colors.success :
-                    difficulty === 'medium' ? colors.warning :
-                    colors.error
-                  }
-                  variant="pill"
-                />
               </View>
               <TouchableOpacity
                 onPress={() => handleToggleBookmark(question.id)}
@@ -136,7 +125,7 @@ export default function BookmarkedQuestionsScreen() {
     );
   }
 
-  if (!hasPremiumAccess(user?.subscriptionTier)) {
+  if (!userHasActivePremium(user)) {
     return (
       <SafeAreaView style={styles.container}>
         <EmptyState

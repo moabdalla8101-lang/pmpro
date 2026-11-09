@@ -4,6 +4,7 @@ import { TextInput, Button, Text, Snackbar } from 'react-native-paper';
 import { authService } from '../../services/api/authService';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { AuthPromptReason } from '../../utils/requireAuth';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
@@ -32,7 +33,7 @@ export default function ForgotPasswordScreen() {
       await authService.requestPasswordReset(email);
       setSuccess(true);
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || 'Failed to send reset email');
+      setError(getApiErrorMessage(err, 'Failed to send reset email'));
     } finally {
       setLoading(false);
     }

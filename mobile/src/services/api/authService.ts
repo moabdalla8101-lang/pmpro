@@ -25,6 +25,10 @@ export const authService = {
     const response = await client.post('/api/auth/social-login', { provider, token });
     return response.data;
   },
+
+  async deleteAccount() {
+    await client.delete('/api/users/me');
+  },
 };
 
 

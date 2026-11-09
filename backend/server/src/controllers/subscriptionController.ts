@@ -2,6 +2,7 @@ import { Response, NextFunction } from 'express';
 import { NotFoundError, ForbiddenError } from '@pmp-app/shared';
 import { AuthRequest } from '../middleware/auth';
 import { pool } from '../db/connection';
+import { isSubscriptionActive } from '../middleware/subscription';
 
 export async function getSubscription(req: AuthRequest, res: Response, next: NextFunction) {
   try {
@@ -19,7 +20,7 @@ export async function getSubscription(req: AuthRequest, res: Response, next: Nex
     res.json({
       tier: user.subscription_tier,
       expiresAt: user.subscription_expires_at,
-      isActive: !user.subscription_expires_at || new Date(user.subscription_expires_at) > new Date()
+      isActive: isSubscriptionActive(user.subscription_tier, user.subscription_expires_at)
     });
   } catch (error) {
     next(error);

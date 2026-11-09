@@ -12,6 +12,8 @@ import {
   assertNoClientAuthoritativeScoreFields,
   safeExamScore,
 } from '../utils/authoritativeScoring';
+import { freePoolSubquery, requesterNeedsFreePool } from '../utils/freeQuestionPool';
+import { pickEco2026Questions } from '../utils/eco2026Blueprint';
 
 async function ensureExamSchema(client: { query: (sql: string, params?: any[]) => Promise<any> }) {
   await client.query(`
@@ -60,13 +62,22 @@ async function ensureExamSchema(client: { query: (sql: string, params?: any[]) =
   `);
 }
 
-async function selectRandomQuestionRows(certificationId: string, limit: number) {
+async function selectRandomQuestionRows(
+  certificationId: string,
+  limit: number,
+  options?: { freePoolOnly?: boolean }
+) {
+  const freePoolOnly = Boolean(options?.freePoolOnly);
+  const freeFilter = freePoolOnly
+    ? ` AND id IN (${freePoolSubquery('$1')})`
+    : '';
   // Over-fetch so we can skip unusable drag_and_match content.
   const fetchLimit = Math.max(limit * 3, limit + 30);
   const result = await pool.query(
     `SELECT * FROM questions
      WHERE certification_id = $1
        AND is_active = true
+       ${freeFilter}
      ORDER BY RANDOM()
      LIMIT $2`,
     [certificationId, fetchLimit]
@@ -78,12 +89,13 @@ async function selectRandomQuestionRows(certificationId: string, limit: number) 
   });
 
   if (usable.length < limit) {
-    // One more pass without RANDOM for remaining seats
+    // One more pass for remaining seats
     const exclude = usable.map((q: any) => q.id);
     const fill = await pool.query(
       `SELECT * FROM questions
        WHERE certification_id = $1
          AND is_active = true
+         ${freeFilter}
          AND ($2::uuid[] IS NULL OR NOT (id = ANY($2::uuid[])))
        ORDER BY RANDOM()
        LIMIT $3`,
@@ -101,6 +113,36 @@ async function selectRandomQuestionRows(certificationId: string, limit: number) 
   }
 
   return usable.slice(0, limit);
+}
+
+/**
+ * Full mock only. Practice, mini, and daily quiz stay random.
+ * Questions are chosen to the 2026 domain weights and the 40/60 approach mix.
+ */
+async function selectMockExamRows(certificationId: string, limit: number) {
+  const candidates = await pool.query(
+    `SELECT id, question_id, domain, task, pm_approach, question_type, question_metadata, question_text
+     FROM questions
+     WHERE certification_id = $1
+       AND is_active = true`,
+    [certificationId]
+  );
+
+  const usable = candidates.rows.filter((row: any) => {
+    if (row.question_type !== 'drag_and_match') return true;
+    return normalizeDragMetadata(row.question_metadata).usable;
+  });
+
+  const picked = pickEco2026Questions(usable, limit);
+  if (picked.length === 0) return [];
+
+  const ids = picked.map((row) => row.id);
+  const full = await pool.query(
+    `SELECT * FROM questions WHERE id = ANY($1::uuid[])`,
+    [ids]
+  );
+  const byId = new Map(full.rows.map((row: any) => [row.id, row]));
+  return ids.map((id) => byId.get(id)).filter(Boolean);
 }
 
 async function persistExamQuestions(
@@ -157,15 +199,36 @@ function mapExam(exam: any) {
   };
 }
 
+const PRACTICE_EXAM_MAX_QUESTIONS = 25;
+
+function normalizeStartExamType(raw: unknown): 'practice' | 'mock_exam' | 'mini' {
+  const value = String(raw || 'mock_exam').toLowerCase();
+  if (value === 'practice') return 'practice';
+  if (value === 'mini') return 'mini';
+  return 'mock_exam';
+}
+
 export async function startExam(req: AuthRequest, res: Response, next: NextFunction) {
   const client = await pool.connect();
   try {
-    const { certificationId, totalQuestions, questionIds } = req.body;
+    const { certificationId, totalQuestions, questionIds, examType: rawExamType } = req.body;
     const count = parseInt(String(totalQuestions), 10);
+    const examType = normalizeStartExamType(rawExamType);
 
     if (!certificationId || !Number.isFinite(count) || count <= 0) {
       return next(new ValidationError('certificationId and totalQuestions are required'));
     }
+
+    if (examType === 'practice' && count > PRACTICE_EXAM_MAX_QUESTIONS) {
+      return next(
+        new ValidationError(
+          `Practice exams are limited to ${PRACTICE_EXAM_MAX_QUESTIONS} questions`
+        )
+      );
+    }
+
+    const freePoolOnly =
+      examType === 'practice' && (await requesterNeedsFreePool(req));
 
     let questionRows: any[];
     if (Array.isArray(questionIds) && questionIds.length > 0) {
@@ -175,20 +238,37 @@ export async function startExam(req: AuthRequest, res: Response, next: NextFunct
           new ValidationError('questionIds length must match totalQuestions and be unique')
         );
       }
+      const freeFilter = freePoolOnly
+        ? ` AND id IN (${freePoolSubquery('$1')})`
+        : '';
       const result = await pool.query(
         `SELECT * FROM questions
          WHERE certification_id = $1
            AND is_active = true
-           AND id = ANY($2::uuid[])`,
+           AND id = ANY($2::uuid[])
+           ${freeFilter}`,
         [certificationId, uniqueIds]
       );
       if (result.rows.length !== uniqueIds.length) {
-        return next(new ValidationError('One or more questionIds are invalid for this certification'));
+        return next(
+          new ValidationError(
+            freePoolOnly
+              ? 'One or more questions are outside the free practice set'
+              : 'One or more questionIds are invalid for this certification'
+          )
+        );
       }
       const byId = new Map(result.rows.map((q: any) => [q.id, q]));
       questionRows = uniqueIds.map((id) => byId.get(id));
+    } else if (examType === 'mock_exam') {
+      questionRows = await selectMockExamRows(certificationId, count);
     } else {
-      questionRows = await selectRandomQuestionRows(certificationId, count);
+      questionRows = await selectRandomQuestionRows(certificationId, count, {
+        freePoolOnly,
+      });
+    }
+
+    if (!Array.isArray(questionIds) || questionIds.length === 0) {
       if (questionRows.length < count) {
         return next(
           new ValidationError(
@@ -204,8 +284,8 @@ export async function startExam(req: AuthRequest, res: Response, next: NextFunct
     const examId = uuidv4();
     await client.query(
       `INSERT INTO mock_exams (id, user_id, certification_id, started_at, total_questions, correct_answers, exam_type)
-       VALUES ($1, $2, $3, NOW(), $4, 0, 'mock_exam')`,
-      [examId, req.user!.userId, certificationId, questionRows.length]
+       VALUES ($1, $2, $3, NOW(), $4, 0, $5)`,
+      [examId, req.user!.userId, certificationId, questionRows.length, examType]
     );
 
     await persistExamQuestions(client, examId, questionRows);
@@ -281,7 +361,12 @@ export async function startDailyQuiz(req: AuthRequest, res: Response, next: Next
       }
     }
 
-    const questionRows = await selectRandomQuestionRows(certificationId, DAILY_QUIZ_QUESTIONS);
+    const freePoolOnly = await requesterNeedsFreePool(req);
+    const questionRows = await selectRandomQuestionRows(
+      certificationId,
+      DAILY_QUIZ_QUESTIONS,
+      { freePoolOnly }
+    );
     if (questionRows.length < DAILY_QUIZ_QUESTIONS) {
       return res.status(400).json({ error: 'Not enough questions available for daily quiz' });
     }
@@ -737,9 +822,12 @@ export async function getExam(req: AuthRequest, res: Response, next: NextFunctio
   }
 }
 
+/** Reserved draft key for resume cursor (not a question id). */
+export const EXAM_DRAFT_PROGRESS_KEY = '__progress';
+
 /**
  * Persist in-progress answers so a timed exam can be resumed after app kill.
- * Body: { answers: { [questionId]: { answerId?, answerIds?, dragMatches? } } }
+ * Body: { answers: { [questionId]: { answerId?, answerIds?, dragMatches? }, __progress?: { currentQuestionIndex } } }
  */
 export async function saveExamProgress(req: AuthRequest, res: Response, next: NextFunction) {
   try {
@@ -770,6 +858,15 @@ export async function saveExamProgress(req: AuthRequest, res: Response, next: Ne
     const allowed = new Set(assigned.rows.map((r: any) => r.question_id as string));
     const sanitized: Record<string, unknown> = {};
     for (const [questionId, value] of Object.entries(answers)) {
+      if (questionId === EXAM_DRAFT_PROGRESS_KEY) {
+        if (value != null && typeof value === 'object' && !Array.isArray(value)) {
+          const idx = (value as any).currentQuestionIndex;
+          if (Number.isInteger(idx) && idx >= 0) {
+            sanitized[EXAM_DRAFT_PROGRESS_KEY] = { currentQuestionIndex: idx };
+          }
+        }
+        continue;
+      }
       if (!allowed.has(questionId)) continue;
       if (value == null || typeof value !== 'object') continue;
       sanitized[questionId] = value;
@@ -782,7 +879,8 @@ export async function saveExamProgress(req: AuthRequest, res: Response, next: Ne
       [JSON.stringify(sanitized), id, req.user!.userId]
     );
 
-    res.json({ examId: id, draftAnswerCount: Object.keys(sanitized).length });
+    const answerCount = Object.keys(sanitized).filter((k) => k !== EXAM_DRAFT_PROGRESS_KEY).length;
+    res.json({ examId: id, draftAnswerCount: answerCount });
   } catch (error) {
     next(error);
   }

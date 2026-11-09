@@ -66,3 +66,4 @@ export async function requirePremium(
     next(error);
   }
 }
+

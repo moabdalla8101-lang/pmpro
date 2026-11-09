@@ -67,6 +67,23 @@ export async function updateProfile(req: AuthRequest, res: Response, next: NextF
   }
 }
 
+/** Permanently deletes the account; all user-owned rows cascade from users. */
+export async function deleteAccount(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const result = await pool.query('DELETE FROM users WHERE id = $1 RETURNING id', [
+      req.user!.userId,
+    ]);
+
+    if (result.rows.length === 0) {
+      return next(new NotFoundError('User not found'));
+    }
+
+    res.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function getUserPreferences(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const result = await pool.query(

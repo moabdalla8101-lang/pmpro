@@ -18,6 +18,7 @@ import {
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { useRequireAuth } from '../../utils/requireAuth';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 const TOTAL_QUESTIONS = 10;
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
@@ -69,7 +70,7 @@ export default function DailyQuizScreen() {
         setQuizQuestions(examData.questions);
       }
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to load quiz questions');
+      Alert.alert('Error', getApiErrorMessage(error, 'Failed to load quiz questions'));
     }
   };
 
@@ -101,7 +102,7 @@ export default function DailyQuizScreen() {
           ]
         );
       } else {
-        Alert.alert('Error', error.message || 'Failed to start daily quiz');
+        Alert.alert('Error', getApiErrorMessage(error, 'Failed to start daily quiz'));
       }
     } finally {
       setIsLoading(false);
@@ -203,7 +204,7 @@ export default function DailyQuizScreen() {
 
       (navigation as any).navigate('ExamReview', { examId });
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to submit quiz');
+      Alert.alert('Error', getApiErrorMessage(error, 'Failed to submit quiz'));
     }
   };
 

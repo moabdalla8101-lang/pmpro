@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { progressService } from '../../services/api/progressService';
+import { logout } from './authSlice';
 
 interface MissedQuestion {
   questionId: string;
@@ -47,6 +48,7 @@ const missedQuestionsSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
+      .addCase(logout.fulfilled, () => initialState)
       .addCase(fetchMissedQuestions.pending, (state) => {
         state.isLoading = true;
         state.error = null;

@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { examService } from '../../services/api/examService';
+import { logout } from './authSlice';
 
 interface Exam {
   id: string;
@@ -65,8 +66,12 @@ const examSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
+      .addCase(logout.fulfilled, () => initialState)
       .addCase(fetchUserExams.pending, (state) => {
-        state.isLoading = true;
+        // Keep prior exams visible while refreshing on tab focus.
+        if (state.exams.length === 0) {
+          state.isLoading = true;
+        }
         state.error = null;
       })
       .addCase(fetchUserExams.fulfilled, (state, action) => {

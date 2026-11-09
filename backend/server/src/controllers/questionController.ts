@@ -1,5 +1,5 @@
 import { Response, NextFunction } from 'express';
-import { NotFoundError, ValidationError } from '@pmp-app/shared';
+import { ForbiddenError, NotFoundError, ValidationError } from '@pmp-app/shared';
 import { AuthRequest } from '../middleware/auth';
 import { pool } from '../db/connection';
 import { v4 as uuidv4 } from 'uuid';
@@ -10,6 +10,12 @@ import {
   MAX_LEARNER_QUESTION_PAGE_SIZE,
 } from '../serializers/questionSerializers';
 import { UserRole } from '@pmp-app/shared';
+import {
+  FREE_QUESTIONS_PER_KNOWLEDGE_AREA,
+  freePoolSubquery,
+  isQuestionInFreePool,
+  requesterNeedsFreePool,
+} from '../utils/freeQuestionPool';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -85,21 +91,43 @@ async function respondWithQuestions(
   req: AuthRequest,
   res: Response,
   rows: any[],
-  total?: number
+  total?: number,
+  extra?: Record<string, unknown>
 ) {
   const admin = isAdminRequest(req);
   const questions = await hydrateQuestions(rows, { admin });
-  const payload = { questions, total: total ?? questions.length };
+  const payload = {
+    questions,
+    total: total ?? questions.length,
+    ...extra,
+  };
   if (!admin) {
     assertNoLearnerLeaks(payload, 'questions list');
   }
   res.json(payload);
 }
 
+async function resolveCertificationId(query: {
+  certificationId?: unknown;
+  knowledgeAreaId?: unknown;
+}): Promise<string | null> {
+  if (typeof query.certificationId === 'string' && query.certificationId) {
+    return query.certificationId;
+  }
+  if (typeof query.knowledgeAreaId === 'string' && query.knowledgeAreaId) {
+    const ka = await pool.query(
+      `SELECT certification_id FROM knowledge_areas WHERE id = $1`,
+      [query.knowledgeAreaId]
+    );
+    return ka.rows[0]?.certification_id || null;
+  }
+  return null;
+}
+
 export async function getQuestions(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const {
-      certificationId,
+      certificationId: certificationIdRaw,
       knowledgeAreaId,
       difficulty,
       domain,
@@ -109,6 +137,19 @@ export async function getQuestions(req: AuthRequest, res: Response, next: NextFu
       distributeByKnowledgeArea,
     } = req.query;
     const admin = isAdminRequest(req);
+    const freePool = !admin && (await requesterNeedsFreePool(req));
+
+    // Domain practice is premium-only (free/guest callers cannot filter by domain).
+    if (freePool && domain && typeof domain === 'string' && domain.trim()) {
+      return next(
+        new ForbiddenError('Premium subscription required for domain practice')
+      );
+    }
+
+    const certificationId = await resolveCertificationId({
+      certificationId: certificationIdRaw,
+      knowledgeAreaId,
+    });
     const queryLimit = admin
       ? (limit ? parseInt(limit as string, 10) : 1000)
       : clampLearnerPageSize(limit);
@@ -117,6 +158,47 @@ export async function getQuestions(req: AuthRequest, res: Response, next: NextFu
     const shouldDistribute =
       distributeByKnowledgeArea === 'true' ||
       distributeByKnowledgeArea === '1';
+
+    async function buildFreeAccessMeta(accessibleTotal: number): Promise<
+      | {
+          freeAccess: {
+            limitPerKnowledgeArea: number;
+            accessibleTotal: number;
+            fullTotal: number;
+            upgradeAvailable: true;
+          };
+          promptUpgrade: boolean;
+        }
+      | undefined
+    > {
+      if (!freePool) return undefined;
+
+      let fullTotal = accessibleTotal;
+      if (knowledgeAreaId || domain || certificationId) {
+        const { where, params } = buildActiveQuestionFilters({
+          certificationId: certificationId || undefined,
+          knowledgeAreaId,
+          difficulty,
+          domain,
+        });
+        const fullCount = await pool.query(
+          `SELECT COUNT(*)::int AS total FROM questions ${where}`,
+          params
+        );
+        fullTotal = fullCount.rows[0]?.total ?? accessibleTotal;
+      }
+
+      return {
+        freeAccess: {
+          limitPerKnowledgeArea: FREE_QUESTIONS_PER_KNOWLEDGE_AREA,
+          accessibleTotal,
+          fullTotal,
+          upgradeAvailable: true,
+        },
+        // Always show upgrade CTA when viewing a capped free list.
+        promptUpgrade: Boolean(knowledgeAreaId) || accessibleTotal > 0,
+      };
+    }
 
     if (shouldDistribute && certificationId && !knowledgeAreaId) {
       const knowledgeAreasResult = await pool.query(
@@ -134,6 +216,10 @@ export async function getQuestions(req: AuthRequest, res: Response, next: NextFu
         const areaParams: any[] = [certificationId, kaId];
         let areaParamCount = 3;
 
+        if (freePool) {
+          areaQuery += ` AND id IN (${freePoolSubquery('$1')})`;
+        }
+
         if (difficulty) {
           areaQuery += ` AND difficulty = $${areaParamCount++}`;
           areaParams.push(difficulty);
@@ -143,9 +229,16 @@ export async function getQuestions(req: AuthRequest, res: Response, next: NextFu
         areaQuery = withDomain.query;
         areaParamCount = withDomain.paramCount;
 
-        areaQuery += isRandom
-          ? ` ORDER BY RANDOM() LIMIT $${areaParamCount++}`
-          : ` ORDER BY created_at DESC, id DESC LIMIT $${areaParamCount++}`;
+        // Free pool uses stable "first N" order; random samples within that pool.
+        if (freePool) {
+          areaQuery += isRandom
+            ? ` ORDER BY RANDOM() LIMIT $${areaParamCount++}`
+            : ` ORDER BY created_at ASC NULLS LAST, id ASC LIMIT $${areaParamCount++}`;
+        } else {
+          areaQuery += isRandom
+            ? ` ORDER BY RANDOM() LIMIT $${areaParamCount++}`
+            : ` ORDER BY created_at DESC, id DESC LIMIT $${areaParamCount++}`;
+        }
 
         areaParams.push(questionsPerArea);
 
@@ -158,6 +251,10 @@ export async function getQuestions(req: AuthRequest, res: Response, next: NextFu
         let fillQuery = 'SELECT * FROM questions WHERE is_active = true AND certification_id = $1';
         const fillParams: any[] = [certificationId];
         let fillParamCount = 2;
+
+        if (freePool) {
+          fillQuery += ` AND id IN (${freePoolSubquery('$1')})`;
+        }
 
         if (allQuestions.length > 0) {
           const excludeIds = allQuestions.map((q: any) => q.id);
@@ -188,36 +285,68 @@ export async function getQuestions(req: AuthRequest, res: Response, next: NextFu
       }
 
       const page = finalQuestions.slice(0, queryLimit);
-      await respondWithQuestions(req, res, page, page.length);
+      await respondWithQuestions(
+        req,
+        res,
+        page,
+        page.length,
+        await buildFreeAccessMeta(page.length)
+      );
       return;
     }
 
+    if (freePool && !certificationId) {
+      return next(
+        new ValidationError('certificationId is required for free-tier question access')
+      );
+    }
+
     const { where, params } = buildActiveQuestionFilters({
-      certificationId,
+      certificationId: certificationId || undefined,
       knowledgeAreaId,
       difficulty,
       domain,
     });
 
+    let scopedWhere = where;
+    const scopedParams = [...params];
+    if (freePool && certificationId) {
+      // freePoolSubquery uses $1 for certification — bind as first param via re-numbering:
+      // inject IN (subquery) where subquery uses a dedicated param index.
+      const certParamIndex = scopedParams.length + 1;
+      scopedParams.push(certificationId);
+      scopedWhere += ` AND id IN (${freePoolSubquery(`$${certParamIndex}`)})`;
+    }
+
     const countResult = await pool.query(
-      `SELECT COUNT(*)::int AS total FROM questions ${where}`,
-      params
+      `SELECT COUNT(*)::int AS total FROM questions ${scopedWhere}`,
+      scopedParams
     );
     const total = countResult.rows[0]?.total ?? 0;
+    const freeMeta = await buildFreeAccessMeta(total);
 
-    const listParams = [...params];
+    // Free user scrolled past their free set for this filter — prompt upgrade.
+    if (freePool && queryOffset >= total) {
+      await respondWithQuestions(req, res, [], total, freeMeta);
+      return;
+    }
+
+    const listParams = [...scopedParams];
     let paramCount = listParams.length + 1;
-    let query = `SELECT * FROM questions ${where}`;
+    let query = `SELECT * FROM questions ${scopedWhere}`;
     if (isRandom) {
       query += ` ORDER BY RANDOM() LIMIT $${paramCount++}`;
       listParams.push(queryLimit);
+    } else if (freePool) {
+      query += ` ORDER BY created_at ASC NULLS LAST, id ASC LIMIT $${paramCount++} OFFSET $${paramCount++}`;
+      listParams.push(queryLimit, queryOffset);
     } else {
       query += ` ORDER BY created_at DESC, id DESC LIMIT $${paramCount++} OFFSET $${paramCount++}`;
       listParams.push(queryLimit, queryOffset);
     }
 
     const result = await pool.query(query, listParams);
-    await respondWithQuestions(req, res, result.rows, total);
+    await respondWithQuestions(req, res, result.rows, total, freeMeta);
   } catch (error) {
     next(error);
   }
@@ -294,7 +423,19 @@ export async function getQuestion(req: AuthRequest, res: Response, next: NextFun
       return next(new NotFoundError('Question not found'));
     }
 
-    const payload = await hydrateQuestion(questionResult.rows[0], { admin });
+    const row = questionResult.rows[0];
+    if (!admin && (await requesterNeedsFreePool(req))) {
+      const allowed = await isQuestionInFreePool(row.id, row.certification_id);
+      if (!allowed) {
+        return next(
+          new ForbiddenError(
+            'Upgrade to Premium to access more questions in this knowledge area'
+          )
+        );
+      }
+    }
+
+    const payload = await hydrateQuestion(row, { admin });
     if (!admin) {
       assertNoLearnerLeaks(payload, 'getQuestion');
     }
@@ -431,27 +572,69 @@ export async function getQuestionsByKnowledgeArea(
     const { knowledgeAreaId } = req.params;
     const { limit, offset = 0 } = req.query;
     const admin = isAdminRequest(req);
+    const freePool = !admin && (await requesterNeedsFreePool(req));
     const queryLimit = admin
       ? (limit ? parseInt(limit as string, 10) : 1000)
       : clampLearnerPageSize(limit);
     const queryOffset = Math.max(0, parseInt(String(offset), 10) || 0);
 
-    const countResult = await pool.query(
-      `SELECT COUNT(*)::int AS total
-       FROM questions
-       WHERE knowledge_area_id = $1 AND is_active = true`,
+    const kaResult = await pool.query(
+      `SELECT certification_id FROM knowledge_areas WHERE id = $1`,
       [knowledgeAreaId]
     );
+    const certificationId = kaResult.rows[0]?.certification_id;
+    if (!certificationId) {
+      return next(new NotFoundError('Knowledge area not found'));
+    }
 
+    const fullCountResult = await pool.query(
+      `SELECT COUNT(*)::int AS total
+       FROM questions
+       WHERE knowledge_area_id = $1 AND is_active = true AND certification_id = $2`,
+      [knowledgeAreaId, certificationId]
+    );
+    const fullTotal = fullCountResult.rows[0]?.total ?? 0;
+
+    let where =
+      'WHERE knowledge_area_id = $1 AND is_active = true AND certification_id = $2';
+    const params: any[] = [knowledgeAreaId, certificationId];
+    if (freePool) {
+      where += ` AND id IN (${freePoolSubquery('$2')})`;
+    }
+
+    const countResult = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM questions ${where}`,
+      params
+    );
+    const total = countResult.rows[0]?.total ?? 0;
+    const freeMeta = freePool
+      ? {
+          freeAccess: {
+            limitPerKnowledgeArea: FREE_QUESTIONS_PER_KNOWLEDGE_AREA,
+            accessibleTotal: total,
+            fullTotal,
+            upgradeAvailable: true as const,
+          },
+          promptUpgrade: true,
+        }
+      : undefined;
+
+    if (freePool && queryOffset >= total) {
+      await respondWithQuestions(req, res, [], total, freeMeta);
+      return;
+    }
+
+    const order = freePool
+      ? 'ORDER BY created_at ASC NULLS LAST, id ASC'
+      : 'ORDER BY created_at DESC, id DESC';
     const result = await pool.query(
-      `SELECT * FROM questions
-       WHERE knowledge_area_id = $1 AND is_active = true
-       ORDER BY created_at DESC, id DESC
-       LIMIT $2 OFFSET $3`,
-      [knowledgeAreaId, queryLimit, queryOffset]
+      `SELECT * FROM questions ${where}
+       ${order}
+       LIMIT $3 OFFSET $4`,
+      [knowledgeAreaId, certificationId, queryLimit, queryOffset]
     );
 
-    await respondWithQuestions(req, res, result.rows, countResult.rows[0]?.total ?? 0);
+    await respondWithQuestions(req, res, result.rows, total, freeMeta);
   } catch (error) {
     next(error);
   }

@@ -13,6 +13,7 @@ import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
 import { useRequireAuth } from '../../utils/requireAuth';
+import { userHasActivePremium } from '../../utils/subscriptionUtils';
 
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
 const PRACTICE_PAGE_SIZE = 25;
@@ -22,46 +23,81 @@ export default function PracticeScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const requireAuth = useRequireAuth();
-  const { questions, isLoading, isLoadingMore, total, hasMore, offset } = useSelector(
-    (state: RootState) => state.questions
-  );
-  const { isAuthenticated } = useSelector((state: RootState) => state.auth);
+  const {
+    questions,
+    isLoading,
+    isLoadingMore,
+    total,
+    hasMore,
+    offset,
+    promptUpgrade,
+    freeLimitPerKnowledgeArea,
+    freeAccessibleTotal,
+    freeFullTotal,
+  } = useSelector((state: RootState) => state.questions);
+  const { user, isAuthenticated } = useSelector((state: RootState) => state.auth);
+  const isPremium = userHasActivePremium(user);
+
+  const routeParams = (route.params || {}) as {
+    knowledgeAreaId?: string;
+    domain?: string;
+  };
 
   const [selectedQuestionFilter, setSelectedQuestionFilter] = useState<'all' | 'unanswered'>('all');
-  const [selectedKnowledgeArea, setSelectedKnowledgeArea] = useState<string | null>(null);
-  const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
+  const [selectedKnowledgeArea, setSelectedKnowledgeArea] = useState<string | null>(
+    routeParams.knowledgeAreaId || null
+  );
+  const [selectedDomain, setSelectedDomain] = useState<string | null>(
+    routeParams.domain || null
+  );
   const [answeredQuestionIds, setAnsweredQuestionIds] = useState<Set<string>>(new Set());
   const loadingMoreRef = useRef(false);
 
+  // Prefer route params so the first load is never unfiltered (avoids ~100 = 10×KAs).
+  const activeKnowledgeArea =
+    routeParams.knowledgeAreaId || selectedKnowledgeArea || null;
+  const activeDomain = routeParams.domain || selectedDomain || null;
+
   useEffect(() => {
-    const params = route.params as any;
-    if (params?.knowledgeAreaId) {
-      setSelectedKnowledgeArea(params.knowledgeAreaId);
+    if (routeParams.knowledgeAreaId) {
+      setSelectedKnowledgeArea(routeParams.knowledgeAreaId);
     }
-    if (params?.domain) {
-      setSelectedDomain(params.domain);
+    if (routeParams.domain) {
+      setSelectedDomain(routeParams.domain);
     }
-  }, [route.params]);
+  }, [routeParams.knowledgeAreaId, routeParams.domain]);
 
   const buildFilters = useCallback(
-    (pageOffset: number, append: boolean) => {
+    (
+      pageOffset: number,
+      append: boolean,
+      override?: { knowledgeAreaId?: string | null; domain?: string | null }
+    ) => {
+      const knowledgeAreaId =
+        override && 'knowledgeAreaId' in override
+          ? override.knowledgeAreaId
+          : activeKnowledgeArea;
+      const domain =
+        override && 'domain' in override ? override.domain : activeDomain;
+
       const filters: any = {
         certificationId: PMP_CERTIFICATION_ID,
-        limit: PRACTICE_PAGE_SIZE,
+        // Free users only get 10 per knowledge area — fetch that page in one go.
+        limit: !isPremium && knowledgeAreaId ? 10 : PRACTICE_PAGE_SIZE,
         offset: pageOffset,
         append,
       };
 
-      if (selectedKnowledgeArea) {
-        filters.knowledgeAreaId = selectedKnowledgeArea;
+      if (knowledgeAreaId) {
+        filters.knowledgeAreaId = knowledgeAreaId;
       }
-      if (selectedDomain) {
-        filters.domain = selectedDomain;
+      if (domain) {
+        filters.domain = domain;
       }
 
       return filters;
     },
-    [selectedKnowledgeArea, selectedDomain]
+    [activeKnowledgeArea, activeDomain, isPremium]
   );
 
   const loadAnsweredIds = useCallback(async () => {
@@ -77,10 +113,13 @@ export default function PracticeScreen() {
     }
   }, [isAuthenticated]);
 
-  const loadQuestions = useCallback(async () => {
-    dispatch(fetchQuestions(buildFilters(0, false)));
-    await loadAnsweredIds();
-  }, [dispatch, buildFilters, loadAnsweredIds]);
+  const loadQuestions = useCallback(
+    async (override?: { knowledgeAreaId?: string | null; domain?: string | null }) => {
+      await dispatch(fetchQuestions(buildFilters(0, false, override)));
+      await loadAnsweredIds();
+    },
+    [dispatch, buildFilters, loadAnsweredIds]
+  );
 
   const loadMore = useCallback(async () => {
     if (!hasMore || isLoading || isLoadingMore || loadingMoreRef.current) {
@@ -106,20 +145,36 @@ export default function PracticeScreen() {
 
   useFocusEffect(
     React.useCallback(() => {
+      // Read params synchronously and pass into the fetch — never wait on setState.
+      const knowledgeAreaId = routeParams.knowledgeAreaId || null;
+      const domain = routeParams.domain || null;
+
+      // Domain practice is premium-only.
+      if (domain && !isPremium) {
+        (navigation as any).replace('Paywall', { feature: 'domain_practice' });
+        return;
+      }
+
+      if (knowledgeAreaId) {
+        setSelectedKnowledgeArea(knowledgeAreaId);
+      }
+      if (domain) {
+        setSelectedDomain(domain);
+      }
       dispatch(clearQuestions());
-      const params = route.params as any;
-      if (params?.knowledgeAreaId && !selectedKnowledgeArea) {
-        setSelectedKnowledgeArea(params.knowledgeAreaId);
-      }
-      if (params?.domain && !selectedDomain) {
-        setSelectedDomain(params.domain);
-      }
-      loadQuestions();
+      loadQuestions({ knowledgeAreaId, domain });
       dailyActivityService.startSession();
       return () => {
         dailyActivityService.endSession();
       };
-    }, [dispatch, selectedKnowledgeArea, selectedDomain, route.params, loadQuestions])
+    }, [
+      dispatch,
+      navigation,
+      isPremium,
+      routeParams.knowledgeAreaId,
+      routeParams.domain,
+      loadQuestions,
+    ])
   );
 
   const handleQuestionPress = (questionId: string) => {
@@ -133,10 +188,44 @@ export default function PracticeScreen() {
     setSelectedQuestionFilter(filter);
   };
 
-  const hasActiveFilters = selectedQuestionFilter !== 'all' || selectedKnowledgeArea || selectedDomain;
-  const subtitleCount = selectedQuestionFilter === 'unanswered'
-    ? filteredQuestions.length
-    : total || filteredQuestions.length;
+  const hasActiveFilters =
+    selectedQuestionFilter !== 'all' || !!activeKnowledgeArea || !!activeDomain;
+
+  // Free KA: always prefer API freeAccess (accessibleTotal/fullTotal). Never use the
+  // free limit (10) as the denominator — that produced "100 of 10" / "10 of 10".
+  const accessibleCount = !isPremium
+    ? freeAccessibleTotal ??
+      (activeKnowledgeArea
+        ? Math.min(filteredQuestions.length || total || 0, freeLimitPerKnowledgeArea || 10)
+        : filteredQuestions.length || total || 0)
+    : selectedQuestionFilter === 'unanswered'
+      ? filteredQuestions.length
+      : total || filteredQuestions.length;
+  const fullCount = !isPremium ? freeFullTotal : null;
+
+  const subtitleText = (() => {
+    if (isLoading && filteredQuestions.length === 0) {
+      return 'Loading questions…';
+    }
+    if (selectedQuestionFilter === 'unanswered') {
+      return `${filteredQuestions.length} unanswered`;
+    }
+    if (!isPremium && fullCount != null) {
+      return `${accessibleCount}/${fullCount} questions available`;
+    }
+    if (!isPremium && activeKnowledgeArea) {
+      return `${accessibleCount} free questions available`;
+    }
+    return `${accessibleCount} questions available`;
+  })();
+
+  // Show upgrade whenever free KA list is fully loaded (not only after answering).
+  const showUpgradePrompt =
+    !isPremium &&
+    !!activeKnowledgeArea &&
+    !isLoading &&
+    filteredQuestions.length > 0 &&
+    (promptUpgrade || !hasMore || (fullCount != null && accessibleCount < fullCount));
 
   const renderQuestion = ({ item }: any) => {
     const knowledgeArea = item.knowledgeAreaName || item.knowledge_area_name;
@@ -200,7 +289,7 @@ export default function PracticeScreen() {
       <View style={styles.headerContainer}>
         <SectionHeader
           title="Practice Questions"
-          subtitle={`${subtitleCount} questions available`}
+          subtitle={subtitleText}
           icon="book-open-variant"
         />
       </View>
@@ -253,6 +342,7 @@ export default function PracticeScreen() {
         contentContainerStyle={[
           styles.list,
           filteredQuestions.length === 0 && styles.emptyList,
+          showUpgradePrompt && styles.listWithUpgrade,
         ]}
         refreshing={isLoading && !isLoadingMore}
         onRefresh={loadQuestions}
@@ -260,11 +350,42 @@ export default function PracticeScreen() {
         onEndReachedThreshold={0.4}
         showsVerticalScrollIndicator={false}
         ListFooterComponent={
-          isLoadingMore ? (
-            <View style={styles.footerLoader}>
-              <ActivityIndicator size="small" color={colors.primary} />
-            </View>
-          ) : null
+          <>
+            {isLoadingMore ? (
+              <View style={styles.footerLoader}>
+                <ActivityIndicator size="small" color={colors.primary} />
+              </View>
+            ) : null}
+            {showUpgradePrompt ? (
+              <Card style={styles.upgradeCard}>
+                <Card.Content style={styles.upgradeContent}>
+                  <Icon name="crown" size={28} color={colors.primary} />
+                  <Text variant="titleMedium" style={styles.upgradeTitle}>
+                    Want more questions?
+                  </Text>
+                  <Text variant="bodyMedium" style={styles.upgradeBody}>
+                    You’re viewing {accessibleCount} of {fullCount ?? 'many'}{' '}
+                    questions
+                    {freeLimitPerKnowledgeArea
+                      ? ` (free limit: ${freeLimitPerKnowledgeArea} per knowledge area)`
+                      : ''}
+                    . Upgrade to Premium to unlock the rest.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.upgradeButton}
+                    onPress={() =>
+                      (navigation as any).navigate('Paywall', {
+                        feature: 'unlimited_questions',
+                      })
+                    }
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.upgradeButtonText}>Upgrade to Premium</Text>
+                  </TouchableOpacity>
+                </Card.Content>
+              </Card>
+            ) : null}
+          </>
         }
         ListEmptyComponent={
           <EmptyState
@@ -292,6 +413,44 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.gray50,
+  },
+  listWithUpgrade: {
+    paddingBottom: spacing.xl,
+  },
+  upgradeCard: {
+    marginTop: spacing.md,
+    marginBottom: spacing.lg,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    backgroundColor: `${colors.primary}08`,
+    ...shadows.sm,
+  },
+  upgradeContent: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+  },
+  upgradeTitle: {
+    fontWeight: '700',
+    color: colors.text,
+    textAlign: 'center',
+  },
+  upgradeBody: {
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  upgradeButton: {
+    marginTop: spacing.xs,
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+  },
+  upgradeButtonText: {
+    color: '#ffffff',
+    fontWeight: '700',
+    fontSize: 15,
   },
   loadingContainer: {
     flex: 1,

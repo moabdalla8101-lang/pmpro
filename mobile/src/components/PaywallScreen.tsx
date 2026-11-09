@@ -9,7 +9,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { Card, Text, Button, Divider, Checkbox } from 'react-native-paper';
+import { Card, Text, Button } from 'react-native-paper';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../store';
@@ -17,13 +17,28 @@ import type { PurchasesPackage } from 'react-native-purchases';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { colors } from '../theme';
 import { spacing, borderRadius, shadows } from '../utils/styles';
-import { getSubscriptionDisplayName } from '../utils/subscriptionUtils';
+import {
+  getPlanRank,
+  formatSubscriptionEndDate,
+  getSubscriptionDisplayName,
+  matchesSubscriptionTier,
+  planHasEnded,
+  userHasActivePremium,
+} from '../utils/subscriptionUtils';
 import { fetchOfferings, purchaseSubscription, restoreSubscription } from '../store/slices/subscriptionSlice';
+import { syncSubscription } from '../store/slices/authSlice';
 import {
   isRevenueCatAvailable,
   isRevenueCatConfigured,
 } from '../services/revenueCatService';
 import { useRequireAuth } from '../utils/requireAuth';
+import { getApiErrorMessage } from '../utils/apiError';
+import {
+  APPLE_EULA_URL,
+  openExternalUrl,
+  privacyPolicyUrl,
+  termsOfUseUrl,
+} from '../config/legal';
 
 interface SubscriptionPlan {
   id: string;
@@ -37,17 +52,29 @@ interface SubscriptionPlan {
 
 const PLANS: SubscriptionPlan[] = [
   {
+    id: 'cram_time',
+    name: 'Cram Time',
+    price: '$9.99',
+    period: 'per week',
+    features: [
+      'Perfect for last-minute prep',
+      'Full premium access',
+      'Cancel anytime',
+    ],
+  },
+  {
     id: 'premium_monthly',
     name: 'Premium Monthly',
     price: '$12.49',
     period: 'per month',
     features: [
+      '3-day free trial',
       'Unlimited practice questions',
       'Unlimited mock exams',
       'Bookmarked questions',
       'Missed questions review',
       'Advanced analytics',
-      'Priority support',
+      'Cancel anytime',
     ],
   },
   {
@@ -58,6 +85,7 @@ const PLANS: SubscriptionPlan[] = [
     savings: 'Save 33%',
     popular: true,
     features: [
+      '3-day free trial',
       'Everything in Monthly',
       'Best value option',
       'Cancel anytime',
@@ -70,23 +98,37 @@ const PLANS: SubscriptionPlan[] = [
     period: 'per year',
     savings: 'Save 47%',
     features: [
+      '3-day free trial',
       'Everything in Monthly',
       'Lowest price per month',
       'Cancel anytime',
     ],
   },
-  {
-    id: 'cram_time',
-    name: 'Cram Time',
-    price: '$9.99',
-    period: 'per week',
-    features: [
-      'Perfect for last-minute prep',
-      'Full premium access',
-      '7-day access',
-    ],
-  },
 ];
+
+/** Display order: Cram → Monthly → 6 Months → Yearly */
+function planSortKey(identifier: string): number {
+  return getPlanRank(identifier);
+}
+
+function isCramPlanId(identifier: string | undefined): boolean {
+  if (!identifier) return false;
+  const id = identifier.toLowerCase();
+  return id.includes('cram') || id.includes('weekly') || id === '$rc_weekly';
+}
+
+function findStaticPlan(
+  identifier: string,
+  productIdentifier?: string
+): SubscriptionPlan | undefined {
+  return PLANS.find(
+    (p) =>
+      p.id === identifier ||
+      p.id === productIdentifier ||
+      identifier.toLowerCase().includes(p.id) ||
+      (productIdentifier || '').toLowerCase().includes(p.id)
+  );
+}
 
 interface PaywallScreenProps {
   feature?: string;
@@ -97,7 +139,7 @@ interface PaywallScreenProps {
 export default function PaywallScreen({ 
   feature, 
   onClose,
-  showFreeTrial = false
+  showFreeTrial = true
 }: PaywallScreenProps) {
   const navigation = useNavigation();
   const route = useRoute();
@@ -113,6 +155,7 @@ export default function PaywallScreen({
   const purchasesConfigured = isRevenueCatConfigured();
   const routeParams = route.params as PaywallScreenProps | undefined;
   const requestedFeature = feature || routeParams?.feature;
+  // Trial messaging is on by default for monthly / 6-month / annual (not Cram Time).
   const trialEnabled = routeParams?.showFreeTrial ?? showFreeTrial;
 
   // Fetch offerings on mount
@@ -122,27 +165,50 @@ export default function PaywallScreen({
     }
   }, [dispatch, purchasesConfigured]);
 
+  const currentTier = user?.subscriptionTier || 'free';
+  const expiresAt = user?.subscriptionExpiresAt;
+  const isSubscriber = userHasActivePremium(user);
+  const ended = planHasEnded(currentTier, expiresAt);
+  const endedOn = formatSubscriptionEndDate(expiresAt);
+
   // Map RevenueCat packages to plans when offerings are loaded
   useEffect(() => {
     if (offerings?.current) {
-      const availablePackages = offerings.current.availablePackages;
+      const availablePackages = [...offerings.current.availablePackages].sort(
+        (a, b) =>
+          planSortKey(a.product.identifier || a.identifier) -
+          planSortKey(b.product.identifier || b.identifier)
+      );
       setPackages(availablePackages);
-      
-      // Set default selected plan to the first available package or most popular
-      if (availablePackages.length > 0) {
-        const semiAnnualPackage = availablePackages.find(pkg => 
+
+      if (availablePackages.length === 0) return;
+
+      // Prefer first upgrade option when already subscribed; otherwise most popular
+      const currentRank = getPlanRank(currentTier);
+      const upgrade = availablePackages.find(
+        (pkg) =>
+          getPlanRank(pkg.product.identifier || pkg.identifier) > currentRank
+      );
+      const semiAnnual = availablePackages.find(
+        (pkg) =>
           pkg.identifier.includes('semi_annual') ||
           pkg.identifier.includes('six_month') ||
           pkg.product.identifier === 'premium_semi_annual'
-        );
-        if (semiAnnualPackage) {
-          setSelectedPlan(semiAnnualPackage.identifier);
-        } else {
-          setSelectedPlan(availablePackages[0].identifier);
-        }
-      }
+      );
+      const fallback = availablePackages.find(
+        (pkg) =>
+          !matchesSubscriptionTier(pkg.product.identifier, currentTier, expiresAt) &&
+          !matchesSubscriptionTier(pkg.identifier, currentTier, expiresAt)
+      );
+
+      const initial =
+        upgrade ||
+        (!isSubscriber ? semiAnnual : undefined) ||
+        fallback ||
+        availablePackages[0];
+      setSelectedPlan(initial.identifier);
     }
-  }, [offerings]);
+  }, [offerings, currentTier, expiresAt, isSubscriber]);
 
   // Show error alerts
   useEffect(() => {
@@ -151,8 +217,77 @@ export default function PaywallScreen({
     }
   }, [error]);
 
+  const findPackageForPlan = (planId: string): PurchasesPackage | undefined => {
+    const direct = packages.find(
+      (pkg) =>
+        pkg.identifier === planId ||
+        pkg.product.identifier === planId
+    );
+    if (direct) return direct;
+
+    // Map static plan ids / RC package ids to products
+    return packages.find((pkg) => {
+      const ids = [pkg.identifier, pkg.product.identifier].map((id) =>
+        id.toLowerCase()
+      );
+      const target = planId.toLowerCase();
+      if (ids.some((id) => id.includes(target) || target.includes(id))) {
+        return true;
+      }
+      if (isCramPlanId(planId) && ids.some((id) => isCramPlanId(id))) {
+        return true;
+      }
+      if (
+        (target.includes('semi') || target.includes('six_month')) &&
+        ids.some((id) => id.includes('semi') || id.includes('six_month'))
+      ) {
+        return true;
+      }
+      if (
+        (target.includes('annual') || target.includes('yearly')) &&
+        ids.some((id) => id.includes('annual') || id.includes('yearly'))
+      ) {
+        return true;
+      }
+      if (
+        target.includes('monthly') &&
+        ids.some((id) => id.includes('monthly'))
+      ) {
+        return true;
+      }
+      return false;
+    });
+  };
+
+  const isCurrentPackage = (pkg: PurchasesPackage) =>
+    matchesSubscriptionTier(pkg.product.identifier, currentTier, expiresAt) ||
+    matchesSubscriptionTier(pkg.identifier, currentTier, expiresAt);
+
+  const isCurrentStaticPlan = (planId: string) =>
+    matchesSubscriptionTier(planId, currentTier, expiresAt);
+
   const handleSubscribe = async (planId: string) => {
+    if (!acceptTerms) {
+      Alert.alert(
+        'Terms Required',
+        'Please check the box to agree to the Terms of Service, then try again.'
+      );
+      return;
+    }
+
     if (!requireAuth('paywall')) return;
+
+    const packageToPurchase = findPackageForPlan(planId);
+    if (
+      (packageToPurchase && isCurrentPackage(packageToPurchase)) ||
+      (!packageToPurchase && isCurrentStaticPlan(planId))
+    ) {
+      Alert.alert(
+        'Already on this plan',
+        'Choose a different plan to upgrade or downgrade.'
+      );
+      return;
+    }
 
     if (!purchasesAvailable) {
       Alert.alert(
@@ -170,29 +305,36 @@ export default function PaywallScreen({
       return;
     }
 
-    if (!acceptTerms) {
-      Alert.alert('Terms Required', 'Please accept the terms and conditions to continue.');
-      return;
-    }
-
     try {
-      // Find the package by identifier
-      const packageToPurchase = packages.find(pkg => 
-        pkg.identifier === planId || 
-        pkg.product.identifier === planId
-      );
-
       if (!packageToPurchase) {
-        Alert.alert('Error', 'Selected plan not available. Please try again.');
+        Alert.alert(
+          'Plan Unavailable',
+          packages.length === 0
+            ? 'Subscription plans could not be loaded from the App Store. Check your connection and try again.'
+            : 'That plan is not available right now. Select another plan and try again.'
+        );
         return;
       }
 
-      // Purchase the package
       await dispatch(purchaseSubscription(packageToPurchase)).unwrap();
-      
+      // Webhook can lag a few seconds behind StoreKit — poll before treating backend as source of truth.
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await new Promise((r) => setTimeout(r, attempt === 0 ? 800 : 1500));
+        try {
+          const result = await dispatch(syncSubscription()).unwrap();
+          if (result?.subscriptionTier && result.subscriptionTier !== 'free') {
+            break;
+          }
+        } catch {
+          // keep local RC-applied tier if backend has not caught up yet
+        }
+      }
+
       Alert.alert(
         'Success!',
-        'Your subscription has been activated. Enjoy premium features!',
+        isSubscriber
+          ? 'Your plan has been updated.'
+          : 'Your subscription has been activated. Enjoy premium features!',
         [
           {
             text: 'OK',
@@ -208,19 +350,12 @@ export default function PaywallScreen({
         // User cancelled, don't show error
         return;
       }
-      Alert.alert('Purchase Failed', error.message || 'Failed to complete purchase. Please try again.');
+      Alert.alert('Purchase Failed', getApiErrorMessage(error, 'Failed to complete purchase. Please try again.'));
     }
   };
 
   const handleStartFreeTrial = async () => {
-    if (!acceptTerms) {
-      Alert.alert('Terms Required', 'Please accept the terms and conditions to continue.');
-      return;
-    }
-
-    // Free trial is handled through RevenueCat offerings
-    // If a package has a free trial, it will be shown automatically
-    // Just purchase the selected plan - RevenueCat will handle the trial
+    // Free trial is an App Store intro offer on the selected package.
     await handleSubscribe(selectedPlan);
   };
 
@@ -246,7 +381,7 @@ export default function PaywallScreen({
       await dispatch(restoreSubscription()).unwrap();
       Alert.alert('Success', 'Your purchases have been restored.');
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to restore purchases.');
+      Alert.alert('Error', getApiErrorMessage(error, 'Failed to restore purchases.'));
     }
   };
 
@@ -269,10 +404,59 @@ export default function PaywallScreen({
       'bookmarks': 'Unlock Bookmark Feature',
       'missed_questions': 'Unlock Missed Questions Review',
       'advanced_analytics': 'Unlock Advanced Analytics',
+      'domain_practice': 'Unlock Domain Practice',
     };
     
     return messages[requestedFeature] || 'Unlock Premium Features';
   };
+
+  const selectedPackage = packages.find(
+    (pkg) =>
+      pkg.identifier === selectedPlan ||
+      pkg.product.identifier === selectedPlan
+  );
+  const selectedStaticPlan =
+    findStaticPlan(
+      selectedPlan,
+      selectedPackage?.product.identifier
+    ) || PLANS.find((plan) => plan.id === selectedPlan);
+  const selectedPlanPriceLabel = selectedPackage
+    ? `${selectedPackage.product.priceString} ${selectedStaticPlan?.period || 'per billing period'}`
+    : selectedStaticPlan
+      ? `${selectedStaticPlan.price} ${selectedStaticPlan.period}`
+      : 'the selected plan price';
+
+  const selectedIsCram =
+    isCramPlanId(selectedPlan) ||
+    isCramPlanId(selectedPackage?.product.identifier) ||
+    selectedStaticPlan?.id === 'cram_time';
+  const selectedIsCurrent = selectedPackage
+    ? isCurrentPackage(selectedPackage)
+    : isCurrentStaticPlan(selectedPlan);
+  const selectedRank = getPlanRank(
+    selectedPackage?.product.identifier || selectedPlan
+  );
+  const currentRank = getPlanRank(currentTier);
+  const showTrialForSelection =
+    trialEnabled && !selectedIsCram && !isSubscriber;
+  const sharedFeatures = [
+    'Unlimited practice questions',
+    'Unlimited mock exams',
+    'Bookmarks & missed questions',
+    'Advanced analytics',
+    'Cancel anytime',
+  ];
+
+  const ctaLabel = (() => {
+    if (selectedIsCurrent) return 'Current Plan';
+    if (!isSubscriber) {
+      return showTrialForSelection ? 'Start 3-Day Free Trial' : 'Subscribe Now';
+    }
+    const name = selectedStaticPlan?.name || 'this plan';
+    if (selectedRank > currentRank) return `Upgrade to ${name}`;
+    if (selectedRank < currentRank) return `Switch to ${name}`;
+    return `Change to ${name}`;
+  })();
 
   return (
     <SafeAreaView style={styles.container}>
@@ -295,9 +479,44 @@ export default function PaywallScreen({
           <Text variant="bodyLarge" style={styles.subtitle}>
             Get unlimited access to practice, exams, review tools, and analytics.
           </Text>
+          <View style={styles.trialBadgeRow}>
+            {showTrialForSelection && (
+              <View style={styles.trialBadge}>
+                <Icon name="gift-outline" size={16} color={colors.primary} />
+                <Text variant="labelMedium" style={styles.trialBadgeText}>
+                  3-day free trial
+                </Text>
+              </View>
+            )}
+            <View style={styles.trialBadge}>
+              <Icon name="close-circle-outline" size={16} color={colors.primary} />
+              <Text variant="labelMedium" style={styles.trialBadgeText}>
+                Cancel anytime
+              </Text>
+            </View>
+          </View>
         </View>
 
-        {/* Subscription Plans */}
+        {isSubscriber && (
+          <View style={styles.currentPlanBanner}>
+            <Icon name="check-decagram" size={18} color={colors.primary} />
+            <Text variant="bodyMedium" style={styles.currentPlanBannerText}>
+              Current plan: {getSubscriptionDisplayName(currentTier)}
+            </Text>
+          </View>
+        )}
+
+        {ended && (
+          <View style={styles.currentPlanBanner}>
+            <Icon name="alert-circle-outline" size={18} color={colors.error} />
+            <Text variant="bodyMedium" style={styles.currentPlanBannerText}>
+              {getSubscriptionDisplayName(currentTier)} ended
+              {endedOn ? ` on ${endedOn}` : ''}. Choose a plan to renew.
+            </Text>
+          </View>
+        )}
+
+        {/* Subscription Plans — compact rows, no radio buttons */}
         <View style={styles.plansContainer}>
           {isLoading && packages.length === 0 ? (
             <View style={styles.loadingContainer}>
@@ -310,165 +529,166 @@ export default function PaywallScreen({
             packages.map((pkg) => {
               const packageInfo = getPackageInfo(pkg);
               const isSelected = selectedPlan === pkg.identifier;
+              const isCurrent = isCurrentPackage(pkg);
               const isPopular =
                 pkg.identifier.includes('semi_annual') ||
                 pkg.identifier.includes('six_month') ||
                 pkg.product.identifier === 'premium_semi_annual';
-              
-              // Map to static plan features if available, otherwise use package info
-              const staticPlan = PLANS.find(p => 
-                p.id === pkg.identifier || 
-                p.id === pkg.product.identifier ||
-                pkg.identifier.includes(p.id.replace('_', ''))
+              const staticPlan = findStaticPlan(
+                pkg.identifier,
+                pkg.product.identifier
               );
-              const features = staticPlan?.features || [
-                'Unlimited practice questions',
-                'Unlimited mock exams',
-                'All premium features',
-              ];
-              
+              const showPlanTrial =
+                trialEnabled &&
+                !isCramPlanId(pkg.identifier) &&
+                !isCramPlanId(pkg.product.identifier);
+
               return (
-                <Card
+                <TouchableOpacity
                   key={pkg.identifier}
+                  activeOpacity={0.85}
+                  onPress={() => setSelectedPlan(pkg.identifier)}
                   style={[
-                    styles.planCard,
-                    isPopular && styles.popularPlanCard,
+                    styles.planRow,
+                    isSelected && styles.planRowSelected,
+                    isCurrent && styles.planRowCurrent,
                   ]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isSelected }}
                 >
-                  {isPopular && (
-                    <View style={styles.popularBadge}>
-                      <Text variant="labelSmall" style={styles.popularBadgeText}>
-                        MOST POPULAR
-                      </Text>
-                    </View>
-                  )}
-                  <Card.Content>
-                    <View style={styles.planHeader}>
-                      <View>
-                        <Text variant="titleLarge" style={styles.planName}>
-                          {staticPlan?.name || packageInfo.title}
-                        </Text>
-                        <View style={styles.priceRow}>
-                          <Text variant="headlineMedium" style={styles.planPrice}>
-                            {packageInfo.price}
-                          </Text>
-                          {staticPlan?.period && (
-                            <Text variant="bodyMedium" style={styles.planPeriod}>
-                              {staticPlan.period}
-                            </Text>
-                          )}
-                        </View>
-                        {staticPlan?.savings && (
-                          <Text variant="labelSmall" style={styles.savingsText}>
-                            {staticPlan.savings}
-                          </Text>
-                        )}
-                      </View>
-                      <TouchableOpacity
-                        onPress={() => setSelectedPlan(pkg.identifier)}
-                        style={[
-                          styles.radioButton,
-                          isSelected && styles.radioButtonSelected,
-                        ]}
+                  <View style={styles.planRowLeft}>
+                    <View style={styles.planTitleRow}>
+                      <Text
+                        variant="titleMedium"
+                        style={styles.planName}
+                        numberOfLines={1}
                       >
-                        {isSelected && (
-                          <View style={styles.radioButtonInner} />
-                        )}
-                      </TouchableOpacity>
-                    </View>
-                    <Divider style={styles.divider} />
-                    <View style={styles.featuresList}>
-                      {features.map((feature, index) => (
-                        <View key={index} style={styles.featureItem}>
-                          <Icon name="check-circle" size={20} color={colors.success} />
-                          <Text variant="bodyMedium" style={styles.featureText}>
-                            {feature}
+                        {staticPlan?.name || packageInfo.title}
+                      </Text>
+                      {isCurrent && (
+                        <View style={styles.currentBadge}>
+                          <Text style={styles.currentBadgeText}>CURRENT</Text>
+                        </View>
+                      )}
+                      {!isCurrent && isPopular && (
+                        <View style={styles.popularInlineBadge}>
+                          <Text style={styles.popularInlineBadgeText}>
+                            POPULAR
                           </Text>
                         </View>
-                      ))}
+                      )}
                     </View>
-                  </Card.Content>
-                </Card>
+                    {staticPlan?.savings ? (
+                      <Text variant="labelSmall" style={styles.savingsText}>
+                        {staticPlan.savings}
+                      </Text>
+                    ) : null}
+                    {showPlanTrial ? (
+                      <Text variant="labelSmall" style={styles.trialLine}>
+                        3-day free trial
+                      </Text>
+                    ) : null}
+                  </View>
+                  <View style={styles.planRowRight}>
+                    <Text variant="titleMedium" style={styles.planPrice}>
+                      {packageInfo.price}
+                    </Text>
+                    <Text variant="bodySmall" style={styles.planPeriod}>
+                      {staticPlan?.period || ''}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
               );
             })
           ) : (
-            // Fallback to static plans if RevenueCat packages not available
-            PLANS.map((plan) => (
-              <Card
-                key={plan.id}
-                style={[
-                  styles.planCard,
-                  plan.popular && styles.popularPlanCard,
-                ]}
-              >
-                {plan.popular && (
-                  <View style={styles.popularBadge}>
-                    <Text variant="labelSmall" style={styles.popularBadgeText}>
-                      MOST POPULAR
-                    </Text>
-                  </View>
-                )}
-                <Card.Content>
-                  <View style={styles.planHeader}>
-                    <View>
-                      <Text variant="titleLarge" style={styles.planName}>
+            PLANS.map((plan) => {
+              const isSelected = selectedPlan === plan.id;
+              const isCurrent = isCurrentStaticPlan(plan.id);
+              const showPlanTrial =
+                trialEnabled && !isCramPlanId(plan.id);
+              return (
+                <TouchableOpacity
+                  key={plan.id}
+                  activeOpacity={0.85}
+                  onPress={() => setSelectedPlan(plan.id)}
+                  style={[
+                    styles.planRow,
+                    isSelected && styles.planRowSelected,
+                    isCurrent && styles.planRowCurrent,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isSelected }}
+                >
+                  <View style={styles.planRowLeft}>
+                    <View style={styles.planTitleRow}>
+                      <Text
+                        variant="titleMedium"
+                        style={styles.planName}
+                        numberOfLines={1}
+                      >
                         {plan.name}
                       </Text>
-                      <View style={styles.priceRow}>
-                        <Text variant="headlineMedium" style={styles.planPrice}>
-                          {plan.price}
-                        </Text>
-                        <Text variant="bodyMedium" style={styles.planPeriod}>
-                          {plan.period}
-                        </Text>
-                      </View>
-                      {plan.savings && (
-                        <Text variant="labelSmall" style={styles.savingsText}>
-                          {plan.savings}
-                        </Text>
+                      {isCurrent && (
+                        <View style={styles.currentBadge}>
+                          <Text style={styles.currentBadgeText}>CURRENT</Text>
+                        </View>
+                      )}
+                      {!isCurrent && plan.popular && (
+                        <View style={styles.popularInlineBadge}>
+                          <Text style={styles.popularInlineBadgeText}>
+                            POPULAR
+                          </Text>
+                        </View>
                       )}
                     </View>
-                    <TouchableOpacity
-                      onPress={() => setSelectedPlan(plan.id)}
-                      style={[
-                        styles.radioButton,
-                        selectedPlan === plan.id && styles.radioButtonSelected,
-                      ]}
-                    >
-                      {selectedPlan === plan.id && (
-                        <View style={styles.radioButtonInner} />
-                      )}
-                    </TouchableOpacity>
+                    {plan.savings ? (
+                      <Text variant="labelSmall" style={styles.savingsText}>
+                        {plan.savings}
+                      </Text>
+                    ) : null}
+                    {showPlanTrial ? (
+                      <Text variant="labelSmall" style={styles.trialLine}>
+                        3-day free trial
+                      </Text>
+                    ) : null}
                   </View>
-                  <Divider style={styles.divider} />
-                  <View style={styles.featuresList}>
-                    {plan.features.map((feature, index) => (
-                      <View key={index} style={styles.featureItem}>
-                        <Icon name="check-circle" size={20} color={colors.success} />
-                        <Text variant="bodyMedium" style={styles.featureText}>
-                          {feature}
-                        </Text>
-                      </View>
-                    ))}
+                  <View style={styles.planRowRight}>
+                    <Text variant="titleMedium" style={styles.planPrice}>
+                      {plan.price}
+                    </Text>
+                    <Text variant="bodySmall" style={styles.planPeriod}>
+                      {plan.period}
+                    </Text>
                   </View>
-                </Card.Content>
-              </Card>
-            ))
+                </TouchableOpacity>
+              );
+            })
           )}
         </View>
 
-        {/* Free Trial Option */}
-        {trialEnabled && (
+        <View style={styles.featuresCard}>
+          {sharedFeatures.map((feature) => (
+            <View key={feature} style={styles.featureItem}>
+              <Icon name="check-circle" size={18} color={colors.success} />
+              <Text variant="bodyMedium" style={styles.featureText}>
+                {feature}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Free Trial Option — not shown for Cram Time */}
+        {showTrialForSelection && (
           <Card style={styles.trialCard}>
             <Card.Content>
               <View style={styles.trialContent}>
                 <Icon name="gift" size={24} color={colors.primary} />
                 <View style={styles.trialText}>
                   <Text variant="titleMedium" style={styles.trialTitle}>
-                    Start 7-Day Free Trial
+                    3-Day Free Trial
                   </Text>
                   <Text variant="bodySmall" style={styles.trialDescription}>
-                    Try Premium free for 7 days, then {PLANS.find(p => p.id === selectedPlan)?.price}/{PLANS.find(p => p.id === selectedPlan)?.period}
+                    Try Premium free for 3 days. Cancel anytime before the trial ends and you won’t be charged. After that, {selectedPlanPriceLabel}.
                   </Text>
                 </View>
               </View>
@@ -476,42 +696,103 @@ export default function PaywallScreen({
           </Card>
         )}
 
-        {/* Terms Checkbox */}
-        <View style={styles.termsContainer}>
-          <Checkbox
-            status={acceptTerms ? 'checked' : 'unchecked'}
-            onPress={() => setAcceptTerms(!acceptTerms)}
-          />
-          <Text variant="bodySmall" style={styles.termsText}>
-            I agree to the Terms of Service and Privacy Policy. Subscription auto-renews unless cancelled.
-          </Text>
-        </View>
-
-        {/* CTA Buttons */}
-        <View style={styles.ctaContainer}>
-          {trialEnabled && (
-            <Button
-              mode="contained"
-              onPress={handleStartFreeTrial}
-              disabled={!acceptTerms}
-              style={styles.trialButton}
-              contentStyle={styles.buttonContent}
-              labelStyle={styles.buttonLabel}
-            >
-              Start Free Trial
-            </Button>
-          )}
-          <Button
-            mode="contained"
-            onPress={() => handleSubscribe(selectedPlan)}
-            disabled={!acceptTerms || isPurchasing}
-            loading={isPurchasing}
-            style={styles.subscribeButton}
-            contentStyle={styles.buttonContent}
-            labelStyle={styles.buttonLabel}
+        {/* Terms Checkbox — clear bordered box + whole row tappable */}
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => setAcceptTerms(!acceptTerms)}
+          style={[
+            styles.termsContainer,
+            acceptTerms && styles.termsContainerChecked,
+          ]}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: acceptTerms }}
+        >
+          <View
+            style={[
+              styles.checkboxBox,
+              acceptTerms && styles.checkboxBoxChecked,
+            ]}
           >
-            {isPurchasing ? 'Processing...' : 'Subscribe Now'}
-          </Button>
+            {acceptTerms ? (
+              <Icon name="check" size={16} color={colors.white} />
+            ) : null}
+          </View>
+          <View style={styles.termsTextWrap}>
+            <Text variant="labelLarge" style={styles.termsTitle}>
+              I agree to the Terms
+            </Text>
+            <Text variant="bodySmall" style={styles.termsText}>
+              <Text
+                style={styles.legalLink}
+                onPress={() => openExternalUrl(termsOfUseUrl())}
+              >
+                Terms of Use
+              </Text>
+              {' and '}
+              <Text
+                style={styles.legalLink}
+                onPress={() => openExternalUrl(privacyPolicyUrl())}
+              >
+                Privacy Policy
+              </Text>
+              {showTrialForSelection
+                ? '. Includes a 3-day free trial; then auto-renews unless cancelled at least 24 hours before the period ends. Cancel anytime in App Store settings.'
+                : '. Subscription auto-renews unless cancelled at least 24 hours before the period ends. Cancel anytime in App Store settings.'}
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* CTA — one spinner only; current plan cannot be purchased again */}
+        <View style={styles.ctaContainer}>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={
+              selectedIsCurrent
+                ? undefined
+                : showTrialForSelection
+                  ? handleStartFreeTrial
+                  : () => handleSubscribe(selectedPlan)
+            }
+            disabled={isPurchasing || selectedIsCurrent}
+            style={[
+              styles.subscribeButton,
+              selectedIsCurrent && styles.subscribeButtonCurrent,
+              !acceptTerms && !selectedIsCurrent && styles.subscribeButtonNeedsTerms,
+              isPurchasing && styles.subscribeButtonBusy,
+            ]}
+            accessibilityRole="button"
+            accessibilityState={{
+              busy: isPurchasing,
+              disabled: selectedIsCurrent,
+            }}
+          >
+            {isPurchasing ? (
+              <View style={styles.subscribeButtonInner}>
+                <ActivityIndicator color={colors.white} size="small" />
+                <Text style={styles.buttonLabel}>Processing...</Text>
+              </View>
+            ) : (
+              <Text
+                style={[
+                  styles.buttonLabel,
+                  selectedIsCurrent && styles.buttonLabelCurrent,
+                ]}
+              >
+                {ctaLabel}
+              </Text>
+            )}
+          </TouchableOpacity>
+          <Text variant="bodySmall" style={styles.ctaHint}>
+            {selectedIsCurrent
+              ? 'Select another plan to upgrade or downgrade'
+              : showTrialForSelection
+                ? 'No charge today · Cancel anytime · Auto-renews after trial'
+                : isSubscriber
+                  ? 'Changes are handled by the App Store · Cancel anytime'
+                  : selectedIsCram
+                    ? 'Billed weekly · Cancel anytime'
+                    : 'Billed after selection · Cancel anytime'}
+          </Text>
           <Button
             mode="text"
             onPress={handleRestorePurchases}
@@ -520,6 +801,31 @@ export default function PaywallScreen({
           >
             Restore Purchases
           </Button>
+          <View style={styles.legalLinksRow}>
+            <Text
+              variant="bodySmall"
+              style={styles.legalLink}
+              onPress={() => openExternalUrl(termsOfUseUrl())}
+            >
+              Terms of Use
+            </Text>
+            <Text variant="bodySmall" style={styles.legalSeparator}>·</Text>
+            <Text
+              variant="bodySmall"
+              style={styles.legalLink}
+              onPress={() => openExternalUrl(privacyPolicyUrl())}
+            >
+              Privacy Policy
+            </Text>
+            <Text variant="bodySmall" style={styles.legalSeparator}>·</Text>
+            <Text
+              variant="bodySmall"
+              style={styles.legalLink}
+              onPress={() => openExternalUrl(APPLE_EULA_URL)}
+            >
+              EULA
+            </Text>
+          </View>
           <Button
             mode="text"
             onPress={onClose || (() => navigation.goBack())}
@@ -532,12 +838,21 @@ export default function PaywallScreen({
 
         {/* Trust Indicators */}
         <View style={styles.trustIndicators}>
-          <View style={styles.trustItem}>
-            <Icon name="shield-check" size={20} color={colors.success} />
-            <Text variant="bodySmall" style={styles.trustText}>
-              Secure Payment
-            </Text>
-          </View>
+          {showTrialForSelection ? (
+            <View style={styles.trustItem}>
+              <Icon name="gift" size={20} color={colors.success} />
+              <Text variant="bodySmall" style={styles.trustText}>
+                3-Day Free Trial
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.trustItem}>
+              <Icon name="lightning-bolt" size={20} color={colors.success} />
+              <Text variant="bodySmall" style={styles.trustText}>
+                Instant Access
+              </Text>
+            </View>
+          )}
           <View style={styles.trustItem}>
             <Icon name="cancel" size={20} color={colors.success} />
             <Text variant="bodySmall" style={styles.trustText}>
@@ -545,9 +860,9 @@ export default function PaywallScreen({
             </Text>
           </View>
           <View style={styles.trustItem}>
-            <Icon name="store-check" size={20} color={colors.success} />
+            <Icon name="shield-check" size={20} color={colors.success} />
             <Text variant="bodySmall" style={styles.trustText}>
-              Store-Managed Billing
+              Secure Payment
             </Text>
           </View>
         </View>
@@ -564,6 +879,31 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: spacing.lg,
     paddingBottom: spacing.xl,
+  },
+  trialBadgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  trialBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.gray100,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.pill,
+  },
+  trialBadgeText: {
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  ctaHint: {
+    textAlign: 'center',
+    color: colors.textSecondary,
+    marginTop: -spacing.xs,
   },
   header: {
     alignItems: 'center',
@@ -608,82 +948,119 @@ const styles = StyleSheet.create({
   statLabel: {
     color: colors.textSecondary,
   },
-  plansContainer: {
-    marginBottom: spacing.lg,
-  },
-  planCard: {
-    marginBottom: spacing.md,
-    ...shadows.sm,
-  },
-  popularPlanCard: {
-    borderWidth: 2,
-    borderColor: colors.primary,
-  },
-  popularBadge: {
-    position: 'absolute',
-    top: -10,
-    right: spacing.md,
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.sm,
-    zIndex: 1,
-  },
-  popularBadgeText: {
-    color: colors.white,
-    fontWeight: 'bold',
-  },
-  planHeader: {
+  currentPlanBanner: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: `${colors.primary}12`,
+    borderRadius: borderRadius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  currentPlanBannerText: {
+    color: colors.primary,
+    fontWeight: '600',
+    flex: 1,
+  },
+  plansContainer: {
+    marginBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  planRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: spacing.sm,
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1.5,
+    borderColor: colors.gray300,
+    backgroundColor: colors.white,
+    minHeight: 72,
+  },
+  planRowSelected: {
+    borderColor: colors.primary,
+    borderWidth: 2,
+    backgroundColor: `${colors.primary}08`,
+  },
+  planRowCurrent: {
+    borderColor: colors.primary,
+    backgroundColor: `${colors.primary}14`,
+  },
+  planRowLeft: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  planTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
   },
   planName: {
-    fontWeight: 'bold',
-    marginBottom: spacing.xs,
+    fontWeight: '700',
     color: colors.text,
+    flexShrink: 1,
   },
-  priceRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    marginBottom: spacing.xs,
+  planRowRight: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    flexShrink: 0,
+    minWidth: 88,
   },
   planPrice: {
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: colors.primary,
-    marginRight: spacing.xs,
+    textAlign: 'right',
   },
   planPeriod: {
     color: colors.textSecondary,
+    textAlign: 'right',
+    marginTop: 2,
   },
   savingsText: {
     color: colors.success,
     fontWeight: '600',
   },
-  radioButton: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: colors.gray300,
-    justifyContent: 'center',
-    alignItems: 'center',
+  trialLine: {
+    color: colors.primary,
+    fontWeight: '600',
   },
-  radioButtonSelected: {
-    borderColor: colors.primary,
-  },
-  radioButtonInner: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+  currentBadge: {
     backgroundColor: colors.primary,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
   },
-  divider: {
-    marginVertical: spacing.md,
+  currentBadgeText: {
+    color: colors.white,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.4,
   },
-  featuresList: {
+  popularInlineBadge: {
+    backgroundColor: colors.gray200,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+  },
+  popularInlineBadgeText: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  featuresCard: {
+    backgroundColor: colors.white,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.gray200,
+    padding: spacing.md,
     gap: spacing.sm,
+    marginBottom: spacing.lg,
   },
   featureItem: {
     flexDirection: 'row',
@@ -694,9 +1071,17 @@ const styles = StyleSheet.create({
     flex: 1,
     color: colors.text,
   },
+  subscribeButtonCurrent: {
+    backgroundColor: colors.gray200,
+  },
+  buttonLabelCurrent: {
+    color: colors.textSecondary,
+  },
   trialCard: {
     marginBottom: spacing.lg,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.gray100,
+    borderWidth: 1,
+    borderColor: colors.primary,
     ...shadows.sm,
   },
   trialContent: {
@@ -719,10 +1104,41 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     marginBottom: spacing.lg,
-    gap: spacing.sm,
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1.5,
+    borderColor: colors.gray300,
+    backgroundColor: colors.white,
+  },
+  termsContainerChecked: {
+    borderColor: colors.primary,
+    backgroundColor: colors.gray50,
+  },
+  checkboxBox: {
+    width: 24,
+    height: 24,
+    borderRadius: borderRadius.sm,
+    borderWidth: 2,
+    borderColor: colors.gray500,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+    backgroundColor: colors.white,
+  },
+  checkboxBoxChecked: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  termsTextWrap: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  termsTitle: {
+    color: colors.text,
+    fontWeight: '700',
   },
   termsText: {
-    flex: 1,
     color: colors.textSecondary,
     lineHeight: 20,
   },
@@ -735,6 +1151,23 @@ const styles = StyleSheet.create({
   },
   subscribeButton: {
     backgroundColor: colors.primary,
+    borderRadius: borderRadius.lg,
+    minHeight: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  subscribeButtonNeedsTerms: {
+    opacity: 0.85,
+  },
+  subscribeButtonBusy: {
+    opacity: 0.9,
+  },
+  subscribeButtonInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   buttonContent: {
     paddingVertical: spacing.sm,
@@ -742,12 +1175,28 @@ const styles = StyleSheet.create({
   buttonLabel: {
     fontSize: 16,
     fontWeight: 'bold',
+    color: '#ffffff',
   },
   cancelButton: {
     marginTop: spacing.sm,
   },
   restoreButton: {
     marginTop: spacing.xs,
+  },
+  legalLinksRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  legalLink: {
+    color: colors.primary,
+    textDecorationLine: 'underline',
+    fontWeight: '600',
+  },
+  legalSeparator: {
+    color: colors.textSecondary,
   },
   loadingContainer: {
     alignItems: 'center',

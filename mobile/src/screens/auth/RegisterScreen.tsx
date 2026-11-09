@@ -5,6 +5,7 @@ import { useDispatch } from 'react-redux';
 import { register } from '../../store/slices/authSlice';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { AuthPromptReason } from '../../utils/requireAuth';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 export default function RegisterScreen() {
   const [email, setEmail] = useState('');
@@ -44,7 +45,7 @@ export default function RegisterScreen() {
         parent.goBack();
       }
     } catch (err: any) {
-      setError(err.message || 'Registration failed');
+      setError(getApiErrorMessage(err, 'Registration failed'));
     } finally {
       setLoading(false);
     }

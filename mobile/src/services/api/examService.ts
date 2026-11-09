@@ -8,12 +8,18 @@ export type ExamSubmitAnswer = {
 };
 
 export const examService = {
-  async startExam(certificationId: string, totalQuestions: number, questionIds?: string[]) {
+  async startExam(
+    certificationId: string,
+    totalQuestions: number,
+    questionIds?: string[],
+    examType: 'practice' | 'mock_exam' | 'mini' = 'mock_exam'
+  ) {
     const response = await client.post(
       '/api/exams/start',
       {
         certificationId,
         totalQuestions,
+        examType,
         ...(questionIds ? { questionIds } : {}),
       },
       { timeout: 60000 }

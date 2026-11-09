@@ -1,17 +1,35 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Alert } from 'react-native';
-import { Card, Text, ActivityIndicator } from 'react-native-paper';
+import { Card, Text } from 'react-native-paper';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useSelector, useDispatch } from 'react-redux';
 import { LinearGradient } from 'expo-linear-gradient';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
-import { ActionButton, SectionHeader, EmptyState } from '../../components';
+import { ActionButton, SectionHeader, EmptyState, LoadingSpinner } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { RootState, AppDispatch } from '../../store';
 import { fetchUserExams, deleteExam } from '../../store/slices/examSlice';
-import { hasPremiumAccess } from '../../utils/subscriptionUtils';
+import { userHasActivePremium } from '../../utils/subscriptionUtils';
 import { useRequireAuth } from '../../utils/requireAuth';
+import { getApiErrorMessage } from '../../utils/apiError';
+import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
+
+function getExamTypeLabel(examType?: string | null): string {
+  switch ((examType || '').toLowerCase()) {
+    case 'daily_quiz':
+      return 'Daily Quiz';
+    case 'practice':
+      return 'Practice Test';
+    case 'mini':
+      return 'Mini PMP';
+    case 'mock_exam':
+    case 'mock':
+      return 'Mock Exam';
+    default:
+      return 'Exam';
+  }
+}
 
 export default function ExamScreen() {
   const navigation = useNavigation();
@@ -25,7 +43,7 @@ export default function ExamScreen() {
     averageScore: 0,
   });
 
-  // Fetch exams when screen comes into focus
+  // useFocusEffect already runs on mount — avoid a second fetch (double loaders).
   useFocusEffect(
     React.useCallback(() => {
       if (isAuthenticated) {
@@ -33,13 +51,6 @@ export default function ExamScreen() {
       }
     }, [dispatch, isAuthenticated])
   );
-
-  // Also fetch on initial mount
-  useEffect(() => {
-    if (isAuthenticated) {
-      dispatch(fetchUserExams());
-    }
-  }, [dispatch, isAuthenticated]);
 
   // Calculate exam stats
   useEffect(() => {
@@ -82,7 +93,7 @@ export default function ExamScreen() {
 
   const handleStartMockExam = () => {
     if (!requireAuth('exams')) return;
-    if (!hasPremiumAccess(user?.subscriptionTier)) {
+    if (!userHasActivePremium(user)) {
       (navigation as any).navigate('Paywall', { feature: 'mock_exams' });
       return;
     }
@@ -93,7 +104,7 @@ export default function ExamScreen() {
 
   const handleStartMiniPMP = () => {
     if (!requireAuth('exams')) return;
-    if (!hasPremiumAccess(user?.subscriptionTier)) {
+    if (!userHasActivePremium(user)) {
       (navigation as any).navigate('Paywall', { feature: 'mock_exams' });
       return;
     }
@@ -183,7 +194,7 @@ export default function ExamScreen() {
               <View style={styles.examDetailItem}>
                 <Icon name="clock-outline" size={20} color={colors.textSecondary} />
                 <Text variant="bodyMedium" style={styles.examDetailText}>
-                  230 minutes
+                  240 minutes
                 </Text>
               </View>
               <View style={styles.examDetailItem}>
@@ -317,7 +328,7 @@ export default function ExamScreen() {
                     <View style={styles.examResultHeader}>
                       <View style={styles.examResultHeaderLeft}>
                         <Text variant="titleMedium" style={styles.examResultTitle}>
-                          {exam.examType === 'mini' ? 'Mini PMP' : 'Mock Exam'}
+                          {getExamTypeLabel(exam.examType)}
                         </Text>
                         <Text variant="bodySmall" style={styles.examResultDate}>
                           Started{' '}
@@ -334,12 +345,16 @@ export default function ExamScreen() {
                     </View>
                     <ActionButton
                       label="Resume Exam"
-                      onPress={() =>
+                      onPress={() => {
+                        if (exam.examType === 'daily_quiz') {
+                          (navigation as any).navigate('DailyQuiz', { examId: exam.id });
+                          return;
+                        }
                         (navigation as any).navigate('ExamStart', {
                           examId: exam.id,
                           examType: exam.examType === 'mini' ? 'mini' : 'mock',
-                        })
-                      }
+                        });
+                      }}
                       variant="primary"
                       size="small"
                       fullWidth
@@ -359,10 +374,7 @@ export default function ExamScreen() {
         />
 
         {isLoading && previousExams.length === 0 ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={styles.loadingText}>Loading exams...</Text>
-          </View>
+          <LoadingSpinner label="Loading exams..." />
         ) : previousExams.length === 0 ? (
           <EmptyState
             icon="file-document-outline"
@@ -444,7 +456,7 @@ export default function ExamScreen() {
                           // Refresh the exams list after successful deletion
                           dispatch(fetchUserExams());
                         } catch (error: any) {
-                          Alert.alert('Error', error.message || 'Failed to delete exam');
+                          Alert.alert('Error', getApiErrorMessage(error, 'Failed to delete exam'));
                         }
                       },
                     },
@@ -459,7 +471,7 @@ export default function ExamScreen() {
                       <View style={styles.examResultHeaderLeft}>
                         <View>
                           <Text variant="titleMedium" style={styles.examResultTitle}>
-                            Mock Exam
+                            {getExamTypeLabel(exam.examType)}
                           </Text>
                           <Text variant="bodySmall" style={styles.examResultDate}>
                             {new Date(exam.completedAt || exam.startedAt).toLocaleDateString('en-US', {
@@ -534,7 +546,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.base,
-    paddingBottom: spacing.xl,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
   loadingContainer: {
     padding: spacing.xl,

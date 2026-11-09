@@ -123,6 +123,33 @@ export async function identifyUser(userId: string): Promise<void> {
 }
 
 /**
+ * Listen for CustomerInfo updates (purchases, restores, plan changes).
+ * Returns an unsubscribe function.
+ */
+export async function addCustomerInfoUpdateListener(
+  listener: (customerInfo: CustomerInfo) => void
+): Promise<() => void> {
+  if (isRevenueCatUnavailable) {
+    return () => {};
+  }
+
+  try {
+    if (!isInitialized && !(await initializeRevenueCat())) {
+      return () => {};
+    }
+
+    const Purchases = await getPurchases();
+    Purchases.addCustomerInfoUpdateListener(listener);
+    return () => {
+      Purchases.removeCustomerInfoUpdateListener(listener);
+    };
+  } catch (error) {
+    console.error('Failed to add CustomerInfo listener:', error);
+    return () => {};
+  }
+}
+
+/**
  * Log out current user from RevenueCat
  * Should be called when user logs out
  */
@@ -243,15 +270,25 @@ function getPremiumEntitlement(customerInfo: CustomerInfo) {
 }
 
 export function mapProductIdToTier(productId: string): string {
+  if (!productId) return 'free';
+  const id = productId.toLowerCase();
   const productIdMap: Record<string, string> = {
     'premium_monthly': 'premium_monthly',
+    'premium_monthly11': 'premium_monthly',
     'premium_semi_annual': 'premium_semi_annual',
     'premium_annual': 'premium_annual',
     'yearly': 'premium_annual',
     'cram_time': 'cram_time',
+    'weekly': 'cram_time',
+    '$rc_weekly': 'cram_time',
   };
-  
-  return productIdMap[productId.toLowerCase()] || 'free';
+
+  if (productIdMap[id]) return productIdMap[id];
+  if (id.includes('cram') || id.includes('weekly')) return 'cram_time';
+  if (id.includes('semi') || id.includes('six_month')) return 'premium_semi_annual';
+  if (id.includes('annual') || id.includes('yearly')) return 'premium_annual';
+  if (id.includes('monthly')) return 'premium_monthly';
+  return 'free';
 }
 
 /**

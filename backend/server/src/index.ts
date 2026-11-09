@@ -1,11 +1,15 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
+import './instrument';
+import * as Sentry from '@sentry/node';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import dotenv from 'dotenv';
 import path from 'path';
 import { errorHandler } from './middleware/errorHandler';
 import { logger } from './middleware/logger';
-import { authRateLimiter, apiRateLimiter } from './middleware/rateLimiter';
+import { authRateLimiter, apiRateLimiter, examRateLimiter } from './middleware/rateLimiter';
 
 // Auth & User routes
 import authRoutes from './routes/auth';
@@ -27,8 +31,7 @@ import badgeRoutes from './routes/badges';
 import bookmarkRoutes from './routes/bookmarks';
 import flashcardRoutes from './routes/flashcards';
 import webhookRoutes from './routes/webhooks';
-
-dotenv.config();
+import legalRoutes from './routes/legal';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -58,6 +61,9 @@ app.use(logger);
 const imagesPath = path.join(__dirname, '../../../images');
 app.use('/images', express.static(imagesPath));
 
+// Public Privacy Policy, Terms of Use and Support pages
+app.use('/', legalRoutes);
+
 // Routes with rate limiting
 // Authentication routes (stricter rate limiting)
 app.use('/api/auth', authRateLimiter, authRoutes);
@@ -76,7 +82,7 @@ app.use('/api/import-export', apiRateLimiter, importExportRoutes);
 // Analytics routes
 app.use('/api/progress', apiRateLimiter, progressRoutes);
 app.use('/api/analytics', apiRateLimiter, analyticsRoutes);
-app.use('/api/exams', apiRateLimiter, examRoutes);
+app.use('/api/exams', examRateLimiter, examRoutes);
 app.use('/api/badges', apiRateLimiter, badgeRoutes);
 app.use('/api/bookmarks', apiRateLimiter, bookmarkRoutes);
 app.use('/api/flashcards', apiRateLimiter, flashcardRoutes);
@@ -114,12 +120,20 @@ app.get('/', (req, res) => {
   });
 });
 
-// Health check
+// Health check (keep outside auth / rate limits for uptime monitors)
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'pmp-app-server' });
+  res.json({
+    status: 'ok',
+    service: 'pmp-app-server',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
 });
 
-// Error handling
+// Sentry must sit after routes and before other error middleware
+Sentry.setupExpressErrorHandler(app);
+
+// Final JSON error formatter
 app.use(errorHandler);
 
 export { app };

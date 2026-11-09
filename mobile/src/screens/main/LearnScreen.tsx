@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, StyleSheet, ScrollView, SafeAreaView } from 'react-native';
-import { Card, Text, ActivityIndicator } from 'react-native-paper';
+import { Card, Text } from 'react-native-paper';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -11,8 +11,7 @@ import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRequireAuth } from '../../utils/requireAuth';
-
-const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
+import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
 
 export default function LearnScreen() {
   const navigation = useNavigation();
@@ -25,26 +24,22 @@ export default function LearnScreen() {
     totalStudied: 0,
     formulasMastered: 0,
   });
-  const [isLoading, setIsLoading] = useState(true);
 
-  useFocusEffect(
-    React.useCallback(() => {
-      loadLearnData();
-    }, [dispatch, isAuthenticated])
-  );
-
-  const loadLearnData = async () => {
-    setIsLoading(true);
+  const loadLearnData = useCallback(async () => {
     try {
       if (isAuthenticated) {
         await dispatch(fetchMarkedFlashcards() as any).unwrap();
       }
     } catch (error) {
       console.error('Failed to load learn data:', error);
-    } finally {
-      setIsLoading(false);
     }
-  };
+  }, [dispatch, isAuthenticated]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadLearnData();
+    }, [loadLearnData])
+  );
 
   useEffect(() => {
     setFlashcardStats({
@@ -52,14 +47,6 @@ export default function LearnScreen() {
       formulasMastered: 0,
     });
   }, [markedFlashcards]);
-
-  if (isLoading) {
-    return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </SafeAreaView>
-    );
-  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -115,16 +102,38 @@ export default function LearnScreen() {
         />
 
         <View style={styles.quickActionsGrid}>
-          {/* Flashcards Card */}
+          {/* Learning Topics Card */}
           <View style={styles.quickActionCard}>
             <Card
               style={[styles.actionCard, { backgroundColor: `${colors.primary}10` }]}
+              onPress={() => {
+                (navigation as any).navigate('LearningTopics');
+              }}
+            >
+              <Card.Content style={styles.actionCardContent}>
+                <View style={[styles.actionIconCircle, { backgroundColor: colors.primary }]}>
+                  <Icon name="book-education" size={28} color="#ffffff" />
+                </View>
+                <Text variant="titleMedium" style={styles.actionTitle}>
+                  Exam Cheat Sheet
+                </Text>
+                <Text variant="bodySmall" style={styles.actionSubtitle}>
+                  2026 Edition
+                </Text>
+              </Card.Content>
+            </Card>
+          </View>
+
+          {/* Flashcards Card */}
+          <View style={styles.quickActionCard}>
+            <Card
+              style={[styles.actionCard, { backgroundColor: `${colors.info}10` }]}
               onPress={() => {
                 (navigation as any).navigate('FlashcardFilter');
               }}
             >
               <Card.Content style={styles.actionCardContent}>
-                <View style={[styles.actionIconCircle, { backgroundColor: colors.primary }]}>
+                <View style={[styles.actionIconCircle, { backgroundColor: colors.info }]}>
                   <Icon name="cards" size={28} color="#ffffff" />
                 </View>
                 <Text variant="titleMedium" style={styles.actionTitle}>
@@ -194,18 +203,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.gray50,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.gray50,
-  },
   scrollView: {
     flex: 1,
   },
   content: {
     padding: spacing.base,
-    paddingBottom: spacing.xl,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
   heroCard: {
     marginBottom: spacing.lg,

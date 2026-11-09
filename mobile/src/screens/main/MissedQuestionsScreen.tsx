@@ -10,7 +10,7 @@ import { CategoryBadge, SectionHeader, EmptyState, ActionButton } from '../../co
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
-import { hasPremiumAccess } from '../../utils/subscriptionUtils';
+import { userHasActivePremium } from '../../utils/subscriptionUtils';
 import { useRequireAuth } from '../../utils/requireAuth';
 
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
@@ -78,8 +78,6 @@ export default function MissedQuestionsScreen() {
 
     const knowledgeArea = question.knowledgeAreaName || question.knowledge_area_name;
     const displayKnowledgeArea = knowledgeArea ? removeProjectPrefix(knowledgeArea) : null;
-    const difficulty = question.difficulty || 'medium';
-
     return (
       <TouchableOpacity
         activeOpacity={0.7}
@@ -95,15 +93,6 @@ export default function MissedQuestionsScreen() {
                     variant="outlined"
                   />
                 )}
-                <CategoryBadge
-                  label={difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}
-                  color={
-                    difficulty === 'easy' ? colors.success :
-                    difficulty === 'medium' ? colors.warning :
-                    colors.error
-                  }
-                  variant="pill"
-                />
                 {item.isReviewed && (
                   <View style={styles.reviewedBadge}>
                     <Icon name="check-circle" size={16} color={colors.success} />
@@ -157,7 +146,7 @@ export default function MissedQuestionsScreen() {
     );
   }
 
-  if (!hasPremiumAccess(user?.subscriptionTier)) {
+  if (!userHasActivePremium(user)) {
     return (
       <SafeAreaView style={styles.container}>
         <EmptyState

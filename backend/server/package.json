@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@pmp-app/shared": "file:../shared",
+    "@sentry/node": "^11.11.0",
     "cors": "^2.8.5",
     "csv-parse": "^5.5.3",
     "csv-stringify": "^6.4.4",

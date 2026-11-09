@@ -72,6 +72,43 @@ export function computeRemainingSeconds(
   return Math.max(0, totalSec - elapsed);
 }
 
+/** Reserved key stored alongside draft answers for resume cursor. */
+export const EXAM_DRAFT_PROGRESS_KEY = '__progress';
+
+export function splitExamDraft(drafts: Record<string, unknown> | null | undefined): {
+  answers: { [questionId: string]: ExamAnswerValue };
+  currentQuestionIndex: number | null;
+} {
+  const source = drafts && typeof drafts === 'object' ? drafts : {};
+  const meta = source[EXAM_DRAFT_PROGRESS_KEY] as { currentQuestionIndex?: number } | undefined;
+  const answers: { [questionId: string]: ExamAnswerValue } = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (key === EXAM_DRAFT_PROGRESS_KEY) continue;
+    if (value && typeof value === 'object') {
+      answers[key] = value as ExamAnswerValue;
+    }
+  }
+  const idx = meta?.currentQuestionIndex;
+  return {
+    answers,
+    currentQuestionIndex: Number.isInteger(idx) && (idx as number) >= 0 ? (idx as number) : null,
+  };
+}
+
+export function resolveResumeQuestionIndex(
+  questionCount: number,
+  savedIndex: number | null,
+  firstIncompleteIndex: number
+): number {
+  if (savedIndex != null && savedIndex >= 0 && savedIndex < questionCount) {
+    return savedIndex;
+  }
+  if (firstIncompleteIndex >= 0 && firstIncompleteIndex < questionCount) {
+    return firstIncompleteIndex;
+  }
+  return 0;
+}
+
 export type ReviewAnswerCard = {
   unanswered?: boolean;
   questionType?: string;

@@ -27,14 +27,6 @@ const getKnowledgeAreaColor = (label: string): string => {
   return colors.primary;
 };
 
-const getDifficultyColor = (label: string): string => {
-  const lower = label.toLowerCase();
-  if (lower === 'easy') return colors.success;
-  if (lower === 'medium') return colors.warning;
-  if (lower === 'hard') return colors.error;
-  return colors.gray500;
-};
-
 export default function CategoryBadge({
   label,
   color,
@@ -42,7 +34,7 @@ export default function CategoryBadge({
   selected = false,
   variant = 'default',
 }: CategoryBadgeProps) {
-  const badgeColor = color || getKnowledgeAreaColor(label) || getDifficultyColor(label);
+  const badgeColor = color || getKnowledgeAreaColor(label);
   const isPill = variant === 'pill';
   const isOutlined = variant === 'outlined';
   

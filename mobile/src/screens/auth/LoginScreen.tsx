@@ -9,6 +9,7 @@ import { colors } from '../../theme';
 import { spacing } from '../../utils/styles';
 import { getAuthPromptMessage, AuthPromptReason } from '../../utils/requireAuth';
 import { cancelPendingPracticeAuth } from '../../utils/practiceTestDraft';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -40,7 +41,7 @@ export default function LoginScreen() {
         navigation.getParent()?.goBack();
       }
     } catch (err: any) {
-      setError(err.message || 'Login failed');
+      setError(getApiErrorMessage(err, 'Login failed'));
     } finally {
       setLoading(false);
     }

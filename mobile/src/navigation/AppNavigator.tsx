@@ -12,6 +12,8 @@ import PaywallScreen from '../components/PaywallScreen';
 
 const Stack = createStackNavigator();
 
+const MIN_SPLASH_MS = 5000;
+
 export default function AppNavigator() {
   const dispatch = useDispatch();
   const store = useStore<RootState>();
@@ -19,13 +21,20 @@ export default function AppNavigator() {
 
   useEffect(() => {
     let mounted = true;
+    const startedAt = Date.now();
+
     (async () => {
       try {
         await dispatch(loadUser() as any);
       } finally {
+        const remaining = MIN_SPLASH_MS - (Date.now() - startedAt);
+        if (remaining > 0) {
+          await new Promise((resolve) => setTimeout(resolve, remaining));
+        }
         if (mounted) setIsBootstrapping(false);
       }
     })();
+
     return () => {
       mounted = false;
     };

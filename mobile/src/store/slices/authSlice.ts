@@ -2,6 +2,7 @@ import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { authService } from '../../services/api/authService';
 import { subscriptionService } from '../../services/api/subscriptionService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 interface User {
   id: string;
@@ -10,6 +11,7 @@ interface User {
   lastName?: string;
   role: string;
   subscriptionTier: string;
+  subscriptionExpiresAt?: string | null;
 }
 
 interface AuthState {
@@ -28,21 +30,32 @@ const initialState: AuthState = {
 
 export const login = createAsyncThunk(
   'auth/login',
-  async (credentials: { email: string; password: string }) => {
-    const response = await authService.login(credentials.email, credentials.password);
-    await AsyncStorage.setItem('token', response.token);
-    await AsyncStorage.setItem('user', JSON.stringify(response.user));
-    return response;
+  async (credentials: { email: string; password: string }, { rejectWithValue }) => {
+    try {
+      const response = await authService.login(credentials.email, credentials.password);
+      await AsyncStorage.setItem('token', response.token);
+      await AsyncStorage.setItem('user', JSON.stringify(response.user));
+      return response;
+    } catch (error) {
+      return rejectWithValue(getApiErrorMessage(error, 'Login failed'));
+    }
   }
 );
 
 export const register = createAsyncThunk(
   'auth/register',
-  async (data: { email: string; password: string; firstName?: string; lastName?: string }) => {
-    const response = await authService.register(data);
-    await AsyncStorage.setItem('token', response.token);
-    await AsyncStorage.setItem('user', JSON.stringify(response.user));
-    return response;
+  async (
+    data: { email: string; password: string; firstName?: string; lastName?: string },
+    { rejectWithValue }
+  ) => {
+    try {
+      const response = await authService.register(data);
+      await AsyncStorage.setItem('token', response.token);
+      await AsyncStorage.setItem('user', JSON.stringify(response.user));
+      return response;
+    } catch (error) {
+      return rejectWithValue(getApiErrorMessage(error, 'Registration failed'));
+    }
   }
 );
 
@@ -50,6 +63,20 @@ export const logout = createAsyncThunk('auth/logout', async () => {
   await AsyncStorage.removeItem('token');
   await AsyncStorage.removeItem('user');
 });
+
+export const deleteAccount = createAsyncThunk(
+  'auth/deleteAccount',
+  async (_, { dispatch, rejectWithValue }) => {
+    try {
+      await authService.deleteAccount();
+    } catch (error) {
+      return rejectWithValue(
+        getApiErrorMessage(error, 'Could not delete your account. Please try again.')
+      );
+    }
+    await dispatch(logout());
+  }
+);
 
 export const loadUser = createAsyncThunk('auth/loadUser', async () => {
   const token = await AsyncStorage.getItem('token');
@@ -67,6 +94,7 @@ export const applySubscriptionTier = createAsyncThunk(
     if (userStr) {
       const user = JSON.parse(userStr);
       user.subscriptionTier = subscription.tier;
+      user.subscriptionExpiresAt = subscription.expiresAt ?? null;
       await AsyncStorage.setItem('user', JSON.stringify(user));
     }
     return subscription;
@@ -88,11 +116,12 @@ export const syncSubscription = createAsyncThunk(
       if (userStr) {
         const user = JSON.parse(userStr);
         user.subscriptionTier = subscription.tier;
+        user.subscriptionExpiresAt = subscription.expiresAt ?? null;
         await AsyncStorage.setItem('user', JSON.stringify(user));
         
         return {
           subscriptionTier: subscription.tier,
-          subscriptionExpiresAt: subscription.expiresAt,
+          subscriptionExpiresAt: subscription.expiresAt ?? null,
         };
       }
       
@@ -114,6 +143,7 @@ const authSlice = createSlice({
     updateSubscriptionTier: (state, action: PayloadAction<{ tier: string; expiresAt?: string | null }>) => {
       if (state.user) {
         state.user.subscriptionTier = action.payload.tier;
+        state.user.subscriptionExpiresAt = action.payload.expiresAt ?? null;
       }
     },
   },
@@ -171,11 +201,13 @@ const authSlice = createSlice({
       .addCase(applySubscriptionTier.fulfilled, (state, action) => {
         if (state.user) {
           state.user.subscriptionTier = action.payload.tier;
+          state.user.subscriptionExpiresAt = action.payload.expiresAt ?? null;
         }
       })
       .addCase(syncSubscription.fulfilled, (state, action) => {
         if (action.payload && state.user) {
           state.user.subscriptionTier = action.payload.subscriptionTier;
+          state.user.subscriptionExpiresAt = action.payload.subscriptionExpiresAt ?? null;
         }
       });
   },

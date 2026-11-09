@@ -1,35 +1,77 @@
-import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, ScrollView, SafeAreaView, TextInput, Alert } from 'react-native';
-import { List, Divider, Avatar, Switch, Card, Text, Button } from 'react-native-paper';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  View,
+  StyleSheet,
+  ScrollView,
+  SafeAreaView,
+  TextInput,
+  Alert,
+  Share,
+  Platform,
+} from 'react-native';
+import { List, Divider, Avatar, Card, Text, Button } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
-import { logout } from '../../store/slices/authSlice';
+import Constants from 'expo-constants';
+import { deleteAccount, logout, syncSubscription } from '../../store/slices/authSlice';
+import { refreshCustomerInfo } from '../../store/slices/subscriptionSlice';
 import { RootState, AppDispatch } from '../../store';
 import { loadSettings, saveSettings, setDailyQuestionsGoal, setDailyMinutesGoal } from '../../store/slices/settingsSlice';
 import { ActionButton, SectionHeader } from '../../components';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
+import { getApiErrorMessage } from '../../utils/apiError';
 import {
+  formatSubscriptionEndDate,
   getSubscriptionDisplayName,
-  hasPremiumAccess,
+  planHasEnded,
+  userHasActivePremium,
 } from '../../utils/subscriptionUtils';
+import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
+import { formatDebugInfo } from '../../utils/debugInfo';
+import { Sentry } from '../../services/sentry';
+import {
+  APPLE_EULA_URL,
+  MANAGE_SUBSCRIPTIONS_URL,
+  PMI_DISCLAIMER,
+  emailSupport,
+  openExternalUrl,
+  privacyPolicyUrl,
+  supportUrl,
+  termsOfUseUrl,
+} from '../../config/legal';
+
+const APP_VERSION = Constants.expoConfig?.version ?? '1.0.0';
 
 export default function SettingsScreen() {
   const dispatch = useDispatch<AppDispatch>();
   const navigation = useNavigation();
   const { user, isAuthenticated } = useSelector((state: RootState) => state.auth);
   const { dailyQuestionsGoal, dailyMinutesGoal } = useSelector((state: RootState) => state.settings);
-  const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [questionsInput, setQuestionsInput] = useState(dailyQuestionsGoal.toString());
   const [minutesInput, setMinutesInput] = useState(dailyMinutesGoal.toString());
   const [isEditingGoals, setIsEditingGoals] = useState(false);
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
+  const aboutTapCount = useRef(0);
+  const aboutTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (isAuthenticated) {
       dispatch(loadSettings() as any);
     }
   }, [dispatch, isAuthenticated]);
+
+  // Refresh plan label after upgrades (e.g. monthly → annual).
+  // Prefer backend (webhook uses new_product_id); RC may still show the old product mid-trial.
+  useFocusEffect(
+    useCallback(() => {
+      if (!isAuthenticated) return;
+      dispatch(refreshCustomerInfo()).catch(() => {});
+      dispatch(syncSubscription()).catch(() => {});
+    }, [dispatch, isAuthenticated])
+  );
 
   useEffect(() => {
     setQuestionsInput(dailyQuestionsGoal.toString());
@@ -67,7 +109,7 @@ export default function SettingsScreen() {
       setIsEditingGoals(false);
       Alert.alert('Success', 'Daily goals updated successfully');
     } catch (error) {
-      Alert.alert('Error', 'Failed to save daily goals');
+      Alert.alert('Error', getApiErrorMessage(error, 'Failed to save daily goals'));
     }
   };
 
@@ -81,12 +123,88 @@ export default function SettingsScreen() {
     dispatch(logout() as any);
   };
 
-  const getSubscriptionColor = (tier: string) => {
-    return hasPremiumAccess(tier) ? colors.primary : colors.gray500;
+  const performDeleteAccount = async (hadSubscription: boolean) => {
+    setIsDeleting(true);
+    try {
+      await dispatch(deleteAccount()).unwrap();
+      Alert.alert(
+        'Account deleted',
+        hadSubscription
+          ? 'Your account and study data have been permanently deleted. Your App Store subscription is billed by Apple and was not cancelled — you can cancel it in your Apple ID settings.'
+          : 'Your account and study data have been permanently deleted.',
+        hadSubscription
+          ? [
+              { text: 'Done', style: 'cancel' },
+              {
+                text: 'Manage Subscription',
+                onPress: () => openExternalUrl(MANAGE_SUBSCRIPTIONS_URL),
+              },
+            ]
+          : undefined
+      );
+    } catch (error) {
+      Alert.alert('Error', getApiErrorMessage(error, 'Could not delete your account.'));
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDeleteAccount = () => {
+    const hadSubscription = isPremium;
+    Alert.alert(
+      'Delete account?',
+      `This permanently deletes your account, progress, exam history, bookmarks and flashcard progress. This cannot be undone.${
+        hadSubscription
+          ? '\n\nDeleting your account does not cancel your App Store subscription. Cancel it in your Apple ID settings to stop billing.'
+          : ''
+      }`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Account',
+          style: 'destructive',
+          onPress: () => performDeleteAccount(hadSubscription),
+        },
+      ]
+    );
+  };
+
+  const handleAbout = () => {
+    aboutTapCount.current += 1;
+    if (aboutTapTimer.current) clearTimeout(aboutTapTimer.current);
+    aboutTapTimer.current = setTimeout(() => {
+      aboutTapCount.current = 0;
+    }, 2000);
+
+    if (aboutTapCount.current >= 7) {
+      aboutTapCount.current = 0;
+      setShowDebugPanel(true);
+      return;
+    }
+
+    Alert.alert(`PMP Exam Prep ${APP_VERSION}`, PMI_DISCLAIMER);
+  };
+
+  const debugText = formatDebugInfo(user?.id);
+
+  const handleShareDebug = async () => {
+    try {
+      await Share.share({ message: debugText });
+    } catch {
+      Alert.alert('Debug info', debugText);
+    }
+  };
+
+  const handleTestSentry = () => {
+    Sentry.captureMessage('Debug panel test event', 'info');
+    Alert.alert('Sent', 'Test event queued for Sentry (production builds with DSN only).');
   };
 
   const subscriptionTier = user?.subscriptionTier || 'Free';
-  const isPremium = hasPremiumAccess(subscriptionTier);
+  const isPremium = userHasActivePremium(user);
+  const ended = planHasEnded(subscriptionTier, user?.subscriptionExpiresAt);
+  const endedOn = formatSubscriptionEndDate(user?.subscriptionExpiresAt);
+  const planName = getSubscriptionDisplayName(subscriptionTier);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -114,11 +232,29 @@ export default function SettingsScreen() {
                     {user?.email}
                   </Text>
                   <View style={styles.subscriptionBadge}>
-                    <View style={[styles.subscriptionDot, { backgroundColor: getSubscriptionColor(subscriptionTier) }]} />
-                    <Text variant="labelMedium" style={[styles.subscriptionText, { color: getSubscriptionColor(subscriptionTier) }]}>
-                      {getSubscriptionDisplayName(subscriptionTier)}
+                    <View
+                      style={[
+                        styles.subscriptionDot,
+                        { backgroundColor: ended ? colors.error : isPremium ? colors.primary : colors.gray500 },
+                      ]}
+                    />
+                    <Text
+                      variant="labelMedium"
+                      style={[
+                        styles.subscriptionText,
+                        { color: ended ? colors.error : isPremium ? colors.primary : colors.gray500 },
+                      ]}
+                    >
+                      {ended ? `${planName} ended` : isPremium ? planName : 'Free'}
                     </Text>
                   </View>
+                  {ended ? (
+                    <Text variant="bodySmall" style={styles.planEndedText}>
+                      {endedOn
+                        ? `Your plan ended on ${endedOn}. The full question bank is locked until you renew.`
+                        : 'Your plan has ended. The full question bank is locked until you renew.'}
+                    </Text>
+                  ) : null}
                 </View>
               </Card.Content>
               <Button
@@ -128,7 +264,7 @@ export default function SettingsScreen() {
                 style={styles.upgradeButton}
                 buttonColor={isPremium ? undefined : colors.primary}
               >
-                {isPremium ? 'View Subscription' : 'Upgrade to Premium'}
+                {isPremium ? 'View Subscription' : ended ? 'Renew plan' : 'Upgrade to Premium'}
               </Button>
             </View>
           ) : (
@@ -159,51 +295,6 @@ export default function SettingsScreen() {
               </Button>
             </View>
           )}
-        </Card>
-
-        {/* Preferences Section */}
-        <SectionHeader title="Preferences" icon="tune" />
-        <Card style={styles.card}>
-          <List.Item
-            title="Notifications"
-            description="Receive push notifications for daily quizzes and updates"
-            left={(props) => <List.Icon {...props} icon="bell" color={colors.primary} />}
-            right={() => (
-              <Switch
-                value={notificationsEnabled}
-                onValueChange={setNotificationsEnabled}
-                color={colors.primary}
-              />
-            )}
-            style={styles.listItem}
-          />
-          <Divider />
-          <List.Item
-            title="Dark Mode"
-            description="Switch to dark theme"
-            left={(props) => <List.Icon {...props} icon="theme-light-dark" color={colors.primary} />}
-            right={() => (
-              <Switch
-                value={false}
-                onValueChange={() => {}}
-                color={colors.primary}
-              />
-            )}
-            style={styles.listItem}
-          />
-        </Card>
-
-        {/* Study Settings */}
-        <SectionHeader title="Study Settings" icon="book-open-variant" />
-        <Card style={styles.card}>
-          <List.Item
-            title="Difficulty Level"
-            description="Default difficulty for practice questions"
-            left={(props) => <List.Icon {...props} icon="gauge" color={colors.primary} />}
-            right={(props) => <List.Icon {...props} icon="chevron-right" />}
-            style={styles.listItem}
-            onPress={() => {}}
-          />
         </Card>
 
         {/* Daily Goals Settings */}
@@ -326,25 +417,77 @@ export default function SettingsScreen() {
             left={(props) => <List.Icon {...props} icon="help-circle" color={colors.primary} />}
             right={(props) => <List.Icon {...props} icon="chevron-right" />}
             style={styles.listItem}
-            onPress={() => {}}
+            onPress={() => openExternalUrl(supportUrl())}
           />
           <Divider />
           <List.Item
             title="Contact Support"
-            description="Get help from our team"
+            description="Email our team"
             left={(props) => <List.Icon {...props} icon="email" color={colors.primary} />}
             right={(props) => <List.Icon {...props} icon="chevron-right" />}
             style={styles.listItem}
-            onPress={() => {}}
+            onPress={emailSupport}
           />
           <Divider />
           <List.Item
             title="About"
-            description="App version and information"
+            description={`Version ${APP_VERSION}`}
             left={(props) => <List.Icon {...props} icon="information" color={colors.primary} />}
             right={(props) => <List.Icon {...props} icon="chevron-right" />}
             style={styles.listItem}
-            onPress={() => {}}
+            onPress={handleAbout}
+          />
+        </Card>
+
+        {showDebugPanel && (
+          <>
+            <SectionHeader title="Debug" icon="bug" />
+            <Card style={styles.card}>
+              <Card.Content>
+                <Text variant="bodySmall" style={styles.debugText}>
+                  {debugText}
+                </Text>
+                <View style={styles.debugActions}>
+                  <Button mode="outlined" onPress={handleShareDebug} icon="share-variant">
+                    Share
+                  </Button>
+                  <Button mode="outlined" onPress={handleTestSentry} icon="send">
+                    Test Sentry
+                  </Button>
+                  <Button mode="text" onPress={() => setShowDebugPanel(false)}>
+                    Hide
+                  </Button>
+                </View>
+              </Card.Content>
+            </Card>
+          </>
+        )}
+
+        {/* Legal Section */}
+        <SectionHeader title="Legal" icon="file-document-outline" />
+        <Card style={styles.card}>
+          <List.Item
+            title="Privacy Policy"
+            left={(props) => <List.Icon {...props} icon="shield-account" color={colors.primary} />}
+            right={(props) => <List.Icon {...props} icon="open-in-new" />}
+            style={styles.listItem}
+            onPress={() => openExternalUrl(privacyPolicyUrl())}
+          />
+          <Divider />
+          <List.Item
+            title="Terms of Use"
+            left={(props) => <List.Icon {...props} icon="file-document" color={colors.primary} />}
+            right={(props) => <List.Icon {...props} icon="open-in-new" />}
+            style={styles.listItem}
+            onPress={() => openExternalUrl(termsOfUseUrl())}
+          />
+          <Divider />
+          <List.Item
+            title="License Agreement (EULA)"
+            left={(props) => <List.Icon {...props} icon="scale-balance" color={colors.primary} />}
+            right={(props) => <List.Icon {...props} icon="open-in-new" />}
+            style={styles.listItem}
+            onPress={() => openExternalUrl(APPLE_EULA_URL)}
           />
         </Card>
 
@@ -358,8 +501,23 @@ export default function SettingsScreen() {
               size="medium"
               fullWidth
             />
+            <Button
+              mode="text"
+              icon="delete-outline"
+              textColor={colors.error}
+              onPress={handleDeleteAccount}
+              loading={isDeleting}
+              disabled={isDeleting}
+              style={styles.deleteButton}
+            >
+              Delete Account
+            </Button>
           </View>
         )}
+
+        <Text variant="bodySmall" style={styles.disclaimer}>
+          {PMI_DISCLAIMER}
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -375,7 +533,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.base,
-    paddingBottom: spacing.xl,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
   card: {
     marginBottom: spacing.lg,
@@ -420,6 +578,11 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: borderRadius.round,
     marginRight: spacing.xs,
+  },
+  planEndedText: {
+    marginTop: spacing.xs,
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
   subscriptionText: {
     fontWeight: '600',
@@ -499,6 +662,25 @@ const styles = StyleSheet.create({
   },
   logoutContainer: {
     marginTop: spacing.base,
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
+  },
+  deleteButton: {
+    marginTop: spacing.sm,
+  },
+  disclaimer: {
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 18,
+    paddingHorizontal: spacing.base,
+    marginBottom: spacing.lg,
+  },
+  debugText: {
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }),
+    color: colors.textPrimary,
+    lineHeight: 18,
+    marginBottom: spacing.md,
+  },
+  debugActions: {
+    gap: spacing.sm,
   },
 });

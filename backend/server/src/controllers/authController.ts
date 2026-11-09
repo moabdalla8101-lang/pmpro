@@ -56,7 +56,8 @@ export async function register(req: Request, res: Response, next: NextFunction) 
         firstName: user.first_name,
         lastName: user.last_name,
         role: user.role,
-        subscriptionTier: user.subscription_tier
+        subscriptionTier: user.subscription_tier,
+        subscriptionExpiresAt: null
       },
       token
     });
@@ -71,7 +72,7 @@ export async function login(req: Request, res: Response, next: NextFunction) {
 
     // Find user
     const result = await pool.query(
-      'SELECT id, email, password_hash, first_name, last_name, role, subscription_tier FROM users WHERE email = $1',
+      'SELECT id, email, password_hash, first_name, last_name, role, subscription_tier, subscription_expires_at FROM users WHERE email = $1',
       [email]
     );
 
@@ -101,7 +102,8 @@ export async function login(req: Request, res: Response, next: NextFunction) {
         firstName: user.first_name,
         lastName: user.last_name,
         role: user.role,
-        subscriptionTier: user.subscription_tier
+        subscriptionTier: user.subscription_tier,
+        subscriptionExpiresAt: user.subscription_expires_at
       },
       token
     });

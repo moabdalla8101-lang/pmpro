@@ -8,6 +8,10 @@ interface QuestionState {
   total: number;
   offset: number;
   hasMore: boolean;
+  promptUpgrade: boolean;
+  freeLimitPerKnowledgeArea: number | null;
+  freeAccessibleTotal: number | null;
+  freeFullTotal: number | null;
   isLoading: boolean;
   isLoadingMore: boolean;
   error: string | null;
@@ -19,6 +23,10 @@ const initialState: QuestionState = {
   total: 0,
   offset: 0,
   hasMore: false,
+  promptUpgrade: false,
+  freeLimitPerKnowledgeArea: null,
+  freeAccessibleTotal: null,
+  freeFullTotal: null,
   isLoading: false,
   isLoadingMore: false,
   error: null,
@@ -90,6 +98,17 @@ export const fetchQuestions = createAsyncThunk(
       append: Boolean(filters.append),
       offset: Number(filters.offset || 0),
       limit: Number(filters.limit || 25),
+      promptUpgrade: Boolean(data?.promptUpgrade),
+      freeLimitPerKnowledgeArea:
+        data?.freeAccess?.limitPerKnowledgeArea ?? null,
+      freeAccessibleTotal:
+        typeof data?.freeAccess?.accessibleTotal === 'number'
+          ? data.freeAccess.accessibleTotal
+          : null,
+      freeFullTotal:
+        typeof data?.freeAccess?.fullTotal === 'number'
+          ? data.freeAccess.fullTotal
+          : null,
     };
   }
 );
@@ -111,6 +130,10 @@ const questionSlice = createSlice({
       state.total = 0;
       state.offset = 0;
       state.hasMore = false;
+      state.promptUpgrade = false;
+      state.freeLimitPerKnowledgeArea = null;
+      state.freeAccessibleTotal = null;
+      state.freeFullTotal = null;
     },
   },
   extraReducers: (builder) => {
@@ -120,6 +143,9 @@ const questionSlice = createSlice({
         state.isLoading = !appending;
         state.isLoadingMore = appending;
         state.error = null;
+        if (!appending) {
+          state.promptUpgrade = false;
+        }
       })
       .addCase(fetchQuestions.fulfilled, (state, action) => {
         state.isLoading = false;
@@ -141,6 +167,17 @@ const questionSlice = createSlice({
         state.total = action.payload.total;
         state.offset = action.payload.offset + mapped.length;
         state.hasMore = state.questions.length < state.total;
+        state.freeLimitPerKnowledgeArea =
+          action.payload.freeLimitPerKnowledgeArea ?? state.freeLimitPerKnowledgeArea;
+        state.freeAccessibleTotal =
+          action.payload.freeAccessibleTotal ?? state.freeAccessibleTotal;
+        state.freeFullTotal =
+          action.payload.freeFullTotal ?? state.freeFullTotal;
+        state.promptUpgrade =
+          Boolean(action.payload.promptUpgrade) ||
+          (state.freeLimitPerKnowledgeArea != null &&
+            !state.hasMore &&
+            state.questions.length > 0);
       })
       .addCase(fetchQuestions.rejected, (state, action) => {
         state.isLoading = false;

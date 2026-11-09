@@ -70,9 +70,28 @@ describe('server-side premium gates', () => {
     const res = await request(app)
       .post('/api/exams/start')
       .set('Authorization', `Bearer ${free.token}`)
-      .send({ certificationId: CERT_ID, totalQuestions: 2 });
+      .send({ certificationId: CERT_ID, totalQuestions: 25, examType: 'mock_exam' });
     expect(res.status).toBe(403);
     expect(JSON.stringify(res.body)).toMatch(/premium/i);
+  });
+
+  itDb('free users can start practice exams', async () => {
+    const free = await createUser('free');
+    const res = await request(app)
+      .post('/api/exams/start')
+      .set('Authorization', `Bearer ${free.token}`)
+      .send({ certificationId: CERT_ID, totalQuestions: 2, examType: 'practice' });
+    expect(res.status).toBe(201);
+    expect(res.body.examId).toBeTruthy();
+  });
+
+  itDb('free users can start legacy short exams without examType', async () => {
+    const free = await createUser('free');
+    const res = await request(app)
+      .post('/api/exams/start')
+      .set('Authorization', `Bearer ${free.token}`)
+      .send({ certificationId: CERT_ID, totalQuestions: 10 });
+    expect(res.status).toBe(201);
   });
 
   itDb('premium users can start mock exams', async () => {
@@ -113,6 +132,15 @@ describe('server-side premium gates', () => {
     expect(knowledge.status).toBe(403);
   });
 
+  itDb('free users cannot practice by domain', async () => {
+    const free = await createUser('free');
+    const res = await request(app)
+      .get(`/api/questions?certificationId=${CERT_ID}&domain=People&limit=10`)
+      .set('Authorization', `Bearer ${free.token}`);
+    expect(res.status).toBe(403);
+    expect(JSON.stringify(res.body)).toMatch(/premium/i);
+  });
+
   itDb('expired premium is treated as free', async () => {
     const email = `sec-expired-${Date.now()}@example.com`;
     const result = await pool.query(
@@ -130,7 +158,7 @@ describe('server-side premium gates', () => {
     const res = await request(app)
       .post('/api/exams/start')
       .set('Authorization', `Bearer ${token}`)
-      .send({ certificationId: CERT_ID, totalQuestions: 2 });
+      .send({ certificationId: CERT_ID, totalQuestions: 25, examType: 'mock_exam' });
     expect(res.status).toBe(403);
   });
 });

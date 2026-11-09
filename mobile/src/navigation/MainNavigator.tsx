@@ -3,6 +3,10 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { colors } from '../theme';
+import GlassTabBar from './GlassTabBar';
+import { FLOATING_TAB_BAR_CONTENT_INSET } from './tabBarLayout';
+
+const rootCardStyle = { paddingBottom: 0 };
 
 import DashboardScreen from '../screens/main/DashboardScreen';
 import PracticeScreen from '../screens/main/PracticeScreen';
@@ -21,6 +25,8 @@ import FlashcardStudyScreen from '../screens/main/FlashcardStudyScreen';
 import MarkedFlashcardsScreen from '../screens/main/MarkedFlashcardsScreen';
 import LearnScreen from '../screens/main/LearnScreen';
 import FormulasScreen from '../screens/main/FormulasScreen';
+import LearningTopicsScreen from '../screens/main/LearningTopicsScreen';
+import LearningTopicDetailScreen from '../screens/main/LearningTopicDetailScreen';
 import KnowledgeAreaFilterScreen from '../screens/main/KnowledgeAreaFilterScreen';
 import DomainFilterScreen from '../screens/main/DomainFilterScreen';
 
@@ -41,12 +47,13 @@ function PracticeTabStack() {
           fontWeight: '700',
           fontSize: 18,
         },
+        cardStyle: { paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET },
       }}
     >
       <Stack.Screen
         name="PracticeDashboard"
         component={DashboardScreen}
-        options={{ title: 'Practice', headerShown: false }}
+        options={{ title: 'Practice', headerShown: false, cardStyle: rootCardStyle }}
       />
       <Stack.Screen
         name="PracticeList"
@@ -119,12 +126,13 @@ function LearnStack() {
           fontWeight: '700',
           fontSize: 18,
         },
+        cardStyle: { paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET },
       }}
     >
       <Stack.Screen
         name="LearnDashboard"
         component={LearnScreen}
-        options={{ title: 'Learn', headerShown: false }}
+        options={{ title: 'Learn', headerShown: false, cardStyle: rootCardStyle }}
       />
       <Stack.Screen
         name="FlashcardFilter"
@@ -157,6 +165,22 @@ function LearnStack() {
           headerBackTitleVisible: false,
         }}
       />
+      <Stack.Screen
+        name="LearningTopics"
+        component={LearningTopicsScreen}
+        options={{
+          title: 'Exam Cheat Sheet',
+          headerBackTitleVisible: false,
+        }}
+      />
+      <Stack.Screen
+        name="LearningTopicDetail"
+        component={LearningTopicDetailScreen}
+        options={{
+          title: 'Topic',
+          headerBackTitleVisible: false,
+        }}
+      />
     </Stack.Navigator>
   );
 }
@@ -175,12 +199,13 @@ function ExamStack() {
           fontWeight: '700',
           fontSize: 18,
         },
+        cardStyle: { paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET },
       }}
     >
       <Stack.Screen
         name="ExamList"
         component={ExamScreen}
-        options={{ title: 'Mock Exams', headerShown: false }}
+        options={{ title: 'Mock Exams', headerShown: false, cardStyle: rootCardStyle }}
       />
       <Stack.Screen
         name="ExamStart"
@@ -213,6 +238,7 @@ function ExamStack() {
 export default function MainNavigator() {
   return (
     <Tab.Navigator
+      tabBar={(props) => <GlassTabBar {...props} />}
       screenOptions={({ route }) => ({
         tabBarIcon: ({ focused, color, size }) => {
           let iconName: string;
@@ -235,22 +261,6 @@ export default function MainNavigator() {
         },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.gray500,
-        tabBarStyle: {
-          backgroundColor: '#ffffff',
-          borderTopWidth: 1,
-          borderTopColor: colors.gray200,
-          height: 75,
-          paddingBottom: 12,
-          paddingTop: 8,
-        },
-        tabBarIconStyle: {
-          marginTop: 4,
-        },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '600',
-          marginTop: 4,
-        },
         headerShown: false,
       })}
     >

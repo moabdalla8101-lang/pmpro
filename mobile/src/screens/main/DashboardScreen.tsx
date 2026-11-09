@@ -1,23 +1,33 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, StyleSheet, ScrollView, SafeAreaView } from 'react-native';
-import { Card, Text, ActivityIndicator } from 'react-native-paper';
+import { Card, Text } from 'react-native-paper';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { fetchProgress, fetchPerformanceByDomain } from '../../store/slices/progressSlice';
+import {
+  clearProgress,
+  fetchProgress,
+  fetchPerformanceByDomain,
+} from '../../store/slices/progressSlice';
 import { loadSettings } from '../../store/slices/settingsSlice';
-import { examService } from '../../services/api/examService';
 import { dailyActivityService } from '../../services/dailyActivityService';
 import client from '../../services/api/client';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import {
   SectionHeader,
   DailyGoalsHero,
+  LoadingSpinner,
 } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
-import { hasPremiumAccess } from '../../utils/subscriptionUtils';
+import {
+  formatSubscriptionEndDate,
+  getSubscriptionDisplayName,
+  planHasEnded,
+  userHasActivePremium,
+} from '../../utils/subscriptionUtils';
 import { useRequireAuth } from '../../utils/requireAuth';
+import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
 
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
 
@@ -26,68 +36,28 @@ export default function DashboardScreen() {
   const dispatch = useDispatch<AppDispatch>();
   const requireAuth = useRequireAuth();
   const { user, isAuthenticated } = useSelector((state: RootState) => state.auth);
-  const { overallProgress, performanceByDomain, isLoading } = useSelector((state: RootState) => state.progress);
+  const { overallProgress, performanceByDomain, isLoadingDomain } = useSelector(
+    (state: RootState) => state.progress
+  );
   const { dailyQuestionsGoal, dailyMinutesGoal } = useSelector((state: RootState) => state.settings);
   const [todayActivity, setTodayActivity] = useState({ questionsAnswered: 0, practiceMinutes: 0 });
   const [currentStreak, setCurrentStreak] = useState(0);
-  const [loadingActivity, setLoadingActivity] = useState(true);
   const [weeklyCompletions, setWeeklyCompletions] = useState<Array<{ date: string; completed: boolean }>>([]);
-  const isPremium = hasPremiumAccess(user?.subscriptionTier);
+  const isPremium = userHasActivePremium(user);
+  const ended = planHasEnded(user?.subscriptionTier, user?.subscriptionExpiresAt);
+  const endedOn = formatSubscriptionEndDate(user?.subscriptionExpiresAt);
 
-  // Fetch data when screen comes into focus
-  useFocusEffect(
-    React.useCallback(() => {
-      loadDashboardData();
-    }, [dispatch, isAuthenticated])
-  );
-
-  // Also fetch on initial mount
-  useEffect(() => {
-    loadDashboardData();
-  }, [dispatch, isAuthenticated]);
-
-  const loadDashboardData = async () => {
-    if (!isAuthenticated) {
-      setTodayActivity({ questionsAnswered: 0, practiceMinutes: 0 });
-      setCurrentStreak(0);
-      setWeeklyCompletions([]);
-      setLoadingActivity(false);
-      return;
-    }
-
-    dispatch(loadSettings() as any);
-    dispatch(fetchProgress(PMP_CERTIFICATION_ID));
-    
-    // Stagger API calls to avoid rate limiting
-    // Start with the most important ones first
-    fetchTodayActivity();
-    fetchStreak();
-    
-    // Add small delays for less critical requests
-    setTimeout(() => {
-      dispatch(fetchPerformanceByDomain(PMP_CERTIFICATION_ID));
-    }, 100);
-    
-    setTimeout(() => {
-      fetchWeeklyCompletions();
-    }, 200);
-  };
-
-  const fetchTodayActivity = async () => {
+  const fetchTodayActivity = useCallback(async () => {
     try {
-      setLoadingActivity(true);
       const activity = await dailyActivityService.getTodayActivity();
       setTodayActivity(activity);
     } catch (error) {
       console.error('Failed to fetch today activity:', error);
-    } finally {
-      setLoadingActivity(false);
     }
-  };
+  }, []);
 
-  const fetchStreak = async () => {
-    // Only fetch streak if user is authenticated
-    if (!user || !user.id) {
+  const fetchStreak = useCallback(async () => {
+    if (!user?.id) {
       setCurrentStreak(0);
       return;
     }
@@ -96,62 +66,85 @@ export default function DashboardScreen() {
       const response = await client.get('/api/badges/streak');
       setCurrentStreak(response.data.currentStreak || 0);
     } catch (error: any) {
-      // Handle rate limiting gracefully
       if (error?.response?.status === 429) {
         console.warn('Rate limited on streak fetch, will retry later');
-        // Don't set to 0, keep previous value
         return;
       }
-      // Handle 401 (unauthorized) gracefully - user not logged in
       if (error?.response?.status === 401) {
-        console.warn('User not authenticated, skipping streak fetch');
         setCurrentStreak(0);
         return;
       }
       console.error('Failed to fetch streak:', error);
       setCurrentStreak(0);
     }
-  };
+  }, [user?.id]);
 
-  const fetchWeeklyCompletions = async () => {
+  const fetchWeeklyCompletions = useCallback(async () => {
     try {
       const today = new Date();
       const sevenDaysAgo = new Date(today);
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
       sevenDaysAgo.setHours(0, 0, 0, 0);
-      
+
       try {
         const response = await client.get(
           `/api/exams/daily-quiz/weekly?certificationId=${PMP_CERTIFICATION_ID}&startDate=${sevenDaysAgo.toISOString()}`
         );
         const completionDates = (response.data?.completions || []).map((c: any) => c.date);
         const completions: Array<{ date: string; completed: boolean }> = [];
-        
+
         for (let i = 6; i >= 0; i--) {
           const date = new Date(today);
           date.setDate(date.getDate() - i);
           date.setHours(0, 0, 0, 0);
           const dateStr = date.toISOString().split('T')[0];
-          const completed = completionDates.includes(dateStr);
-          completions.push({ date: dateStr, completed });
+          completions.push({ date: dateStr, completed: completionDates.includes(dateStr) });
         }
         setWeeklyCompletions(completions);
-      } catch (error) {
-        // If endpoint fails, create empty completions
+      } catch {
         const completions: Array<{ date: string; completed: boolean }> = [];
         for (let i = 6; i >= 0; i--) {
           const date = new Date(today);
           date.setDate(date.getDate() - i);
           date.setHours(0, 0, 0, 0);
-          const dateStr = date.toISOString().split('T')[0];
-          completions.push({ date: dateStr, completed: false });
+          completions.push({ date: date.toISOString().split('T')[0], completed: false });
         }
         setWeeklyCompletions(completions);
       }
     } catch (error) {
       console.error('Failed to fetch weekly completions:', error);
     }
-  };
+  }, []);
+
+  const loadDashboardData = useCallback(() => {
+    if (!isAuthenticated) {
+      dispatch(clearProgress());
+      setTodayActivity({ questionsAnswered: 0, practiceMinutes: 0 });
+      setCurrentStreak(0);
+      setWeeklyCompletions([]);
+      return;
+    }
+
+    dispatch(loadSettings() as any);
+    dispatch(fetchProgress(PMP_CERTIFICATION_ID));
+    fetchTodayActivity();
+    fetchStreak();
+
+    setTimeout(() => {
+      dispatch(fetchPerformanceByDomain(PMP_CERTIFICATION_ID));
+    }, 100);
+
+    setTimeout(() => {
+      fetchWeeklyCompletions();
+    }, 200);
+  }, [dispatch, isAuthenticated, fetchTodayActivity, fetchStreak, fetchWeeklyCompletions]);
+
+  // Silent refresh on focus — never blank the tab with a full-page spinner.
+  useFocusEffect(
+    useCallback(() => {
+      loadDashboardData();
+    }, [loadDashboardData])
+  );
 
   // Ensure accuracy is always a number (0-100 percentage)
   const accuracyValue = overallProgress?.accuracy;
@@ -168,14 +161,6 @@ export default function DashboardScreen() {
     }
   }
   const totalAnswered = overallProgress?.totalQuestionsAnswered || overallProgress?.total_questions_answered || 0;
-  
-  if (isLoading && !overallProgress) {
-    return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </SafeAreaView>
-    );
-  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -196,25 +181,42 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* Daily Goals Hero Banner */}
-        {!loadingActivity && (
-          <DailyGoalsHero
-            dailyQuestionsGoal={dailyQuestionsGoal}
-            dailyMinutesGoal={dailyMinutesGoal}
-            todayQuestions={todayActivity.questionsAnswered}
-            todayMinutes={todayActivity.practiceMinutes}
-            currentStreak={currentStreak}
-            weeklyCompletions={weeklyCompletions}
-            onStartPracticeTest={() => {
-              (navigation as any).navigate('PracticeTest');
-            }}
-          />
-        )}
+        {ended ? (
+          <Card
+            style={styles.planEndedCard}
+            onPress={() => (navigation as any).navigate('Paywall')}
+          >
+            <Card.Content style={styles.planEndedContent}>
+              <Icon name="alert-circle-outline" size={22} color={colors.error} />
+              <View style={styles.planEndedText}>
+                <Text variant="titleSmall" style={styles.planEndedTitle}>
+                  Your plan has ended
+                </Text>
+                <Text variant="bodySmall" style={styles.planEndedBody}>
+                  {getSubscriptionDisplayName(user?.subscriptionTier)}
+                  {endedOn ? ` ended on ${endedOn}` : ' has ended'}. Renew to open the full question bank.
+                </Text>
+              </View>
+            </Card.Content>
+          </Card>
+        ) : null}
+
+        <DailyGoalsHero
+          dailyQuestionsGoal={dailyQuestionsGoal}
+          dailyMinutesGoal={dailyMinutesGoal}
+          todayQuestions={todayActivity.questionsAnswered}
+          todayMinutes={todayActivity.practiceMinutes}
+          currentStreak={currentStreak}
+          weeklyCompletions={weeklyCompletions}
+          onStartPracticeTest={() => {
+            (navigation as any).navigate('PracticeTest');
+          }}
+        />
 
         {/* Quick Actions Grid */}
         <SectionHeader title="Quick Actions" icon="lightning-bolt" />
         <View style={styles.quickActionsGrid}>
-          {/* Knowledge Area Practice */}
+          {/* Knowledge Area Practice — free users get first 10 per area */}
           <View style={styles.quickActionCard}>
             <Card
               style={[styles.actionCard, { backgroundColor: `${colors.primary}10` }]}
@@ -236,12 +238,16 @@ export default function DashboardScreen() {
             </Card>
           </View>
 
-          {/* Domain Practice */}
+          {/* Domain Practice — premium only */}
           <View style={styles.quickActionCard}>
             <Card
               style={[styles.actionCard, { backgroundColor: `${colors.secondary}10` }]}
               onPress={() => {
-                (navigation as any).navigate('DomainFilter');
+                if (!requireAuth('paywall')) return;
+                (navigation as any).navigate(
+                  isPremium ? 'DomainFilter' : 'Paywall',
+                  isPremium ? undefined : { feature: 'domain_practice' }
+                );
               }}
             >
               <Card.Content style={styles.actionCardContent}>
@@ -252,7 +258,7 @@ export default function DashboardScreen() {
                   Domain Practice
                 </Text>
                 <Text variant="bodySmall" style={styles.actionSubtitle}>
-                  Practice by domain
+                  {isPremium ? 'Practice by domain' : 'Premium'}
                 </Text>
               </Card.Content>
             </Card>
@@ -311,110 +317,162 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* Performance by Domain (People, Process, Business) */}
-        <SectionHeader
-          title="Performance by Domain"
-          subtitle="Your progress in People, Process, and Business"
-          icon="chart-bar"
-        />
-        {isLoading ? (
-          <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: spacing.lg }} />
-        ) : performanceByDomain && performanceByDomain.length > 0 ? (
-          <View style={styles.processProgressContainer}>
-            {performanceByDomain.map((domain: any, index: number) => {
-                const totalAnswered = domain.totalAnswered || domain.total_answered || 0;
-                const correct = domain.correctAnswers || domain.correct_answers || 0;
-                const incorrect = totalAnswered - correct;
-                const totalQuestions = domain.totalQuestions || domain.total_questions || 0;
-                const unanswered = totalQuestions - totalAnswered;
-                
-                const correctPercent = totalQuestions > 0 ? (correct / totalQuestions) : 0;
-                const incorrectPercent = totalQuestions > 0 ? (incorrect / totalQuestions) : 0;
-                const unansweredPercent = totalQuestions > 0 ? (unanswered / totalQuestions) : 0;
-                
-                // Get domain color
-                const domainName = domain.domain || '';
-                const domainColor = domainName === 'People' ? colors.domain.people :
-                                  domainName === 'Process' ? colors.domain.process :
-                                  domainName === 'Business' ? colors.domain.business :
-                                  colors.primary;
-                
-                return (
-                  <Card key={domain.domain || index} style={[styles.processCard, { borderLeftWidth: 4, borderLeftColor: domainColor }]}>
-                    <Card.Content style={styles.processContent}>
-                      <View style={styles.processHeader}>
-                        <Text variant="titleMedium" style={[styles.processTitle, { color: domainColor }]}>
-                          {domain.domain || 'Unknown'}
-                        </Text>
-                        <Text variant="bodySmall" style={styles.processTotal}>
-                          {totalAnswered} / {totalQuestions} answered
-                        </Text>
-                      </View>
-                      
-                      {/* Segmented Progress Bar */}
-                      <View style={styles.progressBarContainer}>
-                        <View style={styles.progressBarWrapper}>
-                          {correct > 0 && (
-                            <View
-                              style={[
-                                styles.progressSegment,
-                                styles.progressSegmentCorrect,
-                                { width: `${correctPercent * 100}%` },
-                              ]}
-                            />
-                          )}
-                          {incorrect > 0 && (
-                            <View
-                              style={[
-                                styles.progressSegment,
-                                styles.progressSegmentIncorrect,
-                                { width: `${incorrectPercent * 100}%` },
-                              ]}
-                            />
-                          )}
-                          {unanswered > 0 && (
-                            <View
-                              style={[
-                                styles.progressSegment,
-                                styles.progressSegmentUnanswered,
-                                { width: `${unansweredPercent * 100}%` },
-                              ]}
-                            />
-                          )}
-                        </View>
-                      </View>
-                      
-                      <View style={styles.processStats}>
-                        <View style={styles.processStatItem}>
-                          <View style={[styles.processStatDot, { backgroundColor: colors.success }]} />
-                          <Text variant="bodySmall" style={styles.processStatText}>
-                            {correct} correct
+        {/* Account stats only — never show previous user's data for guests */}
+        {isAuthenticated && (
+          <>
+            <SectionHeader
+              title="Performance by Domain"
+              subtitle="Your progress in People, Process, and Business"
+              icon="chart-bar"
+            />
+            {isLoadingDomain && performanceByDomain.length === 0 ? (
+              <LoadingSpinner size="small" style={{ marginVertical: spacing.lg }} />
+            ) : performanceByDomain && performanceByDomain.length > 0 ? (
+              <View style={styles.processProgressContainer}>
+                {performanceByDomain.map((domain: any, index: number) => {
+                  const totalAnswered =
+                    domain.totalAnswered || domain.total_answered || 0;
+                  const correct =
+                    domain.correctAnswers || domain.correct_answers || 0;
+                  const incorrect = totalAnswered - correct;
+                  const totalQuestions =
+                    domain.totalQuestions || domain.total_questions || 0;
+                  const unanswered = totalQuestions - totalAnswered;
+
+                  const correctPercent =
+                    totalQuestions > 0 ? correct / totalQuestions : 0;
+                  const incorrectPercent =
+                    totalQuestions > 0 ? incorrect / totalQuestions : 0;
+                  const unansweredPercent =
+                    totalQuestions > 0 ? unanswered / totalQuestions : 0;
+
+                  const domainName = domain.domain || '';
+                  const domainColor =
+                    domainName === 'People'
+                      ? colors.domain.people
+                      : domainName === 'Process'
+                        ? colors.domain.process
+                        : domainName === 'Business'
+                          ? colors.domain.business
+                          : colors.primary;
+
+                  return (
+                    <Card
+                      key={domain.domain || index}
+                      style={[
+                        styles.processCard,
+                        { borderLeftWidth: 4, borderLeftColor: domainColor },
+                      ]}
+                    >
+                      <Card.Content style={styles.processContent}>
+                        <View style={styles.processHeader}>
+                          <Text
+                            variant="titleMedium"
+                            style={[styles.processTitle, { color: domainColor }]}
+                          >
+                            {domain.domain || 'Unknown'}
+                          </Text>
+                          <Text variant="bodySmall" style={styles.processTotal}>
+                            {totalAnswered} / {totalQuestions} answered
                           </Text>
                         </View>
-                        <View style={styles.processStatItem}>
-                          <View style={[styles.processStatDot, { backgroundColor: colors.error }]} />
-                          <Text variant="bodySmall" style={styles.processStatText}>
-                            {incorrect} incorrect
-                          </Text>
+
+                        <View style={styles.progressBarContainer}>
+                          <View style={styles.progressBarWrapper}>
+                            {correct > 0 && (
+                              <View
+                                style={[
+                                  styles.progressSegment,
+                                  styles.progressSegmentCorrect,
+                                  { width: `${correctPercent * 100}%` },
+                                ]}
+                              />
+                            )}
+                            {incorrect > 0 && (
+                              <View
+                                style={[
+                                  styles.progressSegment,
+                                  styles.progressSegmentIncorrect,
+                                  { width: `${incorrectPercent * 100}%` },
+                                ]}
+                              />
+                            )}
+                            {unanswered > 0 && (
+                              <View
+                                style={[
+                                  styles.progressSegment,
+                                  styles.progressSegmentUnanswered,
+                                  { width: `${unansweredPercent * 100}%` },
+                                ]}
+                              />
+                            )}
+                          </View>
                         </View>
-                        {unanswered > 0 && (
+
+                        <View style={styles.processStats}>
                           <View style={styles.processStatItem}>
-                            <View style={[styles.processStatDot, { backgroundColor: colors.gray300 }]} />
-                            <Text variant="bodySmall" style={styles.processStatText}>
-                              {unanswered} unanswered
+                            <View
+                              style={[
+                                styles.processStatDot,
+                                { backgroundColor: colors.success },
+                              ]}
+                            />
+                            <Text
+                              variant="bodySmall"
+                              style={styles.processStatText}
+                            >
+                              {correct} correct
                             </Text>
                           </View>
-                        )}
-                      </View>
-                    </Card.Content>
-                  </Card>
-                );
-              })}
-            </View>
-        ) : (
-          <Text variant="bodyMedium" style={{ textAlign: 'center', color: colors.textSecondary, padding: spacing.lg }}>
-            No domain performance data available
-          </Text>
+                          <View style={styles.processStatItem}>
+                            <View
+                              style={[
+                                styles.processStatDot,
+                                { backgroundColor: colors.error },
+                              ]}
+                            />
+                            <Text
+                              variant="bodySmall"
+                              style={styles.processStatText}
+                            >
+                              {incorrect} incorrect
+                            </Text>
+                          </View>
+                          {unanswered > 0 && (
+                            <View style={styles.processStatItem}>
+                              <View
+                                style={[
+                                  styles.processStatDot,
+                                  { backgroundColor: colors.gray300 },
+                                ]}
+                              />
+                              <Text
+                                variant="bodySmall"
+                                style={styles.processStatText}
+                              >
+                                {unanswered} unanswered
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                      </Card.Content>
+                    </Card>
+                  );
+                })}
+              </View>
+            ) : (
+              <Text
+                variant="bodyMedium"
+                style={{
+                  textAlign: 'center',
+                  color: colors.textSecondary,
+                  padding: spacing.lg,
+                }}
+              >
+                No domain performance data available
+              </Text>
+            )}
+          </>
         )}
 
       </ScrollView>
@@ -432,7 +490,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.base,
-    paddingBottom: spacing.xl,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
   loadingContainer: {
     flex: 1,
@@ -457,6 +515,29 @@ const styles = StyleSheet.create({
   },
   greetingSubtext: {
     color: colors.textSecondary,
+  },
+  planEndedCard: {
+    marginHorizontal: spacing.base,
+    marginBottom: spacing.lg,
+    borderRadius: borderRadius.lg,
+    backgroundColor: `${colors.error}10`,
+  },
+  planEndedContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  planEndedText: {
+    flex: 1,
+  },
+  planEndedTitle: {
+    fontWeight: '700',
+    color: colors.error,
+    marginBottom: 2,
+  },
+  planEndedBody: {
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
   progressCard: {
     marginBottom: spacing.lg,

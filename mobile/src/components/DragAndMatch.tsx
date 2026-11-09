@@ -420,7 +420,8 @@ const styles = StyleSheet.create({
   rightItemsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
+    justifyContent: 'space-between',
+    rowGap: spacing.sm,
   },
   rightItem: {
     backgroundColor: colors.surface,
@@ -428,8 +429,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     borderWidth: 2,
     borderColor: colors.gray300,
-    minWidth: (SCREEN_WIDTH - spacing.md * 4) / 2 - spacing.sm,
-    maxWidth: (SCREEN_WIDTH - spacing.md * 4) / 2 - spacing.sm,
+    width: '48.5%',
     ...shadows.sm,
   },
   rightItemSelected: {

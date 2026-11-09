@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity } from 'react-native';
 import { Card, Text } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
+import { useSelector } from 'react-redux';
+import { RootState } from '../../store';
 import { SectionHeader, ActionButton } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
+import { userHasActivePremium } from '../../utils/subscriptionUtils';
 
 const DOMAINS = [
   { id: 'People', name: 'People', color: colors.domain.people, icon: 'account-group' },
@@ -15,19 +18,39 @@ const DOMAINS = [
 
 export default function DomainFilterScreen() {
   const navigation = useNavigation();
+  const { user } = useSelector((state: RootState) => state.auth);
+  const isPremium = userHasActivePremium(user);
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!isPremium) {
+      (navigation as any).replace('Paywall', { feature: 'domain_practice' });
+    }
+  }, [isPremium, navigation]);
+
   const handleSelectDomain = (domainId: string) => {
+    if (!isPremium) {
+      (navigation as any).navigate('Paywall', { feature: 'domain_practice' });
+      return;
+    }
     setSelectedDomain(selectedDomain === domainId ? null : domainId);
   };
 
   const handleStartPractice = () => {
+    if (!isPremium) {
+      (navigation as any).navigate('Paywall', { feature: 'domain_practice' });
+      return;
+    }
     if (selectedDomain) {
       (navigation as any).navigate('PracticeList', {
         domain: selectedDomain,
       });
     }
   };
+
+  if (!isPremium) {
+    return <SafeAreaView style={styles.container} />;
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -165,6 +188,3 @@ const styles = StyleSheet.create({
     marginTop: spacing.base,
   },
 });
-
-
-

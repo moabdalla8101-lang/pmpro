@@ -19,6 +19,7 @@ import {
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { useRequireAuth } from '../../utils/requireAuth';
+import { getApiErrorMessage } from '../../utils/apiError';
 import {
   clearPracticeDraft,
   isDraftAwaitingAuth,
@@ -83,8 +84,14 @@ export default function PracticeTestScreen() {
     setIsLoading(true);
     try {
       await clearPendingDraft();
+      // Practice sessions are free; mock/mini stay premium-gated on the server.
       if (isAuthenticated) {
-        const response = await examService.startExam(PMP_CERTIFICATION_ID, TOTAL_QUESTIONS);
+        const response = await examService.startExam(
+          PMP_CERTIFICATION_ID,
+          TOTAL_QUESTIONS,
+          undefined,
+          'practice'
+        );
         setExamId(response.examId);
         setTestQuestions(response.questions || []);
       } else {
@@ -95,7 +102,7 @@ export default function PracticeTestScreen() {
       setIsTestStarted(true);
       dailyActivityService.startSession();
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to start practice test');
+      Alert.alert('Error', getApiErrorMessage(error, 'Failed to start practice test'));
     } finally {
       setIsLoading(false);
     }
@@ -126,7 +133,8 @@ export default function PracticeTestScreen() {
           const response = await examService.startExam(
             PMP_CERTIFICATION_ID,
             questions.length,
-            questions.map((q) => q.id)
+            questions.map((q) => q.id),
+            'practice'
           );
           activeExamId = response.examId;
           setExamId(activeExamId);
@@ -159,7 +167,7 @@ export default function PracticeTestScreen() {
           params: { examId: activeExamId },
         });
       } catch (error: any) {
-        Alert.alert('Error', error.message || 'Failed to submit test');
+        Alert.alert('Error', getApiErrorMessage(error, 'Failed to submit test'));
       } finally {
         setIsSubmitting(false);
         setPendingSubmit(false);

@@ -12,7 +12,7 @@ import {
   getSubscriptionTierFromCustomerInfo,
   getSubscriptionExpirationDate,
 } from '../../services/revenueCatService';
-import { applySubscriptionTier } from './authSlice';
+import { applySubscriptionTier, logout } from './authSlice';
 
 interface SubscriptionState {
   offerings: PurchasesOfferings | null;
@@ -104,7 +104,9 @@ export const restoreSubscription = createAsyncThunk(
 );
 
 /**
- * Refresh customer info from RevenueCat
+ * Refresh customer info from RevenueCat.
+ * Does not overwrite auth tier — after PRODUCT_CHANGE Apple/RC can still
+ * report the old product until renewal, while the backend already has the new plan.
  */
 export const refreshCustomerInfo = createAsyncThunk(
   'subscription/refreshCustomerInfo',
@@ -133,8 +135,14 @@ const subscriptionSlice = createSlice({
     },
   },
   extraReducers: (builder) => {
-    // Fetch offerings
     builder
+      .addCase(logout.fulfilled, (state) => {
+        state.customerInfo = null;
+        state.error = null;
+        state.lastSyncAt = null;
+        state.isPurchasing = false;
+      })
+      // Fetch offerings
       .addCase(fetchOfferings.pending, (state) => {
         state.isLoading = true;
         state.error = null;

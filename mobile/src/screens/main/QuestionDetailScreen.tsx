@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Image } from 'react-native';
+import { View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Image, Alert } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useSelector, useDispatch } from 'react-redux';
@@ -15,10 +15,11 @@ import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { getApiUrl } from '../../utils/getApiUrl';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
 import {
-  hasPremiumAccess,
   hasReachedFreeLimit,
+  userHasActivePremium,
 } from '../../utils/subscriptionUtils';
 import { useRequireAuth } from '../../utils/requireAuth';
+import { getApiErrorMessage } from '../../utils/apiError';
 import { AnsweredQuestionFeedback } from '../../types/question';
 
 export default function QuestionDetailScreen() {
@@ -136,7 +137,7 @@ export default function QuestionDetailScreen() {
   const handleToggleBookmark = async () => {
     if (!requireAuth('bookmarks')) return;
 
-    if (!hasPremiumAccess(user?.subscriptionTier)) {
+    if (!userHasActivePremium(user)) {
       (navigation as any).navigate('Paywall', { feature: 'bookmarks' });
       return;
     }
@@ -160,7 +161,8 @@ export default function QuestionDetailScreen() {
       hasReachedFreeLimit(
         'MAX_PRACTICE_QUESTIONS',
         questionsAnswered,
-        user?.subscriptionTier
+        user?.subscriptionTier,
+        user?.subscriptionExpiresAt
       )
     ) {
       (navigation as any).navigate('Paywall', {
@@ -223,6 +225,7 @@ export default function QuestionDetailScreen() {
     } catch (error: any) {
       console.error('Failed to record answer:', error);
       // Do not reveal correctness without a successful server-validated submission
+      Alert.alert('Error', getApiErrorMessage(error, 'Failed to save your answer. Please try again.'));
     } finally {
       setSubmitting(false);
     }
@@ -330,7 +333,6 @@ export default function QuestionDetailScreen() {
     );
   }
 
-  const difficulty = currentQuestion.difficulty || 'medium';
   const knowledgeArea = currentQuestion.knowledgeAreaName || currentQuestion.knowledge_area_name;
   const displayKnowledgeArea = knowledgeArea ? removeProjectPrefix(knowledgeArea) : null;
 
@@ -350,15 +352,6 @@ export default function QuestionDetailScreen() {
                 variant="outlined"
               />
             )}
-            <CategoryBadge
-              label={difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}
-              color={
-                difficulty === 'easy' ? colors.success :
-                difficulty === 'medium' ? colors.warning :
-                colors.error
-              }
-              variant="pill"
-            />
           </View>
           <TouchableOpacity
             onPress={handleToggleBookmark}

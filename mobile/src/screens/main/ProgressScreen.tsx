@@ -12,19 +12,20 @@ import { useDispatch } from 'react-redux';
 import { AppDispatch } from '../../store';
 import { fetchProgress, fetchPerformanceByKnowledgeArea, fetchPerformanceByDomain } from '../../store/slices/progressSlice';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { hasPremiumAccess } from '../../utils/subscriptionUtils';
+import { userHasActivePremium } from '../../utils/subscriptionUtils';
 import { useRequireAuth } from '../../utils/requireAuth';
-
-const screenWidth = Dimensions.get('window').width;
+import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
+import { useContentWidth } from '../../utils/layout';
 
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
 
 export default function ProgressScreen() {
+  const contentWidth = useContentWidth();
   const dispatch = useDispatch<AppDispatch>();
   const navigation = useNavigation();
   const requireAuth = useRequireAuth();
   const { user, isAuthenticated } = useSelector((state: RootState) => state.auth);
-  const { overallProgress, performanceByKnowledgeArea, performanceByDomain, isLoading, error } = useSelector(
+  const { overallProgress, performanceByKnowledgeArea, performanceByDomain } = useSelector(
     (state: RootState) => state.progress
   );
 
@@ -89,29 +90,7 @@ export default function ProgressScreen() {
     },
   };
 
-  // Show loading state
-  if (isAuthenticated && isLoading && !overallProgress && performanceByKnowledgeArea.length === 0 && performanceByDomain.length === 0) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <Text variant="bodyLarge" style={styles.loadingText}>Loading progress data...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // Show error state
-  if (isAuthenticated && error && !overallProgress && performanceByKnowledgeArea.length === 0 && performanceByDomain.length === 0) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Text variant="titleMedium" style={styles.errorText}>Error loading progress</Text>
-          <Text variant="bodyMedium" style={styles.errorMessage}>{error}</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
+  // Never blank the Progress tab on focus — show auth/paywall/content immediately.
   if (!isAuthenticated) {
     return (
       <SafeAreaView style={styles.container}>
@@ -126,7 +105,7 @@ export default function ProgressScreen() {
     );
   }
 
-  if (!hasPremiumAccess(user?.subscriptionTier)) {
+  if (!userHasActivePremium(user)) {
     return (
       <SafeAreaView style={styles.container}>
         <EmptyState
@@ -362,7 +341,7 @@ export default function ProgressScreen() {
               </Text>
               <PieChart
                 data={knowledgeAreaData}
-                width={screenWidth - 64}
+                width={contentWidth - 64}
                 height={220}
                 chartConfig={chartConfig}
                 accessor="accuracy"
@@ -389,7 +368,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.base,
-    paddingBottom: spacing.xl,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
   statsRow: {
     flexDirection: 'row',
