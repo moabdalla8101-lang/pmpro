@@ -14,6 +14,7 @@ import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
 import { getApiErrorMessage } from '../../utils/apiError';
+import { formatExplanation } from '../../utils/formatExplanation';
 
 export default function ExamReviewScreen() {
   const route = useRoute();
@@ -388,7 +389,7 @@ export default function ExamReviewScreen() {
                         </Text>
                       </View>
                       <Text variant="bodyMedium" style={styles.explanationText}>
-                        {item.explanation}
+                        {formatExplanation(item.explanation)}
                       </Text>
                     </View>
                   )}

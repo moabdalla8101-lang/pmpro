@@ -20,6 +20,7 @@ import {
 } from '../../utils/subscriptionUtils';
 import { useRequireAuth } from '../../utils/requireAuth';
 import { getApiErrorMessage } from '../../utils/apiError';
+import { formatExplanation } from '../../utils/formatExplanation';
 import { AnsweredQuestionFeedback } from '../../types/question';
 
 export default function QuestionDetailScreen() {
@@ -572,7 +573,7 @@ export default function QuestionDetailScreen() {
                   Explanation:
                 </Text>
                 <Text variant="bodyMedium" style={styles.explanationText}>
-                  {answerFeedback.explanation}
+                  {formatExplanation(answerFeedback.explanation)}
                 </Text>
                 
                 {/* Explanation Images */}
