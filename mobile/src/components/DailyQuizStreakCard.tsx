@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
-import { Card, Text, ActivityIndicator } from 'react-native-paper';
+import { Card, Text } from 'react-native-paper';
+import LoadingSpinner from './LoadingSpinner';
 import { useFocusEffect } from '@react-navigation/native';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -194,7 +195,7 @@ export default function DailyQuizStreakCard({ certificationId, onStartQuiz }: Da
     return (
       <Card style={styles.card}>
         <Card.Content style={styles.cardContent}>
-          <ActivityIndicator size="small" color={colors.primary} />
+          <LoadingSpinner size="small" />
         </Card.Content>
       </Card>
     );

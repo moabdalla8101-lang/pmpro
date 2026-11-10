@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Alert } from 'react-native';
-import { Card, Text, ActivityIndicator, ProgressBar } from 'react-native-paper';
+import { Card, Text, ProgressBar } from 'react-native-paper';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { examService } from '../../services/api/examService';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ActionButton, CategoryBadge, SectionHeader } from '../../components';
+import { ActionButton, CategoryBadge, SectionHeader, LoadingSpinner } from '../../components';
 import {
   formatReviewYourAnswer,
   formatReviewCorrectAnswer,
@@ -57,8 +57,7 @@ export default function ExamReviewScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading exam review...</Text>
+        <LoadingSpinner label="Loading exam review..." />
       </SafeAreaView>
     );
   }
