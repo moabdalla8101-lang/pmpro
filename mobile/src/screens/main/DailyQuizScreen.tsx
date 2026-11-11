@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, Alert, SafeAreaView, TouchableOpacity } from 'react-native';
-import { Text, ProgressBar, ActivityIndicator } from 'react-native-paper';
+import { Text, ProgressBar } from 'react-native-paper';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSelector, useDispatch } from 'react-redux';
 import { examService } from '../../services/api/examService';
@@ -8,13 +8,7 @@ import { RootState, AppDispatch } from '../../store';
 import { addBookmark, removeBookmark, checkBookmark } from '../../store/slices/bookmarkSlice';
 import { dailyActivityService } from '../../services/dailyActivityService';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
-import {
-  ActionButton,
-  ExamAnswerPanel,
-  ExamAnswerValue,
-  isExamAnswerComplete,
-  toExamSubmitAnswer,
-} from '../../components';
+import { ActionButton, ExamAnswerPanel, ExamAnswerValue, isExamAnswerComplete, toExamSubmitAnswer, LoadingSpinner } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { useRequireAuth } from '../../utils/requireAuth';
@@ -271,8 +265,7 @@ export default function DailyQuizScreen() {
   if (!currentQuestion && displayQuestions.length === 0) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading questions...</Text>
+        <LoadingSpinner label="Loading questions..." />
       </SafeAreaView>
     );
   }
@@ -280,7 +273,7 @@ export default function DailyQuizScreen() {
   if (!currentQuestion) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <LoadingSpinner label="Loading question..." />
       </SafeAreaView>
     );
   }
