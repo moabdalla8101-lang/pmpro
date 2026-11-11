@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, FlatList, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
-import { Card, Text, ActivityIndicator } from 'react-native-paper';
+import { Card, Text } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
 import { useNavigation } from '@react-navigation/native';
 import { fetchBookmarks, removeBookmark } from '../../store/slices/bookmarkSlice';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
-import { CategoryBadge, SectionHeader, EmptyState } from '../../components';
+import { CategoryBadge, SectionHeader, EmptyState, LoadingSpinner } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
@@ -144,8 +144,7 @@ export default function BookmarkedQuestionsScreen() {
   if (isLoading && bookmarks.length === 0) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading bookmarks...</Text>
+        <LoadingSpinner label="Loading bookmarks..." />
       </SafeAreaView>
     );
   }
