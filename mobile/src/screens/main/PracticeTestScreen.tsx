@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, StyleSheet, ScrollView, Alert, SafeAreaView, TouchableOpacity } from 'react-native';
-import { Text, ProgressBar, ActivityIndicator } from 'react-native-paper';
+import { Text, ProgressBar } from 'react-native-paper';
 import { useNavigation, CommonActions } from '@react-navigation/native';
 import { useSelector } from 'react-redux';
 import { examService } from '../../services/api/examService';
@@ -9,13 +9,7 @@ import { questionService } from '../../services/api/questionService';
 import { dailyActivityService } from '../../services/dailyActivityService';
 import client from '../../services/api/client';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
-import {
-  ActionButton,
-  ExamAnswerPanel,
-  ExamAnswerValue,
-  isExamAnswerComplete,
-  toExamSubmitAnswer,
-} from '../../components';
+import { ActionButton, ExamAnswerPanel, ExamAnswerValue, isExamAnswerComplete, toExamSubmitAnswer, LoadingSpinner } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { useRequireAuth } from '../../utils/requireAuth';
@@ -400,10 +394,7 @@ export default function PracticeTestScreen() {
   if (!currentQuestion || isSubmitting) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>
-          {isSubmitting ? 'Saving results...' : 'Loading question...'}
-        </Text>
+        <LoadingSpinner label={isSubmitting ? 'Saving results...' : 'Loading question...'} />
       </SafeAreaView>
     );
   }
