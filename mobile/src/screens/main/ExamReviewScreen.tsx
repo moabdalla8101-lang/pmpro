@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Alert } from 'react-native';
-import { Card, Text, ActivityIndicator, ProgressBar } from 'react-native-paper';
+import { Card, Text, ProgressBar } from 'react-native-paper';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { examService } from '../../services/api/examService';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ActionButton, CategoryBadge, SectionHeader } from '../../components';
+import { ActionButton, CategoryBadge, SectionHeader, LoadingSpinner } from '../../components';
 import {
   formatReviewYourAnswer,
   formatReviewCorrectAnswer,
@@ -14,6 +14,7 @@ import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
 import { getApiErrorMessage } from '../../utils/apiError';
+import { formatExplanation } from '../../utils/formatExplanation';
 
 export default function ExamReviewScreen() {
   const route = useRoute();
@@ -57,8 +58,7 @@ export default function ExamReviewScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading exam review...</Text>
+        <LoadingSpinner label="Loading exam review..." />
       </SafeAreaView>
     );
   }
@@ -388,7 +388,7 @@ export default function ExamReviewScreen() {
                         </Text>
                       </View>
                       <Text variant="bodyMedium" style={styles.explanationText}>
-                        {item.explanation}
+                        {formatExplanation(item.explanation)}
                       </Text>
                     </View>
                   )}
