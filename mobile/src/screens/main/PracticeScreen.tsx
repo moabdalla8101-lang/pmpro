@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, StyleSheet, FlatList, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
-import { Card, Text, ActivityIndicator } from 'react-native-paper';
+import { Card, Text } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchQuestions, clearQuestions } from '../../store/slices/questionSlice';
 import { RootState, AppDispatch } from '../../store';
@@ -8,7 +8,7 @@ import { useNavigation, useFocusEffect, useRoute } from '@react-navigation/nativ
 import { dailyActivityService } from '../../services/dailyActivityService';
 import { progressService } from '../../services/api/progressService';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
-import { CategoryBadge, SectionHeader, EmptyState } from '../../components';
+import { CategoryBadge, SectionHeader, EmptyState, LoadingSpinner } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
@@ -278,8 +278,7 @@ export default function PracticeScreen() {
   if (isLoading && filteredQuestions.length === 0) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading questions...</Text>
+        <LoadingSpinner label="Loading questions..." />
       </SafeAreaView>
     );
   }
@@ -353,7 +352,7 @@ export default function PracticeScreen() {
           <>
             {isLoadingMore ? (
               <View style={styles.footerLoader}>
-                <ActivityIndicator size="small" color={colors.primary} />
+                <LoadingSpinner size="small" />
               </View>
             ) : null}
             {showUpgradePrompt ? (

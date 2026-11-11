@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Image, Alert } from 'react-native';
-import { Text, ActivityIndicator } from 'react-native-paper';
+import { Text } from 'react-native-paper';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useSelector, useDispatch } from 'react-redux';
 import { fetchQuestion } from '../../store/slices/questionSlice';
@@ -9,7 +9,7 @@ import { addBookmark, removeBookmark, checkBookmark } from '../../store/slices/b
 import { dailyActivityService } from '../../services/dailyActivityService';
 import { RootState, AppDispatch } from '../../store';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
-import { CategoryBadge, ActionButton, DragAndMatch } from '../../components';
+import { CategoryBadge, ActionButton, DragAndMatch, LoadingSpinner } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { getApiUrl } from '../../utils/getApiUrl';
@@ -20,6 +20,7 @@ import {
 } from '../../utils/subscriptionUtils';
 import { useRequireAuth } from '../../utils/requireAuth';
 import { getApiErrorMessage } from '../../utils/apiError';
+import { formatExplanation } from '../../utils/formatExplanation';
 import { AnsweredQuestionFeedback } from '../../types/question';
 
 export default function QuestionDetailScreen() {
@@ -327,8 +328,7 @@ export default function QuestionDetailScreen() {
   if (isLoading || !currentQuestion || currentQuestion.id !== questionId) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading question...</Text>
+        <LoadingSpinner label="Loading question..." />
       </SafeAreaView>
     );
   }
@@ -572,7 +572,7 @@ export default function QuestionDetailScreen() {
                   Explanation:
                 </Text>
                 <Text variant="bodyMedium" style={styles.explanationText}>
-                  {answerFeedback.explanation}
+                  {formatExplanation(answerFeedback.explanation)}
                 </Text>
                 
                 {/* Explanation Images */}

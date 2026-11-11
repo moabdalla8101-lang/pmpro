@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { View, StyleSheet, SafeAreaView } from 'react-native';
-import { Text, ActivityIndicator } from 'react-native-paper';
+import { Text } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
@@ -8,7 +8,7 @@ import {
   fetchMarkedFlashcards,
   fetchMarkedFlashcardsForStudy,
 } from '../../store/slices/flashcardSlice';
-import { ActionButton, EmptyState, SectionHeader } from '../../components';
+import { ActionButton, EmptyState, SectionHeader, LoadingSpinner } from '../../components';
 import { colors } from '../../theme';
 import { spacing } from '../../utils/styles';
 
@@ -36,8 +36,7 @@ export default function MarkedFlashcardsScreen() {
   if (isLoading) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading marked flashcards...</Text>
+        <LoadingSpinner label="Loading marked flashcards..." />
       </SafeAreaView>
     );
   }

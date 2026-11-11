@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity } from 'react-native';
-import { Card, Text, ActivityIndicator } from 'react-native-paper';
+import { Card, Text } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
 import { useNavigation } from '@react-navigation/native';
 import { fetchKnowledgeAreas } from '../../store/slices/flashcardSlice';
-import { ActionButton, SectionHeader } from '../../components';
+import { ActionButton, SectionHeader, LoadingSpinner } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
@@ -64,8 +64,7 @@ export default function FlashcardFilterScreen() {
   if (isLoading) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading knowledge areas...</Text>
+        <LoadingSpinner label="Loading knowledge areas..." />
       </SafeAreaView>
     );
   }
