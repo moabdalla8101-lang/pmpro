@@ -50,11 +50,11 @@ function resolveGlassKind(): GlassKind {
 /** RN Web accepts these CSS props even though they are not in ViewStyle. */
 const webGlassFill: ViewStyle = {
   ...StyleSheet.absoluteFillObject,
-  backgroundColor: 'rgba(255, 255, 255, 0.38)',
+  backgroundColor: 'rgba(255, 255, 255, 0.22)',
   // @ts-expect-error RN Web CSS
-  backdropFilter: 'saturate(180%) blur(18px)',
+  backdropFilter: 'saturate(180%) blur(22px)',
   // @ts-expect-error RN Web CSS
-  WebkitBackdropFilter: 'saturate(180%) blur(18px)',
+  WebkitBackdropFilter: 'saturate(180%) blur(22px)',
 };
 
 export default function GlassTabBarBackground({ radius }: { radius: number }) {
