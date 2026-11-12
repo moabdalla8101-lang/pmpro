@@ -129,49 +129,51 @@ export default function GlassTabBar({ state, descriptors, navigation }: BottomTa
   const bottom = Math.max(insets.bottom - 6, TAB_BAR_MIN_BOTTOM_GAP);
 
   return (
-    <View pointerEvents="box-none" style={[styles.wrapper, { bottom }]}>
-      <GestureDetector gesture={pan}>
-        <View style={styles.bar} onLayout={onLayout}>
-          <GlassTabBarBackground radius={TAB_BAR_HEIGHT / 2} />
+    <View pointerEvents="box-none" style={styles.host}>
+      <View pointerEvents="box-none" style={[styles.wrapper, { bottom }]}>
+        <GestureDetector gesture={pan}>
+          <View style={styles.bar} onLayout={onLayout}>
+            <GlassTabBarBackground radius={TAB_BAR_HEIGHT / 2} />
 
-          <Animated.View pointerEvents="none" style={[styles.lens, lensStyle]}>
-            <Animated.View style={[StyleSheet.absoluteFill, styles.lensRest, restFillStyle]} />
-            <Animated.View style={[StyleSheet.absoluteFill, styles.lensLifted, liftedFillStyle]} />
-          </Animated.View>
+            <Animated.View pointerEvents="none" style={[styles.lens, lensStyle]}>
+              <Animated.View style={[StyleSheet.absoluteFill, styles.lensRest, restFillStyle]} />
+              <Animated.View style={[StyleSheet.absoluteFill, styles.lensLifted, liftedFillStyle]} />
+            </Animated.View>
 
-          <View style={styles.row} accessibilityRole="tablist">
-            {state.routes.map((route, index) => {
-              const { options } = descriptors[route.key];
-              const focused = state.index === index;
-              const color = focused
-                ? options.tabBarActiveTintColor ?? colors.primary
-                : options.tabBarInactiveTintColor ?? colors.gray500;
-              const label =
-                typeof options.tabBarLabel === 'string'
-                  ? options.tabBarLabel
-                  : options.title ?? route.name;
+            <View style={styles.row} accessibilityRole="tablist">
+              {state.routes.map((route, index) => {
+                const { options } = descriptors[route.key];
+                const focused = state.index === index;
+                const color = focused
+                  ? options.tabBarActiveTintColor ?? colors.primary
+                  : options.tabBarInactiveTintColor ?? colors.gray500;
+                const label =
+                  typeof options.tabBarLabel === 'string'
+                    ? options.tabBarLabel
+                    : options.title ?? route.name;
 
-              return (
-                <TabItem
-                  key={route.key}
-                  index={index}
-                  label={label}
-                  color={color}
-                  focused={focused}
-                  icon={options.tabBarIcon?.({ focused, color, size: ICON_SIZE })}
-                  itemWidth={itemWidth}
-                  lensCenter={lensCenter}
-                  lift={lift}
-                  onPress={() => selectTab(index)}
-                  onLongPress={() =>
-                    navigation.emit({ type: 'tabLongPress', target: route.key })
-                  }
-                />
-              );
-            })}
+                return (
+                  <TabItem
+                    key={route.key}
+                    index={index}
+                    label={label}
+                    color={color}
+                    focused={focused}
+                    icon={options.tabBarIcon?.({ focused, color, size: ICON_SIZE })}
+                    itemWidth={itemWidth}
+                    lensCenter={lensCenter}
+                    lift={lift}
+                    onPress={() => selectTab(index)}
+                    onLongPress={() =>
+                      navigation.emit({ type: 'tabLongPress', target: route.key })
+                    }
+                  />
+                );
+              })}
+            </View>
           </View>
-        </View>
-      </GestureDetector>
+        </GestureDetector>
+      </View>
     </View>
   );
 }
@@ -231,12 +233,18 @@ function TabItem({
 }
 
 const styles = StyleSheet.create({
+  // Full-bleed transparent host so no solid tray shows behind the floating pill.
+  host: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'transparent',
+  },
   wrapper: {
     position: 'absolute',
     left: TAB_BAR_SIDE_INSET,
     right: TAB_BAR_SIDE_INSET,
     height: TAB_BAR_HEIGHT,
     borderRadius: TAB_BAR_HEIGHT / 2,
+    backgroundColor: 'transparent',
     shadowColor: '#0b1437',
     shadowOpacity: 0.16,
     shadowRadius: 20,
