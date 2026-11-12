@@ -5,13 +5,13 @@ import { createStackNavigator } from '@react-navigation/stack';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { colors } from '../theme';
 import GlassTabBar from './GlassTabBar';
-import { FLOATING_TAB_BAR_CONTENT_INSET } from './tabBarLayout';
 
+// Keep paddingBottom at 0 so scene content can scroll under the floating
+// glass tab bar. Screens add FLOATING_TAB_BAR_CONTENT_INSET on their own
+// scroll/list content instead — card-level padding leaves a solid slab
+// behind the pill and kills the glass effect.
 const rootCardStyle = { paddingBottom: 0, backgroundColor: colors.gray50 };
-const stackCardStyle = {
-  paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
-  backgroundColor: colors.gray50,
-};
+const stackCardStyle = { paddingBottom: 0, backgroundColor: colors.gray50 };
 
 import DashboardScreen from '../screens/main/DashboardScreen';
 import PracticeScreen from '../screens/main/PracticeScreen';

@@ -15,6 +15,7 @@ import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
 import { getApiErrorMessage } from '../../utils/apiError';
 import { formatExplanation } from '../../utils/formatExplanation';
+import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
 
 export default function ExamReviewScreen() {
   const route = useRoute();
@@ -486,7 +487,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingBottom: spacing.xl,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
   scoreHero: {
     padding: spacing.xl,

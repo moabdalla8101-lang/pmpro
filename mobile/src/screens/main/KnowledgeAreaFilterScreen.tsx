@@ -11,6 +11,7 @@ import { spacing, borderRadius, shadows } from '../../utils/styles';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
 import { userHasActivePremium } from '../../utils/subscriptionUtils';
+import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
 
 // Icon mapping for knowledge areas
 const getKnowledgeAreaIcon = (name: string): string => {
@@ -157,7 +158,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.base,
-    paddingBottom: spacing.xl,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
   areasContainer: {
     gap: spacing.base,

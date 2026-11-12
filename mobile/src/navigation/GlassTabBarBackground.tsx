@@ -1,8 +1,8 @@
 import React from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View, ViewStyle } from 'react-native';
 import { requireOptionalNativeModule } from 'expo';
 
-type GlassKind = 'liquid' | 'blur' | 'none';
+type GlassKind = 'liquid' | 'blur' | 'web' | 'none';
 
 let cachedKind: GlassKind | undefined;
 let LiquidGlassView: React.ComponentType<any> | null = null;
@@ -14,19 +14,28 @@ let NativeBlurView: React.ComponentType<any> | null = null;
  */
 function resolveGlassKind(): GlassKind {
   if (cachedKind) return cachedKind;
-  cachedKind = 'none';
-  if (Platform.OS !== 'ios') return cachedKind;
 
-  try {
-    if (requireOptionalNativeModule('ExpoGlassEffect')) {
-      const glass = require('expo-glass-effect');
-      if (glass.isGlassEffectAPIAvailable() && glass.isLiquidGlassAvailable()) {
-        LiquidGlassView = glass.GlassView;
-        cachedKind = 'liquid';
-        return cachedKind;
+  // Web: CSS backdrop-filter. Avoid wrapping it in overflow:hidden parents.
+  if (Platform.OS === 'web') {
+    cachedKind = 'web';
+    return cachedKind;
+  }
+
+  cachedKind = 'none';
+
+  // Liquid glass is iOS-only; BlurView covers native iOS + Android.
+  if (Platform.OS === 'ios') {
+    try {
+      if (requireOptionalNativeModule('ExpoGlassEffect')) {
+        const glass = require('expo-glass-effect');
+        if (glass.isGlassEffectAPIAvailable() && glass.isLiquidGlassAvailable()) {
+          LiquidGlassView = glass.GlassView;
+          cachedKind = 'liquid';
+          return cachedKind;
+        }
       }
-    }
-  } catch {}
+    } catch {}
+  }
 
   try {
     if (requireOptionalNativeModule('ExpoBlur')) {
@@ -38,12 +47,29 @@ function resolveGlassKind(): GlassKind {
   return cachedKind;
 }
 
+/** RN Web accepts these CSS props even though they are not in ViewStyle. */
+const webGlassFill: ViewStyle = {
+  ...StyleSheet.absoluteFillObject,
+  backgroundColor: 'rgba(255, 255, 255, 0.38)',
+  // @ts-expect-error RN Web CSS
+  backdropFilter: 'saturate(180%) blur(18px)',
+  // @ts-expect-error RN Web CSS
+  WebkitBackdropFilter: 'saturate(180%) blur(18px)',
+};
+
 export default function GlassTabBarBackground({ radius }: { radius: number }) {
   const kind = resolveGlassKind();
   const shape = { borderRadius: radius };
 
   return (
-    <View style={[StyleSheet.absoluteFill, shape, styles.clip]}>
+    <View
+      pointerEvents="none"
+      style={[
+        StyleSheet.absoluteFill,
+        shape,
+        kind === 'web' ? null : styles.clip,
+      ]}
+    >
       {kind === 'liquid' && LiquidGlassView ? (
         <LiquidGlassView
           glassEffectStyle="regular"
@@ -63,8 +89,12 @@ export default function GlassTabBarBackground({ radius }: { radius: number }) {
         </>
       ) : null}
 
+      {kind === 'web' ? (
+        <View style={[webGlassFill, shape, styles.webClip]} />
+      ) : null}
+
       {kind === 'none' ? (
-        <View style={[StyleSheet.absoluteFill, styles.solidFallback]} />
+        <View style={[StyleSheet.absoluteFill, shape, styles.solidFallback]} />
       ) : null}
 
       {kind !== 'liquid' ? (
@@ -78,11 +108,15 @@ const styles = StyleSheet.create({
   clip: {
     overflow: 'hidden',
   },
+  webClip: {
+    overflow: 'hidden',
+  },
   blurSheen: {
-    backgroundColor: 'rgba(255, 255, 255, 0.28)',
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
   },
   solidFallback: {
-    backgroundColor: 'rgba(255, 255, 255, 0.96)',
+    // Last-resort translucent fill when native blur/glass is unavailable.
+    backgroundColor: 'rgba(255, 255, 255, 0.72)',
   },
   rim: {
     borderWidth: StyleSheet.hairlineWidth,

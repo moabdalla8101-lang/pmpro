@@ -10,6 +10,7 @@ import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
+import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
 
 // Icon mapping for knowledge areas
 const KNOWLEDGE_AREA_ICONS: { [key: string]: string } = {
@@ -197,7 +198,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.base,
-    paddingBottom: spacing.xl,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
   infoCard: {
     marginBottom: spacing.lg,

@@ -17,6 +17,7 @@ import {
   getTopicsByCategory,
   LearningCategory,
 } from '../../data/learningTopics';
+import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
 
 export default function LearningTopicsScreen() {
   const navigation = useNavigation();
@@ -116,7 +117,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.base,
-    paddingBottom: spacing.xl,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
   chipsRow: {
     gap: spacing.sm,

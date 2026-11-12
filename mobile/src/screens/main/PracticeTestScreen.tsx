@@ -20,6 +20,7 @@ import {
   loadPracticeDraft,
   savePracticeDraft,
 } from '../../utils/practiceTestDraft';
+import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
 
 const TOTAL_QUESTIONS = 10;
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
@@ -472,6 +473,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.base,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
   preTestCard: {
     backgroundColor: colors.surface,
@@ -555,6 +557,7 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     padding: spacing.base,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
   questionCard: {
     backgroundColor: colors.surface,
@@ -596,9 +599,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     padding: spacing.base,
-    backgroundColor: colors.surface,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
+    // Match scene so the floating glass tab bar isn't blocked by a solid tray.
+    backgroundColor: colors.gray50,
     borderTopWidth: 1,
     borderTopColor: colors.gray200,
-    ...shadows.sm,
   },
 });

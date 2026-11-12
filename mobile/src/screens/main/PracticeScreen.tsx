@@ -14,6 +14,7 @@ import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
 import { useRequireAuth } from '../../utils/requireAuth';
 import { userHasActivePremium } from '../../utils/subscriptionUtils';
+import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
 
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
 const PRACTICE_PAGE_SIZE = 25;
@@ -414,7 +415,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.gray50,
   },
   listWithUpgrade: {
-    paddingBottom: spacing.xl,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
   upgradeCard: {
     marginTop: spacing.md,
@@ -496,6 +497,7 @@ const styles = StyleSheet.create({
   },
   list: {
     padding: spacing.base,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
   emptyList: {
     flexGrow: 1,

@@ -4,6 +4,7 @@ import { Card, Text } from 'react-native-paper';
 import { SectionHeader } from '../../components';
 import { colors } from '../../theme';
 import { borderRadius, shadows, spacing } from '../../utils/styles';
+import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
 
 const FORMULAS = [
   { name: 'Cost Variance', formula: 'CV = EV − AC', note: 'Positive is under budget.' },
@@ -63,7 +64,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.base,
-    paddingBottom: spacing.xl,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
   formulaList: {
     gap: spacing.md,

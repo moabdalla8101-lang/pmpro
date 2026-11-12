@@ -22,6 +22,7 @@ import { useRequireAuth } from '../../utils/requireAuth';
 import { getApiErrorMessage } from '../../utils/apiError';
 import { formatExplanation } from '../../utils/formatExplanation';
 import { AnsweredQuestionFeedback } from '../../types/question';
+import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
 
 export default function QuestionDetailScreen() {
   const route = useRoute();
@@ -643,7 +644,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.base,
-    paddingBottom: spacing.xl,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
   loadingContainer: {
     flex: 1,
