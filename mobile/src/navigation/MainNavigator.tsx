@@ -1,4 +1,5 @@
 import React from 'react';
+import { StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
@@ -6,7 +7,11 @@ import { colors } from '../theme';
 import GlassTabBar from './GlassTabBar';
 import { FLOATING_TAB_BAR_CONTENT_INSET } from './tabBarLayout';
 
-const rootCardStyle = { paddingBottom: 0 };
+const rootCardStyle = { paddingBottom: 0, backgroundColor: colors.gray50 };
+const stackCardStyle = {
+  paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
+  backgroundColor: colors.gray50,
+};
 
 import DashboardScreen from '../screens/main/DashboardScreen';
 import PracticeScreen from '../screens/main/PracticeScreen';
@@ -47,7 +52,7 @@ function PracticeTabStack() {
           fontWeight: '700',
           fontSize: 18,
         },
-        cardStyle: { paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET },
+        cardStyle: stackCardStyle,
       }}
     >
       <Stack.Screen
@@ -126,7 +131,7 @@ function LearnStack() {
           fontWeight: '700',
           fontSize: 18,
         },
-        cardStyle: { paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET },
+        cardStyle: stackCardStyle,
       }}
     >
       <Stack.Screen
@@ -199,7 +204,7 @@ function ExamStack() {
           fontWeight: '700',
           fontSize: 18,
         },
-        cardStyle: { paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET },
+        cardStyle: stackCardStyle,
       }}
     >
       <Stack.Screen
@@ -239,6 +244,7 @@ export default function MainNavigator() {
   return (
     <Tab.Navigator
       tabBar={(props) => <GlassTabBar {...props} />}
+      sceneContainerStyle={styles.scene}
       screenOptions={({ route }) => ({
         tabBarIcon: ({ focused, color, size }) => {
           let iconName: string;
@@ -262,6 +268,8 @@ export default function MainNavigator() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.gray500,
         headerShown: false,
+        // Float over the scene with no solid tab-bar tray behind the pill.
+        tabBarStyle: styles.floatingTabBar,
       })}
     >
       <Tab.Screen
@@ -317,3 +325,19 @@ export default function MainNavigator() {
     </Tab.Navigator>
   );
 }
+
+const styles = StyleSheet.create({
+  scene: {
+    backgroundColor: colors.gray50,
+  },
+  floatingTabBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'transparent',
+    borderTopWidth: 0,
+    elevation: 0,
+    shadowOpacity: 0,
+  },
+});

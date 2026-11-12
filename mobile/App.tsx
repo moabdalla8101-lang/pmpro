@@ -158,7 +158,8 @@ export default function App() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.gray100,
+    // Match screen backgrounds so nothing darker peeks behind the floating tab bar.
+    backgroundColor: colors.gray50,
   },
   column: {
     flex: 1,

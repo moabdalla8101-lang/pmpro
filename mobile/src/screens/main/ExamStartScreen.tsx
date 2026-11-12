@@ -883,10 +883,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     padding: spacing.base,
-    backgroundColor: '#ffffff',
-    borderTopWidth: 1,
-    borderTopColor: colors.gray200,
+    // Match screen background so no solid tray shows above the floating tab bar.
+    backgroundColor: colors.gray50,
     gap: spacing.base,
-    ...shadows.md,
   },
 });
