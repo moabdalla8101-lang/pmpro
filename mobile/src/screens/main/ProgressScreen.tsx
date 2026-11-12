@@ -1,10 +1,10 @@
-import React from 'react';
-import { View, StyleSheet, ScrollView, SafeAreaView, Dimensions } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, StyleSheet, ScrollView, SafeAreaView } from 'react-native';
 import { Card, Text, ProgressBar } from 'react-native-paper';
 import { useSelector } from 'react-redux';
 import { RootState } from '../../store';
-import { PieChart } from 'react-native-chart-kit';
 import { EmptyState, SectionHeader, StatCard, ProgressRing } from '../../components';
+import { getKnowledgeAreaColor } from '../../components/CategoryBadge';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
@@ -15,12 +15,32 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { userHasActivePremium } from '../../utils/subscriptionUtils';
 import { useRequireAuth } from '../../utils/requireAuth';
 import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
-import { useContentWidth } from '../../utils/layout';
 
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
+const FOCUS_THRESHOLD = 70;
+
+/** Normalize API accuracy values to a 0–100 percentage. */
+function toAccuracyPercent(value: unknown): number {
+  let accuracy = 0;
+  if (typeof value === 'number') {
+    accuracy = !isNaN(value) ? value : 0;
+  } else if (typeof value === 'string') {
+    accuracy = parseFloat(value) || 0;
+  }
+  // Decimal ratios (0–1) → percentage
+  if (accuracy > 0 && accuracy <= 1) {
+    accuracy = accuracy * 100;
+  }
+  return Math.max(0, Math.min(100, accuracy));
+}
+
+function getAccuracyTone(accuracy: number): string {
+  if (accuracy >= FOCUS_THRESHOLD) return colors.success;
+  if (accuracy >= 50) return colors.warning;
+  return colors.error;
+}
 
 export default function ProgressScreen() {
-  const contentWidth = useContentWidth();
   const dispatch = useDispatch<AppDispatch>();
   const navigation = useNavigation();
   const requireAuth = useRequireAuth();
@@ -39,56 +59,33 @@ export default function ProgressScreen() {
     }, [dispatch, isAuthenticated])
   );
 
-  // Ensure accuracy is always a number (0-100 percentage)
-  const accuracyValue = overallProgress?.accuracy;
-  let accuracy = 0;
-  if (accuracyValue !== null && accuracyValue !== undefined) {
-    if (typeof accuracyValue === 'number') {
-      accuracy = !isNaN(accuracyValue) ? accuracyValue : 0;
-    } else if (typeof accuracyValue === 'string') {
-      accuracy = parseFloat(accuracyValue) || 0;
-    }
-    // If accuracy is less than 1, it's a decimal (0.0-1.0), convert to percentage
-    if (accuracy > 0 && accuracy <= 1) {
-      accuracy = accuracy * 100;
-    }
-  }
+  const accuracy = toAccuracyPercent(overallProgress?.accuracy);
   const totalAnswered = overallProgress?.totalQuestionsAnswered || overallProgress?.total_questions_answered || 0;
   const correctAnswers = overallProgress?.correctAnswers || overallProgress?.correct_answers || 0;
 
-  const knowledgeAreaData = performanceByKnowledgeArea.length > 0
-    ? performanceByKnowledgeArea.map((area: any, index: number) => {
-        let areaAccuracy = area.accuracy || 0;
-        // If accuracy is less than 1, it's a decimal (0.0-1.0), convert to percentage
-        if (areaAccuracy > 0 && areaAccuracy <= 1) {
-          areaAccuracy = areaAccuracy * 100;
-        }
+  // Ranked comparison: weakest → strongest so the chart highlights where to study next.
+  const knowledgeAreaComparison = useMemo(() => {
+    return performanceByKnowledgeArea
+      .map((area: any, index: number) => {
+        const name = removeProjectPrefix(
+          area.knowledgeAreaName || area.knowledge_area_name || `Area ${index + 1}`
+        );
+        const areaAccuracy = toAccuracyPercent(area.accuracy);
+        const answered = area.totalAnswered || area.total_answered || 0;
+        const correct = area.correctAnswers || area.correct_answers || 0;
         return {
-          name: removeProjectPrefix(area.knowledgeAreaName || area.knowledge_area_name || `Area ${index + 1}`).substring(0, 10),
+          id: area.knowledgeAreaId || area.knowledge_area_id || `area-${index}`,
+          name,
           accuracy: areaAccuracy,
-          color: Object.values(colors.knowledgeArea)[index % Object.keys(colors.knowledgeArea).length],
-          legendFontColor: colors.textSecondary,
-          legendFontSize: 12,
+          answered,
+          correct,
+          color: getKnowledgeAreaColor(name),
         };
       })
-    : [];
+      .sort((a, b) => a.accuracy - b.accuracy || a.name.localeCompare(b.name));
+  }, [performanceByKnowledgeArea]);
 
-  const chartConfig = {
-    backgroundColor: '#ffffff',
-    backgroundGradientFrom: '#ffffff',
-    backgroundGradientTo: '#ffffff',
-    decimalPlaces: 0,
-    color: (opacity = 1) => `rgba(98, 0, 238, ${opacity})`,
-    labelColor: (opacity = 1) => `rgba(33, 33, 33, ${opacity})`,
-    style: {
-      borderRadius: borderRadius.md,
-    },
-    propsForDots: {
-      r: '6',
-      strokeWidth: '2',
-      stroke: colors.primary,
-    },
-  };
+  const weakAreaCount = knowledgeAreaComparison.filter((area) => area.accuracy < FOCUS_THRESHOLD).length;
 
   // Never blank the Progress tab on focus — show auth/paywall/content immediately.
   if (!isAuthenticated) {
@@ -135,7 +132,7 @@ export default function ProgressScreen() {
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
             <ProgressRing
-              progress={Math.max(0, Math.min(100, (!isNaN(accuracy) && typeof accuracy === 'number' ? accuracy : 0)))}
+              progress={accuracy}
               size={120}
               strokeWidth={12}
               color={colors.primary}
@@ -171,92 +168,18 @@ export default function ProgressScreen() {
           </Card.Content>
         </Card>
 
-        {/* Performance by Knowledge Area */}
-        <SectionHeader title="By Knowledge Area" icon="book-open-page-variant" />
-        {performanceByKnowledgeArea.length > 0 ? (
-          <View style={styles.knowledgeAreas}>
-            {performanceByKnowledgeArea.map((area: any) => {
-              // Handle accuracy conversion (decimal to percentage)
-              let areaAccuracy = area.accuracy || 0;
-              if (typeof areaAccuracy === 'number') {
-                areaAccuracy = !isNaN(areaAccuracy) ? areaAccuracy : 0;
-              } else if (typeof areaAccuracy === 'string') {
-                areaAccuracy = parseFloat(areaAccuracy) || 0;
-              }
-              // If accuracy is less than 1, it's a decimal (0.0-1.0), convert to percentage
-              if (areaAccuracy > 0 && areaAccuracy <= 1) {
-                areaAccuracy = areaAccuracy * 100;
-              }
-              
-              const areaName = removeProjectPrefix(area.knowledgeAreaName || area.knowledge_area_name || 'Unknown');
-              const totalAnswered = area.totalAnswered || area.total_answered || 0;
-              const correctAnswers = area.correctAnswers || area.correct_answers || 0;
-              
-              return (
-                <Card key={area.knowledgeAreaId || area.knowledge_area_id} style={styles.areaCard}>
-                  <Card.Content style={styles.areaContent}>
-                    <View style={styles.areaHeader}>
-                      <Text variant="titleMedium" style={styles.areaName}>
-                        {areaName}
-                      </Text>
-                      <View style={styles.areaStats}>
-                        <Text variant="headlineSmall" style={styles.areaAccuracy}>
-                          {(!isNaN(areaAccuracy) && typeof areaAccuracy === 'number' ? areaAccuracy.toFixed(1) : '0.0')}%
-                        </Text>
-                        <Text variant="bodySmall" style={styles.areaCount}>
-                          {correctAnswers}/{totalAnswered}
-                        </Text>
-                      </View>
-                    </View>
-                    <ProgressBar
-                      progress={Math.max(0, Math.min(1, (!isNaN(areaAccuracy) && typeof areaAccuracy === 'number' ? areaAccuracy : 0) / 100))}
-                      color={colors.primary}
-                      style={styles.areaProgressBar}
-                    />
-                  </Card.Content>
-                </Card>
-              );
-            })}
-          </View>
-        ) : (
-          <Card style={styles.emptyCard}>
-            <Card.Content>
-              <Text variant="bodyMedium" style={styles.emptyText}>
-                No performance data yet. Start practicing to see your progress!
-              </Text>
-            </Card.Content>
-          </Card>
-        )}
-
         {/* Domain Performance */}
         <SectionHeader title="By Domain" subtitle="People, Process, Business" icon="chart-box" />
         <View style={styles.domainStats}>
           {(() => {
-            // Get domain performance data
             const peopleDomain = performanceByDomain.find((d: any) => d.domain === 'People');
             const processDomain = performanceByDomain.find((d: any) => d.domain === 'Process');
             const businessDomain = performanceByDomain.find((d: any) => d.domain === 'Business');
-            
-            // Helper to get domain accuracy
-            const getDomainAccuracy = (domain: any) => {
-              if (!domain) return 0;
-              let accValue = domain.accuracy || 0;
-              if (typeof accValue === 'number') {
-                accValue = !isNaN(accValue) ? accValue : 0;
-              } else if (typeof accValue === 'string') {
-                accValue = parseFloat(accValue) || 0;
-              }
-              // If accuracy is less than 1, it's a decimal (0.0-1.0), convert to percentage
-              if (accValue > 0 && accValue <= 1) {
-                accValue = accValue * 100;
-              }
-              return accValue;
-            };
-            
-            const peopleAccuracy = getDomainAccuracy(peopleDomain);
-            const processAccuracy = getDomainAccuracy(processDomain);
-            const businessAccuracy = getDomainAccuracy(businessDomain);
-            
+
+            const peopleAccuracy = toAccuracyPercent(peopleDomain?.accuracy);
+            const processAccuracy = toAccuracyPercent(processDomain?.accuracy);
+            const businessAccuracy = toAccuracyPercent(businessDomain?.accuracy);
+
             return (
               <>
                 <Card style={[styles.domainCard, { borderLeftColor: colors.domain.people }]}>
@@ -267,7 +190,7 @@ export default function ProgressScreen() {
                       </Text>
                       <View style={[styles.domainBadge, { backgroundColor: `${colors.domain.people}20` }]}>
                         <Text style={[styles.domainBadgeText, { color: colors.domain.people }]}>
-                          {(!isNaN(peopleAccuracy) && typeof peopleAccuracy === 'number' ? peopleAccuracy.toFixed(0) : '0')}%
+                          {peopleAccuracy.toFixed(0)}%
                         </Text>
                       </View>
                     </View>
@@ -275,7 +198,7 @@ export default function ProgressScreen() {
                       Leadership, team, stakeholders
                     </Text>
                     <ProgressBar
-                      progress={Math.max(0, Math.min(1, peopleAccuracy / 100))}
+                      progress={peopleAccuracy / 100}
                       color={colors.domain.people}
                       style={styles.domainProgressBar}
                     />
@@ -290,7 +213,7 @@ export default function ProgressScreen() {
                       </Text>
                       <View style={[styles.domainBadge, { backgroundColor: `${colors.domain.process}20` }]}>
                         <Text style={[styles.domainBadgeText, { color: colors.domain.process }]}>
-                          {(!isNaN(processAccuracy) && typeof processAccuracy === 'number' ? processAccuracy.toFixed(0) : '0')}%
+                          {processAccuracy.toFixed(0)}%
                         </Text>
                       </View>
                     </View>
@@ -298,7 +221,7 @@ export default function ProgressScreen() {
                       Project management processes
                     </Text>
                     <ProgressBar
-                      progress={Math.max(0, Math.min(1, processAccuracy / 100))}
+                      progress={processAccuracy / 100}
                       color={colors.domain.process}
                       style={styles.domainProgressBar}
                     />
@@ -313,7 +236,7 @@ export default function ProgressScreen() {
                       </Text>
                       <View style={[styles.domainBadge, { backgroundColor: `${colors.domain.business}20` }]}>
                         <Text style={[styles.domainBadgeText, { color: colors.domain.business }]}>
-                          {(!isNaN(businessAccuracy) && typeof businessAccuracy === 'number' ? businessAccuracy.toFixed(0) : '0')}%
+                          {businessAccuracy.toFixed(0)}%
                         </Text>
                       </View>
                     </View>
@@ -321,7 +244,7 @@ export default function ProgressScreen() {
                       Business environment, value delivery
                     </Text>
                     <ProgressBar
-                      progress={Math.max(0, Math.min(1, businessAccuracy / 100))}
+                      progress={businessAccuracy / 100}
                       color={colors.domain.business}
                       style={styles.domainProgressBar}
                     />
@@ -332,24 +255,82 @@ export default function ProgressScreen() {
           })()}
         </View>
 
-        {/* Knowledge Area Distribution */}
-        {knowledgeAreaData.length > 0 && (
+        {/* Accuracy comparison by knowledge area — ranked weakest → strongest */}
+        <SectionHeader
+          title="By Knowledge Area"
+          subtitle={
+            knowledgeAreaComparison.length > 0
+              ? weakAreaCount > 0
+                ? `${weakAreaCount} area${weakAreaCount === 1 ? '' : 's'} below ${FOCUS_THRESHOLD}% — focus here first`
+                : `All areas at or above ${FOCUS_THRESHOLD}%`
+              : undefined
+          }
+          icon="book-open-page-variant"
+        />
+        {knowledgeAreaComparison.length > 0 ? (
           <Card style={styles.chartCard}>
             <Card.Content>
               <Text variant="titleMedium" style={styles.chartTitle}>
-                Questions by Knowledge Area
+                Accuracy Comparison
               </Text>
-              <PieChart
-                data={knowledgeAreaData}
-                width={contentWidth - 64}
-                height={220}
-                chartConfig={chartConfig}
-                accessor="accuracy"
-                backgroundColor="transparent"
-                paddingLeft="15"
-                absolute
-                style={styles.chart}
-              />
+              <Text variant="bodySmall" style={styles.chartSubtitle}>
+                Sorted weakest to strongest
+              </Text>
+              <View style={styles.comparisonList}>
+                {knowledgeAreaComparison.map((area) => {
+                  const tone = getAccuracyTone(area.accuracy);
+                  return (
+                    <View key={area.id} style={styles.comparisonRow}>
+                      <View style={styles.comparisonLabelRow}>
+                        <View style={[styles.comparisonSwatch, { backgroundColor: area.color }]} />
+                        <Text variant="bodyMedium" style={styles.comparisonName} numberOfLines={2}>
+                          {area.name}
+                        </Text>
+                        <Text variant="titleSmall" style={[styles.comparisonPercent, { color: tone }]}>
+                          {Math.round(area.accuracy)}%
+                        </Text>
+                      </View>
+                      <View style={styles.comparisonBarTrack}>
+                        <View
+                          style={[
+                            styles.comparisonBarFill,
+                            {
+                              width: `${Math.max(area.accuracy, area.answered > 0 ? 2 : 0)}%`,
+                              backgroundColor: area.color,
+                            },
+                          ]}
+                        />
+                      </View>
+                      <Text variant="bodySmall" style={styles.comparisonMeta}>
+                        {area.correct}/{area.answered} correct
+                        {area.accuracy < FOCUS_THRESHOLD ? ' · Needs practice' : ''}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+              <View style={styles.legendRow}>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: colors.error }]} />
+                  <Text variant="labelSmall" style={styles.legendText}>{'<50%'}</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: colors.warning }]} />
+                  <Text variant="labelSmall" style={styles.legendText}>50–69%</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: colors.success }]} />
+                  <Text variant="labelSmall" style={styles.legendText}>{`${FOCUS_THRESHOLD}%+`}</Text>
+                </View>
+              </View>
+            </Card.Content>
+          </Card>
+        ) : (
+          <Card style={styles.emptyCard}>
+            <Card.Content>
+              <Text variant="bodyMedium" style={styles.emptyText}>
+                No performance data yet. Start practicing to see your progress!
+              </Text>
             </Card.Content>
           </Card>
         )}
@@ -384,12 +365,6 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.base,
   },
-  timeRangeContainer: {
-    marginBottom: spacing.lg,
-  },
-  segmentedButtons: {
-    backgroundColor: '#ffffff',
-  },
   chartCard: {
     marginBottom: spacing.lg,
     borderRadius: borderRadius.lg,
@@ -398,49 +373,72 @@ const styles = StyleSheet.create({
   chartTitle: {
     fontWeight: '600',
     color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  chartSubtitle: {
+    color: colors.textSecondary,
     marginBottom: spacing.base,
   },
-  chart: {
-    marginVertical: spacing.sm,
-    borderRadius: borderRadius.md,
+  comparisonList: {
+    gap: spacing.md,
   },
-  knowledgeAreas: {
-    marginBottom: spacing.lg,
-    gap: spacing.base,
+  comparisonRow: {
+    gap: spacing.xs,
   },
-  areaCard: {
-    borderRadius: borderRadius.lg,
-    ...shadows.sm,
-    marginBottom: spacing.base,
-  },
-  areaContent: {
-    padding: spacing.base,
-  },
-  areaHeader: {
+  comparisonLabelRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.sm,
+    gap: spacing.sm,
   },
-  areaName: {
+  comparisonSwatch: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  comparisonName: {
     flex: 1,
     fontWeight: '600',
     color: colors.textPrimary,
   },
-  areaStats: {
-    alignItems: 'flex-end',
-  },
-  areaAccuracy: {
+  comparisonPercent: {
     fontWeight: '700',
-    color: colors.primary,
+    minWidth: 44,
+    textAlign: 'right',
   },
-  areaCount: {
+  comparisonBarTrack: {
+    height: 10,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.gray200,
+    overflow: 'hidden',
+  },
+  comparisonBarFill: {
+    height: '100%',
+    borderRadius: borderRadius.sm,
+  },
+  comparisonMeta: {
     color: colors.textSecondary,
   },
-  areaProgressBar: {
+  legendRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.base,
+    marginTop: spacing.lg,
+    paddingTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.gray300,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  legendDot: {
+    width: 8,
     height: 8,
-    borderRadius: borderRadius.sm,
-    marginTop: spacing.sm,
+    borderRadius: 4,
+  },
+  legendText: {
+    color: colors.textSecondary,
   },
   emptyCard: {
     borderRadius: borderRadius.lg,
@@ -491,29 +489,5 @@ const styles = StyleSheet.create({
   domainProgressBar: {
     height: 8,
     borderRadius: borderRadius.sm,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.xl,
-  },
-  loadingText: {
-    color: colors.textSecondary,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.xl,
-  },
-  errorText: {
-    color: colors.error,
-    marginBottom: spacing.sm,
-    fontWeight: '600',
-  },
-  errorMessage: {
-    color: colors.textSecondary,
-    textAlign: 'center',
   },
 });

@@ -12,7 +12,7 @@ interface CategoryBadgeProps {
   variant?: 'default' | 'pill' | 'outlined';
 }
 
-const getKnowledgeAreaColor = (label: string): string => {
+export const getKnowledgeAreaColor = (label: string): string => {
   const lower = label.toLowerCase();
   if (lower.includes('integration')) return colors.knowledgeArea.integration;
   if (lower.includes('scope')) return colors.knowledgeArea.scope;
