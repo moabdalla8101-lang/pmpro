@@ -11,6 +11,7 @@ import {
 import { ActionButton, EmptyState, SectionHeader, LoadingSpinner } from '../../components';
 import { colors } from '../../theme';
 import { spacing } from '../../utils/styles';
+import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
 
 export default function MarkedFlashcardsScreen() {
   const dispatch = useDispatch<AppDispatch>();
@@ -96,6 +97,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.base,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
 });
 

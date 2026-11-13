@@ -6,6 +6,7 @@ import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { colors } from '../../theme';
 import { borderRadius, shadows, spacing } from '../../utils/styles';
 import { getLearningTopic } from '../../data/learningTopics';
+import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
 
 export default function LearningTopicDetailScreen() {
   const route = useRoute();
@@ -96,7 +97,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.base,
-    paddingBottom: spacing.xl,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
     gap: spacing.md,
   },
   missing: {

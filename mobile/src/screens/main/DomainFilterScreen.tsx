@@ -9,6 +9,7 @@ import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { userHasActivePremium } from '../../utils/subscriptionUtils';
+import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
 
 const DOMAINS = [
   { id: 'People', name: 'People', color: colors.domain.people, icon: 'account-group' },
@@ -140,7 +141,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.base,
-    paddingBottom: spacing.xl,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
   domainsContainer: {
     gap: spacing.base,

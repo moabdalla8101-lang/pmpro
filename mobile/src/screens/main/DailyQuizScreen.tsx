@@ -13,6 +13,7 @@ import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { useRequireAuth } from '../../utils/requireAuth';
 import { getApiErrorMessage } from '../../utils/apiError';
+import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
 
 const TOTAL_QUESTIONS = 10;
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
@@ -376,6 +377,7 @@ const styles = StyleSheet.create({
   },
   preQuizContent: {
     padding: spacing.base,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
   preQuizCard: {
     backgroundColor: '#ffffff',
@@ -462,7 +464,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.base,
-    paddingBottom: spacing.xl,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
   questionCard: {
     backgroundColor: '#ffffff',
@@ -524,11 +526,12 @@ const styles = StyleSheet.create({
     marginLeft: spacing.base,
   },
   footer: {
-    backgroundColor: '#ffffff',
+    // Match scene so the floating glass tab bar isn't blocked by a solid tray.
+    backgroundColor: colors.gray50,
     padding: spacing.base,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
     borderTopWidth: 1,
     borderTopColor: colors.gray200,
-    ...shadows.md,
   },
   footerButtons: {
     flexDirection: 'row',

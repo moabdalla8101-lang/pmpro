@@ -12,6 +12,7 @@ import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
 import { userHasActivePremium } from '../../utils/subscriptionUtils';
 import { useRequireAuth } from '../../utils/requireAuth';
+import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
 
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
 
@@ -349,6 +350,7 @@ const styles = StyleSheet.create({
   },
   list: {
     padding: spacing.base,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
   emptyList: {
     flexGrow: 1,

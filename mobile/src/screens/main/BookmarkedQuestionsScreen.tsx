@@ -12,6 +12,7 @@ import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { removeProjectPrefix } from '../../utils/knowledgeAreaUtils';
 import { userHasActivePremium } from '../../utils/subscriptionUtils';
 import { useRequireAuth } from '../../utils/requireAuth';
+import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
 
 export default function BookmarkedQuestionsScreen() {
   const dispatch = useDispatch<AppDispatch>();
@@ -273,6 +274,7 @@ const styles = StyleSheet.create({
   },
   list: {
     padding: spacing.base,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
   emptyList: {
     flexGrow: 1,

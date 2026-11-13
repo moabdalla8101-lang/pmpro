@@ -18,6 +18,7 @@ import { ActionButton, LoadingSpinner } from '../../components';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
 import { useRequireAuth } from '../../utils/requireAuth';
+import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
 
 export default function FlashcardStudyScreen() {
   const route = useRoute();
@@ -425,7 +426,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     padding: spacing.base,
-    paddingBottom: spacing.lg,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
   navButton: {
     padding: spacing.base,

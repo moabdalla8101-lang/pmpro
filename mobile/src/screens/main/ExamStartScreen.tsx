@@ -19,6 +19,7 @@ import {
 import { getApiErrorMessage } from '../../utils/apiError';
 import { colors } from '../../theme';
 import { spacing, borderRadius, shadows } from '../../utils/styles';
+import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
 
 const MOCK_EXAM_QUESTIONS = 180;
 const MOCK_EXAM_DURATION_MINUTES = 240;
@@ -705,6 +706,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
     padding: spacing.base,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
   preExamCard: {
     backgroundColor: '#ffffff',
@@ -812,7 +814,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.base,
-    paddingBottom: spacing.xl,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
   },
   questionCard: {
     backgroundColor: '#ffffff',
@@ -883,6 +885,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     padding: spacing.base,
+    paddingBottom: FLOATING_TAB_BAR_CONTENT_INSET,
     // Match screen background so no solid tray shows above the floating tab bar.
     backgroundColor: colors.gray50,
     gap: spacing.base,
