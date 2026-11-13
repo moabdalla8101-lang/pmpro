@@ -22,10 +22,13 @@ export default function SplashScreen() {
   const progress = useRef(new Animated.Value(0.15)).current;
   const [percent, setPercent] = useState(15);
   const [phraseIndex, setPhraseIndex] = useState(0);
+  const nativeSplashHidden = useRef(false);
 
-  useEffect(() => {
+  const hideNativeSplash = () => {
+    if (nativeSplashHidden.current) return;
+    nativeSplashHidden.current = true;
     ExpoSplashScreen.hideAsync().catch(() => {});
-  }, []);
+  };
 
   useEffect(() => {
     const listenerId = progress.addListener(({ value }) => {
@@ -63,7 +66,7 @@ export default function SplashScreen() {
   });
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} onLayout={hideNativeSplash}>
       <View style={styles.ambientTop} />
       <View style={styles.ambientRight} />
       <View style={styles.ambientBottom} />
@@ -75,6 +78,7 @@ export default function SplashScreen() {
               source={require('../../assets/icon.png')}
               style={styles.icon}
               resizeMode="cover"
+              onLoad={hideNativeSplash}
             />
           </View>
           <View style={styles.liveDotOuter}>
