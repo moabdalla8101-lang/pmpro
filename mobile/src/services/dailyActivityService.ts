@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { formatLocalDate } from '../utils/localDate';
 
 const TODAY_KEY = 'dailyActivityToday';
 const SESSION_START_KEY = 'sessionStartTime';
@@ -10,10 +11,9 @@ interface DailyActivity {
 }
 
 export const dailyActivityService = {
-  // Get today's date as YYYY-MM-DD
+  // Get today's date as YYYY-MM-DD in the device local timezone
   getTodayDate(): string {
-    const today = new Date();
-    return today.toISOString().split('T')[0];
+    return formatLocalDate(new Date());
   },
 
   // Get today's activity

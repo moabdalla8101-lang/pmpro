@@ -21,6 +21,7 @@ import {
   savePracticeDraft,
 } from '../../utils/practiceTestDraft';
 import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
+import { formatLocalDate, getDeviceTimeZone } from '../../utils/localDate';
 
 const TOTAL_QUESTIONS = 10;
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
@@ -145,7 +146,10 @@ export default function PracticeTestScreen() {
         await clearPendingDraft();
 
         try {
-          await client.post('/api/badges/streak');
+          await client.post('/api/badges/streak', {
+            localDate: formatLocalDate(new Date()),
+            timeZone: getDeviceTimeZone(),
+          });
         } catch (error: any) {
           console.error('Failed to update streak:', error?.response?.data || error?.message);
         }
