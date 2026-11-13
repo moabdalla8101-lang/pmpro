@@ -28,6 +28,10 @@ import {
 } from '../../utils/subscriptionUtils';
 import { useRequireAuth } from '../../utils/requireAuth';
 import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
+import {
+  formatLocalDate,
+  getLocalDateRangeEndingToday,
+} from '../../utils/localDate';
 
 const PMP_CERTIFICATION_ID = '550e8400-e29b-41d4-a716-446655440000';
 
@@ -80,36 +84,26 @@ export default function DashboardScreen() {
   }, [user?.id]);
 
   const fetchWeeklyCompletions = useCallback(async () => {
-    try {
-      const today = new Date();
-      const sevenDaysAgo = new Date(today);
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-      sevenDaysAgo.setHours(0, 0, 0, 0);
+    const weekDates = getLocalDateRangeEndingToday(7);
+    const startDate = weekDates[0];
 
+    try {
       try {
         const response = await client.get(
-          `/api/exams/daily-quiz/weekly?certificationId=${PMP_CERTIFICATION_ID}&startDate=${sevenDaysAgo.toISOString()}`
+          `/api/exams/daily-quiz/weekly?certificationId=${PMP_CERTIFICATION_ID}&startDate=${startDate}`
         );
-        const completionDates = (response.data?.completions || []).map((c: any) => c.date);
-        const completions: Array<{ date: string; completed: boolean }> = [];
-
-        for (let i = 6; i >= 0; i--) {
-          const date = new Date(today);
-          date.setDate(date.getDate() - i);
-          date.setHours(0, 0, 0, 0);
-          const dateStr = date.toISOString().split('T')[0];
-          completions.push({ date: dateStr, completed: completionDates.includes(dateStr) });
-        }
-        setWeeklyCompletions(completions);
+        const completionDates = new Set(
+          (response.data?.completions || [])
+            .map((c: any) => (typeof c.date === 'string' ? c.date.slice(0, 10) : formatLocalDate(new Date(c.date))))
+        );
+        setWeeklyCompletions(
+          weekDates.map((date) => ({
+            date,
+            completed: completionDates.has(date),
+          }))
+        );
       } catch {
-        const completions: Array<{ date: string; completed: boolean }> = [];
-        for (let i = 6; i >= 0; i--) {
-          const date = new Date(today);
-          date.setDate(date.getDate() - i);
-          date.setHours(0, 0, 0, 0);
-          completions.push({ date: date.toISOString().split('T')[0], completed: false });
-        }
-        setWeeklyCompletions(completions);
+        setWeeklyCompletions(weekDates.map((date) => ({ date, completed: false })));
       }
     } catch (error) {
       console.error('Failed to fetch weekly completions:', error);

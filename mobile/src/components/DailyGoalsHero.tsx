@@ -5,6 +5,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { colors } from '../theme';
 import { spacing, borderRadius, shadows } from '../utils/styles';
+import {
+  getLocalDayOfWeek,
+  isLocalToday,
+  localDayLabel,
+} from '../utils/localDate';
 import ActionButton from './ActionButton';
 
 interface WeeklyCompletion {
@@ -150,9 +155,12 @@ export default function DailyGoalsHero({
               <View style={styles.calendarContainer}>
                 <View style={styles.calendarRow}>
                   {weeklyCompletions.map((completion, index) => {
-                    const dayLabel = getDayLabel(getDayOfWeek(completion.date));
-                    const today = isToday(completion.date);
-                    const completed = completion.completed;
+                    const dayLabel = localDayLabel(getLocalDayOfWeek(completion.date));
+                    const today = isLocalToday(completion.date);
+                    // Local practice today counts even if the weekly API date is skewed.
+                    const completed =
+                      completion.completed ||
+                      (today && (todayQuestions > 0 || todayMinutes > 0));
 
                     return (
                       <View key={index} style={styles.dayContainer}>
@@ -380,25 +388,4 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.xs,
   },
 });
-
-// Helper functions
-function getDayLabel(dayOfWeek: number): string {
-  const days = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-  return days[dayOfWeek];
-}
-
-function getDayOfWeek(dateStr: string): number {
-  const date = new Date(dateStr);
-  return date.getDay();
-}
-
-function isToday(dateStr: string): boolean {
-  const today = new Date();
-  const date = new Date(dateStr);
-  return (
-    date.getDate() === today.getDate() &&
-    date.getMonth() === today.getMonth() &&
-    date.getFullYear() === today.getFullYear()
-  );
-}
 

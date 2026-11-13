@@ -10,6 +10,13 @@ import { spacing, borderRadius, shadows } from '../utils/styles';
 import ActionButton from './ActionButton';
 import { examService } from '../services/api/examService';
 import client from '../services/api/client';
+import {
+  formatLocalDate,
+  getLocalDateRangeEndingToday,
+  getLocalDayOfWeek,
+  isLocalToday,
+  localDayLabel,
+} from '../utils/localDate';
 
 interface DailyQuizStreakCardProps {
   certificationId: string;
@@ -70,13 +77,10 @@ export default function DailyQuizStreakCard({ certificationId, onStartQuiz }: Da
         client.get('/api/badges/streak'),
         examService.getDailyQuizStatus(certificationId),
         (async () => {
-          const today = new Date();
-          const sevenDaysAgo = new Date(today);
-          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-          sevenDaysAgo.setHours(0, 0, 0, 0);
+          const weekDates = getLocalDateRangeEndingToday(7);
           try {
             return await client.get(
-              `/api/exams/daily-quiz/weekly?certificationId=${certificationId}&startDate=${sevenDaysAgo.toISOString()}`
+              `/api/exams/daily-quiz/weekly?certificationId=${certificationId}&startDate=${weekDates[0]}`
             );
           } catch (error) {
             return null; // Return null if endpoint fails
@@ -108,32 +112,22 @@ export default function DailyQuizStreakCard({ certificationId, onStartQuiz }: Da
         setDailyQuizStatus({ hasTakenToday: false, canTake: true });
       }
 
-      // Handle weekly completions
-      const today = new Date();
+      // Handle weekly completions using local calendar days
+      const weekDates = getLocalDateRangeEndingToday(7);
       if (completionResponse.status === 'fulfilled' && completionResponse.value) {
-        const completionDates = (completionResponse.value.data?.completions || []).map((c: any) => c.date);
-        const completions: WeeklyCompletion[] = [];
-        
-        for (let i = 6; i >= 0; i--) {
-          const date = new Date(today);
-          date.setDate(date.getDate() - i);
-          date.setHours(0, 0, 0, 0);
-          const dateStr = date.toISOString().split('T')[0];
-          const completed = completionDates.includes(dateStr);
-          completions.push({ date: dateStr, completed });
-        }
-        setWeeklyCompletions(completions);
+        const completionDates = new Set(
+          (completionResponse.value.data?.completions || []).map((c: any) =>
+            typeof c.date === 'string' ? c.date.slice(0, 10) : formatLocalDate(new Date(c.date))
+          )
+        );
+        setWeeklyCompletions(
+          weekDates.map((date) => ({
+            date,
+            completed: completionDates.has(date),
+          }))
+        );
       } else {
-        // Create empty completions if fetch fails
-        const completions: WeeklyCompletion[] = [];
-        for (let i = 6; i >= 0; i--) {
-          const date = new Date(today);
-          date.setDate(date.getDate() - i);
-          date.setHours(0, 0, 0, 0);
-          const dateStr = date.toISOString().split('T')[0];
-          completions.push({ date: dateStr, completed: false });
-        }
-        setWeeklyCompletions(completions);
+        setWeeklyCompletions(weekDates.map((date) => ({ date, completed: false })));
       }
     } catch (error) {
       console.error('Failed to fetch streak data:', error);
@@ -142,33 +136,13 @@ export default function DailyQuizStreakCard({ certificationId, onStartQuiz }: Da
     }
   };
 
-  const getDayLabel = (index: number) => {
-    const days = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-    return days[index];
-  };
-
-  const getDayOfWeek = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.getDay();
-  };
-
-  const isToday = (dateStr: string) => {
-    const today = new Date();
-    const date = new Date(dateStr);
-    return (
-      date.getDate() === today.getDate() &&
-      date.getMonth() === today.getMonth() &&
-      date.getFullYear() === today.getFullYear()
-    );
-  };
-
   const isCompleted = dailyQuizStatus?.completedAt !== null && dailyQuizStatus?.completedAt !== undefined;
   const hasTakenToday = dailyQuizStatus?.hasTakenToday || false;
 
   // Update today's completion status
   const updatedCompletions = weeklyCompletions.map((completion) => {
-    if (isToday(completion.date)) {
-      return { ...completion, completed: isCompleted };
+    if (isLocalToday(completion.date)) {
+      return { ...completion, completed: isCompleted || completion.completed };
     }
     return completion;
   });
@@ -217,8 +191,8 @@ export default function DailyQuizStreakCard({ certificationId, onStartQuiz }: Da
         <View style={styles.calendarContainer}>
           <View style={styles.calendarRow}>
             {updatedCompletions.map((completion, index) => {
-              const dayLabel = getDayLabel(getDayOfWeek(completion.date));
-              const today = isToday(completion.date);
+              const dayLabel = localDayLabel(getLocalDayOfWeek(completion.date));
+              const today = isLocalToday(completion.date);
               const completed = completion.completed;
 
               return (

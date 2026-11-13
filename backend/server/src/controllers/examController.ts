@@ -450,6 +450,35 @@ export async function getDailyQuizStatus(req: AuthRequest, res: Response, next: 
   }
 }
 
+function pgDateToYmd(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value === 'string') {
+    // node-pg may return DATE as 'YYYY-MM-DD' or an ISO timestamp string
+    return value.slice(0, 10);
+  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    // DATE values are calendar days; use UTC parts to avoid server-TZ shifts
+    const y = value.getUTCFullYear();
+    const m = String(value.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(value.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  return null;
+}
+
+function parseQueryCalendarDay(value: string, endOfDay = false): Date {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Date(`${value}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}Z`);
+  }
+  const parsed = new Date(value);
+  if (endOfDay) {
+    parsed.setUTCHours(23, 59, 59, 999);
+  } else {
+    parsed.setUTCHours(0, 0, 0, 0);
+  }
+  return parsed;
+}
+
 export async function getWeeklyDailyQuizCompletions(
   req: AuthRequest,
   res: Response,
@@ -458,44 +487,50 @@ export async function getWeeklyDailyQuizCompletions(
   try {
     const { certificationId, startDate } = req.query;
 
-    const start = startDate ? new Date(startDate as string) : new Date();
-    start.setHours(0, 0, 0, 0);
+    // Client sends a local YYYY-MM-DD; pad ±1 day so UTC DATE() still covers
+    // users near timezone boundaries.
+    const start = startDate
+      ? parseQueryCalendarDay(String(startDate))
+      : parseQueryCalendarDay(new Date().toISOString().slice(0, 10));
+    start.setUTCDate(start.getUTCDate() - 1);
+
     const end = new Date();
-    end.setHours(23, 59, 59, 999);
+    end.setUTCHours(23, 59, 59, 999);
+    end.setUTCDate(end.getUTCDate() + 1);
 
     const [examCompletions, answerCompletions] = await Promise.all([
       pool.query(
-        `SELECT DATE(completed_at) as date
+        `SELECT (completed_at AT TIME ZONE 'UTC')::date AS date
          FROM mock_exams
          WHERE user_id = $1
          AND certification_id = $2
          AND completed_at IS NOT NULL
          AND completed_at >= $3
          AND completed_at <= $4
-         GROUP BY DATE(completed_at)`,
+         GROUP BY (completed_at AT TIME ZONE 'UTC')::date`,
         [req.user!.userId, certificationId, start, end]
       ),
       pool.query(
         `WITH ${LEARNER_ATTEMPTS_CTE}
-         SELECT DATE(answered_at) as date
+         SELECT (answered_at AT TIME ZONE 'UTC')::date AS date
          FROM learner_attempts
          WHERE user_id = $1
          AND question_id IN (SELECT id FROM questions WHERE certification_id = $2)
          AND answered_at >= $3
          AND answered_at <= $4
-         GROUP BY DATE(answered_at)`,
+         GROUP BY (answered_at AT TIME ZONE 'UTC')::date`,
         [req.user!.userId, certificationId, start, end]
       ),
     ]);
 
     const allDates = new Set<string>();
     examCompletions.rows.forEach((row: any) => {
-      const date = row.date instanceof Date ? row.date : new Date(row.date);
-      allDates.add(date.toISOString().split('T')[0]);
+      const ymd = pgDateToYmd(row.date);
+      if (ymd) allDates.add(ymd);
     });
     answerCompletions.rows.forEach((row: any) => {
-      const date = row.date instanceof Date ? row.date : new Date(row.date);
-      allDates.add(date.toISOString().split('T')[0]);
+      const ymd = pgDateToYmd(row.date);
+      if (ymd) allDates.add(ymd);
     });
 
     res.json({
