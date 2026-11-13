@@ -9105,7 +9105,7 @@
     "question_images": null,
     "explanation_images": null,
     "question_metadata": null,
-    "is_active": true,
+    "is_active": false,
     "created_at": "2025-12-24T20:18:07.727503",
     "updated_at": "2025-12-24T20:18:07.727503",
     "answers": [
@@ -9200,7 +9200,7 @@
       }
     ],
     "question_metadata": null,
-    "is_active": true,
+    "is_active": false,
     "created_at": "2025-12-24T20:18:07.727503",
     "updated_at": "2025-12-24T20:18:07.727503",
     "answers": [
@@ -9790,7 +9790,7 @@
     "question_images": null,
     "explanation_images": null,
     "question_metadata": null,
-    "is_active": true,
+    "is_active": false,
     "created_at": "2025-12-24T20:18:07.727503",
     "updated_at": "2025-12-24T20:18:07.727503",
     "answers": [
@@ -10690,7 +10690,7 @@
     "task": "3.2 Evaluate and deliver project benefits and value",
     "pm_approach": "Agile / Hybrid",
     "question_text": "An agile team is working on a software release with an initial backlog of 720 story points. During sprints two to four, new user stories have been added. The following burndown chart represents the progress the team has made so far. The project manager has been requested to update stakeholders on the project's status. What should the project manager tell the stakeholders?",
-    "explanation": "A release burndown chart is a visual representation, which displays the amount of work left to complete the target commitment for a product release. The chart accomplishes this by displaying the actual amount of work remaining to complete the release. The concept behind the burndown chart is that the amount of remaining work will burn down as time goes by until the team gets to 100% done for the release. New user stories have been added during the sprints two to four. If the team did not complete any work during those sprints, the curve of the burndown chart that represents the actual work completed would have pointed upwards. However, since the curve is flat, one can imply the team has completed the work that has been added, but not more than that. In other words, the team was only able to keep up with the scope added during these sprints. AThere is not enough information for the project manager to provide any status. BThe project team will not be able to complete the release on time.",
+    "explanation": "A release burndown chart is a visual representation, which displays the amount of work left to complete the target commitment for a product release. The chart accomplishes this by displaying the actual amount of work remaining to complete the release. The concept behind the burndown chart is that the amount of remaining work will burn down as time goes by until the team gets to 100% done for the release. New user stories have been added during the sprints two to four. If the team did not complete any work during those sprints, the curve of the burndown chart that represents the actual work completed would have pointed upwards. However, since the curve is flat, one can imply the team has completed the work that has been added, but not more than that. In other words, the team was only able to keep up with the scope added during these sprints.",
     "difficulty": "medium",
     "question_images": [
       {
@@ -13378,7 +13378,7 @@
   {
     "id": "bf18114c-da57-49f9-a663-71c5608feec1",
     "question_id": "INTEGRATION-23",
-    "question_type": "drag_and_match",
+    "question_type": "select_one",
     "certification_name": "Project Management Professional (PMP)",
     "knowledge_area_name": "Project Integration Management",
     "domain": "Process",
@@ -13389,9 +13389,7 @@
     "difficulty": "medium",
     "question_images": null,
     "explanation_images": null,
-    "question_metadata": {
-      "drag_drop_pairs": []
-    },
+    "question_metadata": null,
     "is_active": true,
     "created_at": "2026-01-29T12:31:57.387945",
     "updated_at": "2026-11-13T16:42:07.000Z",
@@ -18872,7 +18870,7 @@
     "domain": "Process",
     "task": "2.11 Plan and manage procurement",
     "pm_approach": "Predictive",
-    "question_text": "You are managing a project for a customer with whom you have signed an Intellectual Property (IP) agreement requiring that the component design be unique. When the vendor to whom you outsourced the design makes a delivery, you are surprised to see that it is the same as one that the vendor had delivered to another of your clients. You review your contract with the vendor and realize that it does not include the uniqueness clause that would protect your customer's IP. Which of the following actio",
+    "question_text": "You are managing a project for a customer with whom you have signed an Intellectual Property (IP) agreement requiring that the component design be unique. When the vendor to whom you outsourced the design makes a delivery, you are surprised to see that it is the same as one that the vendor had delivered to another of your clients. You review your contract with the vendor and realize that it does not include the uniqueness clause that would protect your customer's IP. Which of the following actions should you take to resolve this situation?",
     "explanation": "In this scenario, you are a project manager at the company executing the project. Your contract with the customer includes specific conditions to ensure that the IP for the design is protected. You have outsourced the design work to a vendor. Unfortunately, your contract with the vendor does not specify the conditions that establish and protect the customer's IP. The vendor has done nothing wrong by submitting the previous design to your company, and nothing in the question indicates that you have either discussed or by contract bound the vendor to protect the client's IP. Therefore, it was a lapse on the part of your company not to inform or contractually bind the vendor to the same IP restrictions that your company agreed to protect. You need to use your company's contract change control system to modify the contract to include the IP considerations of your customer and present the amendment to your vendor for approval. You also have to request the vendor to redesign the component since its already out in the market and used by the other client. Details for Each Option: AInclude the vendor in client meetings and make them realize the importance of protecting intellectual property Incorrect. The vendor likely understands the importance of protecting IP in general. However, the contract with the vendor does not include an IP clause. Hence the vendor is not obligated to protect your customer's IP. Therefore, including the vendor in client meetings without adding the IP clause into the contract is unlikely to resolve the issue at hand. BCancel the contract with the vendor and request monetary compensation for the damage Incorrect. Nothing in the scenario indicates that the vendor is bound by an IP clause or is sharing a design that is protected by the intellectual property of another client. Canceling the contract with the vendor is unsubstantiated, let alone requesting monetary compensation for something that is not the vendor's responsibility. CShow the designs to the customer to get approval before beginning the manufacturing of the components Incorrect. Showing the designs to the customer to get approval before beginning the manufacturing of the components is unethical; you know the designs are not unique and violate the contract with the customer. DUse the contract change control system and request the vendor to redesign the component Correct. The contract change control system is used to collect, track, arbitrate, and communicate changes to a contract. Since the design submitted by the vendor violates one of the IP restrictions in the contract with the customer, informing the vendor about the IP protection clause with the customer, updating the existing contract, and requesting the vendor to redesign the component is the best course of action for the project manager.",
     "difficulty": "medium",
     "question_images": null,
@@ -25262,7 +25260,7 @@
   {
     "id": "a64f8b85-8036-498d-b0b1-46f7950b96db",
     "question_id": "RESOURCE-3",
-    "question_type": "drag_and_match",
+    "question_type": "select_one",
     "certification_name": "Project Management Professional (PMP)",
     "knowledge_area_name": "Project Resource Management",
     "domain": "People",
@@ -25273,9 +25271,7 @@
     "difficulty": "medium",
     "question_images": null,
     "explanation_images": null,
-    "question_metadata": {
-      "drag_drop_pairs": []
-    },
+    "question_metadata": null,
     "is_active": true,
     "created_at": "2026-01-29T13:40:04.015955",
     "updated_at": "2026-11-13T18:29:43.000Z",
@@ -36042,7 +36038,7 @@
     "question_images": null,
     "explanation_images": null,
     "question_metadata": null,
-    "is_active": true,
+    "is_active": false,
     "created_at": "2026-01-29T12:51:38.964179",
     "updated_at": "2026-01-29T12:51:38.964179",
     "answers": [
@@ -37445,7 +37441,7 @@
     "question_images": null,
     "explanation_images": null,
     "question_metadata": null,
-    "is_active": true,
+    "is_active": false,
     "created_at": "2026-01-29T12:51:38.964179",
     "updated_at": "2026-01-29T12:51:38.964179",
     "answers": [
