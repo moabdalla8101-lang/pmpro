@@ -12,6 +12,7 @@ import { examService } from '../services/api/examService';
 import client from '../services/api/client';
 import {
   formatLocalDate,
+  getDeviceTimeZone,
   getLocalDateRangeEndingToday,
   getLocalDayOfWeek,
   isLocalToday,
@@ -78,9 +79,10 @@ export default function DailyQuizStreakCard({ certificationId, onStartQuiz }: Da
         examService.getDailyQuizStatus(certificationId),
         (async () => {
           const weekDates = getLocalDateRangeEndingToday(7);
+          const timeZone = encodeURIComponent(getDeviceTimeZone());
           try {
             return await client.get(
-              `/api/exams/daily-quiz/weekly?certificationId=${certificationId}&startDate=${weekDates[0]}`
+              `/api/exams/daily-quiz/weekly?certificationId=${certificationId}&startDate=${weekDates[0]}&timeZone=${timeZone}`
             );
           } catch (error) {
             return null; // Return null if endpoint fails

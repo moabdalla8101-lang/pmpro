@@ -14,6 +14,22 @@ import {
 } from '../utils/authoritativeScoring';
 import { freePoolSubquery, requesterNeedsFreePool } from '../utils/freeQuestionPool';
 import { pickEco2026Questions } from '../utils/eco2026Blueprint';
+import {
+  pgDateToYmd,
+  sanitizeLocalDate,
+  sanitizeTimeZone,
+} from '../utils/userTimeZone';
+
+async function resolveUserTimeZone(raw: unknown): Promise<string> {
+  const candidate = sanitizeTimeZone(raw);
+  if (candidate === 'UTC') return 'UTC';
+  try {
+    await pool.query('SELECT NOW() AT TIME ZONE $1', [candidate]);
+    return candidate;
+  } catch {
+    return 'UTC';
+  }
+}
 
 async function ensureExamSchema(client: { query: (sql: string, params?: any[]) => Promise<any> }) {
   await client.query(`
@@ -450,76 +466,53 @@ export async function getDailyQuizStatus(req: AuthRequest, res: Response, next: 
   }
 }
 
-function pgDateToYmd(value: unknown): string | null {
-  if (value == null) return null;
-  if (typeof value === 'string') {
-    // node-pg may return DATE as 'YYYY-MM-DD' or an ISO timestamp string
-    return value.slice(0, 10);
-  }
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    // DATE values are calendar days; use UTC parts to avoid server-TZ shifts
-    const y = value.getUTCFullYear();
-    const m = String(value.getUTCMonth() + 1).padStart(2, '0');
-    const d = String(value.getUTCDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }
-  return null;
-}
-
-function parseQueryCalendarDay(value: string, endOfDay = false): Date {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return new Date(`${value}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}Z`);
-  }
-  const parsed = new Date(value);
-  if (endOfDay) {
-    parsed.setUTCHours(23, 59, 59, 999);
-  } else {
-    parsed.setUTCHours(0, 0, 0, 0);
-  }
-  return parsed;
-}
-
 export async function getWeeklyDailyQuizCompletions(
   req: AuthRequest,
   res: Response,
   next: NextFunction
 ) {
   try {
-    const { certificationId, startDate } = req.query;
+    const { certificationId, startDate, timeZone: timeZoneRaw } = req.query;
+    const timeZone = await resolveUserTimeZone(timeZoneRaw);
+    const localStart = sanitizeLocalDate(startDate);
 
-    // Client sends a local YYYY-MM-DD; pad ±1 day so UTC DATE() still covers
-    // users near timezone boundaries.
-    const start = startDate
-      ? parseQueryCalendarDay(String(startDate))
-      : parseQueryCalendarDay(new Date().toISOString().slice(0, 10));
-    start.setUTCDate(start.getUTCDate() - 1);
-
-    const end = new Date();
-    end.setUTCHours(23, 59, 59, 999);
-    end.setUTCDate(end.getUTCDate() + 1);
+    // Convert the user's local calendar window into timestamptz bounds.
+    // Pad ±1 day so DST / day-boundary activity is never dropped.
+    const startBound = localStart || new Date().toISOString().slice(0, 10);
+    const bounds = await pool.query(
+      `SELECT
+         (($1::timestamp - INTERVAL '1 day') AT TIME ZONE $2) AS range_start,
+         (
+           ((CURRENT_TIMESTAMP AT TIME ZONE $2)::date + 2)::timestamp
+           AT TIME ZONE $2
+         ) AS range_end`,
+      [`${startBound} 00:00:00`, timeZone]
+    );
+    const rangeStart = bounds.rows[0].range_start;
+    const rangeEnd = bounds.rows[0].range_end;
 
     const [examCompletions, answerCompletions] = await Promise.all([
       pool.query(
-        `SELECT (completed_at AT TIME ZONE 'UTC')::date AS date
+        `SELECT (completed_at AT TIME ZONE $5)::date AS date
          FROM mock_exams
          WHERE user_id = $1
          AND certification_id = $2
          AND completed_at IS NOT NULL
          AND completed_at >= $3
-         AND completed_at <= $4
-         GROUP BY (completed_at AT TIME ZONE 'UTC')::date`,
-        [req.user!.userId, certificationId, start, end]
+         AND completed_at < $4
+         GROUP BY (completed_at AT TIME ZONE $5)::date`,
+        [req.user!.userId, certificationId, rangeStart, rangeEnd, timeZone]
       ),
       pool.query(
         `WITH ${LEARNER_ATTEMPTS_CTE}
-         SELECT (answered_at AT TIME ZONE 'UTC')::date AS date
+         SELECT (answered_at AT TIME ZONE $5)::date AS date
          FROM learner_attempts
          WHERE user_id = $1
          AND question_id IN (SELECT id FROM questions WHERE certification_id = $2)
          AND answered_at >= $3
-         AND answered_at <= $4
-         GROUP BY (answered_at AT TIME ZONE 'UTC')::date`,
-        [req.user!.userId, certificationId, start, end]
+         AND answered_at < $4
+         GROUP BY (answered_at AT TIME ZONE $5)::date`,
+        [req.user!.userId, certificationId, rangeStart, rangeEnd, timeZone]
       ),
     ]);
 
@@ -535,6 +528,7 @@ export async function getWeeklyDailyQuizCompletions(
 
     res.json({
       completions: Array.from(allDates).map((date) => ({ date })).sort(),
+      timeZone,
     });
   } catch (error) {
     next(error);

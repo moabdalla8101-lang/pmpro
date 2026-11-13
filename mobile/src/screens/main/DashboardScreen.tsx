@@ -30,6 +30,7 @@ import { useRequireAuth } from '../../utils/requireAuth';
 import { FLOATING_TAB_BAR_CONTENT_INSET } from '../../navigation/tabBarLayout';
 import {
   formatLocalDate,
+  getDeviceTimeZone,
   getLocalDateRangeEndingToday,
 } from '../../utils/localDate';
 
@@ -86,11 +87,12 @@ export default function DashboardScreen() {
   const fetchWeeklyCompletions = useCallback(async () => {
     const weekDates = getLocalDateRangeEndingToday(7);
     const startDate = weekDates[0];
+    const timeZone = encodeURIComponent(getDeviceTimeZone());
 
     try {
       try {
         const response = await client.get(
-          `/api/exams/daily-quiz/weekly?certificationId=${PMP_CERTIFICATION_ID}&startDate=${startDate}`
+          `/api/exams/daily-quiz/weekly?certificationId=${PMP_CERTIFICATION_ID}&startDate=${startDate}&timeZone=${timeZone}`
         );
         const completionDates = new Set(
           (response.data?.completions || [])

@@ -2,6 +2,12 @@ import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { pool } from '../db/connection';
 import { v4 as uuidv4 } from 'uuid';
+import {
+  calendarDaysBetween,
+  pgDateToYmd,
+  sanitizeLocalDate,
+  sanitizeTimeZone,
+} from '../utils/userTimeZone';
 
 export async function getUserBadges(req: AuthRequest, res: Response, next: NextFunction) {
   try {
@@ -37,6 +43,22 @@ export async function getUserStreak(req: AuthRequest, res: Response, next: NextF
   }
 }
 
+async function resolveTodayLocal(req: AuthRequest): Promise<string> {
+  const fromBody = sanitizeLocalDate(req.body?.localDate);
+  if (fromBody) return fromBody;
+
+  const timeZone = sanitizeTimeZone(req.body?.timeZone ?? req.query?.timeZone);
+  try {
+    const result = await pool.query(
+      `SELECT (CURRENT_TIMESTAMP AT TIME ZONE $1)::date::text AS today`,
+      [timeZone]
+    );
+    return result.rows[0]?.today || new Date().toISOString().slice(0, 10);
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
 export async function updateStreak(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const existing = await pool.query(
@@ -44,47 +66,42 @@ export async function updateStreak(req: AuthRequest, res: Response, next: NextFu
       [req.user!.userId]
     );
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Streak day boundaries follow the user's timezone (client localDate / IANA tz),
+    // not the server's UTC clock.
+    const today = await resolveTodayLocal(req);
 
     if (existing.rows.length === 0) {
-      // Create new streak
       const id = uuidv4();
       await pool.query(
         `INSERT INTO streaks (id, user_id, current_streak, longest_streak, last_activity_date)
-         VALUES ($1, $2, 1, 1, $3)`,
+         VALUES ($1, $2, 1, 1, $3::date)`,
         [id, req.user!.userId, today]
       );
     } else {
       const streak = existing.rows[0];
-      const lastActivity = new Date(streak.last_activity_date);
-      lastActivity.setHours(0, 0, 0, 0);
-
-      const daysDiff = Math.floor((today.getTime() - lastActivity.getTime()) / (1000 * 60 * 60 * 24));
+      const lastActivity =
+        pgDateToYmd(streak.last_activity_date) || today;
+      const daysDiff = calendarDaysBetween(lastActivity, today);
 
       let newStreak = streak.current_streak;
       if (daysDiff === 1) {
-        // Consecutive day
         newStreak = streak.current_streak + 1;
       } else if (daysDiff > 1) {
-        // Streak broken
         newStreak = 1;
       }
-      // If daysDiff === 0, same day, don't update
 
       const longestStreak = Math.max(newStreak, streak.longest_streak);
 
       await pool.query(
-        `UPDATE streaks 
+        `UPDATE streaks
          SET current_streak = $1,
              longest_streak = $2,
-             last_activity_date = $3
+             last_activity_date = $3::date
          WHERE user_id = $4`,
         [newStreak, longestStreak, today, req.user!.userId]
       );
     }
 
-    // Check for badge eligibility
     const updatedStreak = await pool.query(
       'SELECT * FROM streaks WHERE user_id = $1',
       [req.user!.userId]
@@ -95,7 +112,6 @@ export async function updateStreak(req: AuthRequest, res: Response, next: NextFu
 
     for (const milestone of badgeMilestones) {
       if (currentStreak === milestone) {
-        // Check if badge already exists
         const badgeCheck = await pool.query(
           'SELECT id FROM badges WHERE user_id = $1 AND badge_type = $2',
           [req.user!.userId, `streak_${milestone}`]
@@ -112,12 +128,12 @@ export async function updateStreak(req: AuthRequest, res: Response, next: NextFu
       }
     }
 
-    res.json({ message: 'Streak updated successfully' });
+    res.json({
+      message: 'Streak updated successfully',
+      localDate: today,
+      timeZone: sanitizeTimeZone(req.body?.timeZone ?? req.query?.timeZone),
+    });
   } catch (error) {
     next(error);
   }
 }
-
-
-
-
