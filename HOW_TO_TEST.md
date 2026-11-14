@@ -51,6 +51,7 @@ Then press `i` for iOS Simulator or `a` for Android Emulator.
 |-----|---------|
 | [docs/bdd/FEATURE_MATRIX.md](docs/bdd/FEATURE_MATRIX.md) | Persona × feature gates |
 | [docs/bdd/APP_STORE_QA_CHECKLIST.md](docs/bdd/APP_STORE_QA_CHECKLIST.md) | Ordered TestFlight P0→P2 checklist |
+| [docs/bdd/WEB_E2E_REPORT.md](docs/bdd/WEB_E2E_REPORT.md) | Expo **web** Playwright results (non-IAP) on Linux VM |
 | [docs/bdd/](docs/bdd/) `*.feature` | Gherkin scenarios for each domain |
 
 ### Option 2: Android Emulator
