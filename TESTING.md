@@ -201,12 +201,19 @@ npm start
 - Press **`i`** for iOS Simulator
 - Press **`a`** for Android Emulator
 
-### 4. Test in App:
-- Register a new account
-- Login
-- Browse questions
-- Start a practice session
-- View progress
+### 4. Test in App (guest-first):
+- App lands on Main as a **guest** after Splash (Auth is not forced)
+- Browse Practice / Learn as guest; open gated actions and dismiss or sign in
+- Register or login when prompted
+- Start a practice session; take Daily Quiz when signed in
+- Confirm Progress shows sign-in (guest), paywall (free), or analytics (paid)
+
+### 5. App Store / persona BDD suite:
+Full guest / free / paid scenarios and TestFlight checklist:
+
+- [docs/bdd/FEATURE_MATRIX.md](docs/bdd/FEATURE_MATRIX.md)
+- [docs/bdd/APP_STORE_QA_CHECKLIST.md](docs/bdd/APP_STORE_QA_CHECKLIST.md)
+- Gherkin features: [docs/bdd/](docs/bdd/) (`01_*.feature` … `10_*.feature`)
 
 ## Testing with Web Admin
 
@@ -327,7 +334,7 @@ lsof -ti:3001 | xargs kill -9
 
 Once basic tests pass:
 1. Test all API endpoints
-2. Test mobile app integration
+2. Run the mobile persona BDD / App Store checklist in [docs/bdd/](docs/bdd/)
 3. Test web admin integration
 4. Run load tests (optional)
 5. Test error handling

@@ -38,12 +38,20 @@ Then press `i` for iOS Simulator or `a` for Android Emulator.
 
 2. **The app should automatically load** in the simulator
 
-3. **Test the app:**
-   - Register a new account
-   - Login
-   - Browse questions
-   - Take a practice quiz
-   - View progress
+3. **Test the app (guest-first):**
+   - After Splash you land on Main as a **guest** — Auth is not required to browse
+   - Open all five tabs (Practice, Learn, Exam, Progress, Settings)
+   - Browse questions / Today's Practice as guest; sign in when prompted to save results
+   - Register or login for Daily Quiz, Progress, and premium features
+   - For App Store readiness, run the full persona suite in [docs/bdd/APP_STORE_QA_CHECKLIST.md](docs/bdd/APP_STORE_QA_CHECKLIST.md)
+
+### App Store BDD scenarios (guest / free / paid)
+
+| Doc | Purpose |
+|-----|---------|
+| [docs/bdd/FEATURE_MATRIX.md](docs/bdd/FEATURE_MATRIX.md) | Persona × feature gates |
+| [docs/bdd/APP_STORE_QA_CHECKLIST.md](docs/bdd/APP_STORE_QA_CHECKLIST.md) | Ordered TestFlight P0→P2 checklist |
+| [docs/bdd/](docs/bdd/) `*.feature` | Gherkin scenarios for each domain |
 
 ### Option 2: Android Emulator
 
@@ -310,9 +318,10 @@ curl http://localhost:3001/ | python3 -m json.tool
 ## 📝 Next Steps
 
 1. **Run automated tests:** `./scripts/test-api.sh`
-2. **Test in mobile app:** Start simulator and use the app
-3. **Check logs:** Watch terminal output for errors
-4. **Test edge cases:** Invalid inputs, network errors, etc.
+2. **Test in mobile app:** Start simulator; browse as guest first, then register
+3. **App Store E2E:** Follow [docs/bdd/APP_STORE_QA_CHECKLIST.md](docs/bdd/APP_STORE_QA_CHECKLIST.md)
+4. **Check logs:** Watch terminal output for errors
+5. **Test edge cases:** Invalid inputs, network errors, expired premium (see `10_edge_*.feature`)
 
 For detailed API documentation, see [API_ENDPOINTS.md](API_ENDPOINTS.md)
 
